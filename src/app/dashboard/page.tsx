@@ -1,9 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
+import LogoutButton from "./LogoutButton";
 
 export default async function DashboardPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const displayName = user?.user_metadata?.full_name || user?.email;
+
+  const [{ count: activeConversations }, { count: monthlyLeads }, { count: activeFlows }] =
+    await Promise.all([
+      supabase.from("conversations").select("*", { count: "exact", head: true }).eq("status", "active"),
+      supabase.from("leads").select("*", { count: "exact", head: true }).gte("created_at", startOfMonth()),
+      supabase.from("flows").select("*", { count: "exact", head: true }).eq("status", "active"),
+    ]);
 
   return (
     <div>
@@ -17,20 +25,20 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard
-          title="Conversas hoje"
-          value="0"
-          subtitle="ativas"
+          title="Conversas ativas"
+          value={String(activeConversations ?? 0)}
+          subtitle="em andamento"
           color="green"
         />
         <StatCard
           title="Leads capturados"
-          value="0"
+          value={String(monthlyLeads ?? 0)}
           subtitle="este mês"
           color="blue"
         />
         <StatCard
           title="Fluxos ativos"
-          value="0"
+          value={String(activeFlows ?? 0)}
           subtitle="em execução"
           color="purple"
         />
@@ -65,4 +73,9 @@ function StatCard({
   );
 }
 
-import LogoutButton from "./LogoutButton";
+function startOfMonth() {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
