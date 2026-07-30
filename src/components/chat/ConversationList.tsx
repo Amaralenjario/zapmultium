@@ -66,7 +66,10 @@ export default function ConversationList({
       .channel("conversations-list")
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => fetchConversations())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    const interval = setInterval(fetchConversations, 3000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(interval); };
   }, []);
 
   const formatTime = (dateStr: string | null) => {

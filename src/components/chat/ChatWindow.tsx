@@ -72,6 +72,27 @@ export default function ChatWindow({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Polling para novas mensagens (fallback do Realtime)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const lastId = messages.length > 0 ? messages[messages.length - 1].id : null;
+      if (!lastId) return;
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversation.id)
+        .order("created_at", { ascending: true });
+      if (data) {
+        const newMsgs = data.filter((m) => !messages.some((existing) => existing.id === m.id));
+        if (newMsgs.length > 0) {
+          setMessages((prev) => [...prev, ...newMsgs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [conversation.id, messages]);
+
   useEffect(() => {
     const channel = supabase
       .channel("messages-" + conversation.id)
