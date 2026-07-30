@@ -18,6 +18,26 @@ export default function FluxosPage() {
   const [flows, setFlows] = useState<Flow[]>([]);
   const [editing, setEditing] = useState<Flow | null>(null);
   const [creating, setCreating] = useState(false);
+  const [nameModal, setNameModal] = useState(false);
+  const [newFlowName, setNewFlowName] = useState("");
+
+  const handleCreate = async () => {
+    if (!newFlowName.trim()) return;
+    setNameModal(false);
+
+    const res = await fetch("/api/flows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newFlowName.trim(), config: { steps: [] } }),
+    });
+
+    if (!res.ok) { toast.error("Erro ao criar"); return; }
+    const flow = await res.json();
+    toast.success("Fluxo criado!");
+    setNewFlowName("");
+    setEditing(flow);
+    fetchFlows();
+  };
 
   const fetchFlows = async () => {
     const res = await fetch("/api/flows");
@@ -27,22 +47,18 @@ export default function FluxosPage() {
   useEffect(() => { fetchFlows(); }, []);
 
   const handleSave = async (steps: any[]) => {
-    const name = prompt("Nome do fluxo:");
-    if (!name) return;
-
     const url = editing ? `/api/flows/${editing.id}` : "/api/flows";
     const method = editing ? "PUT" : "POST";
 
     const res = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, config: { steps } }),
+      body: JSON.stringify({ name: editing?.name, config: { steps } }),
     });
 
     if (!res.ok) { toast.error("Erro ao salvar"); return; }
     toast.success(editing ? "Fluxo atualizado!" : "Fluxo criado!");
     setEditing(null);
-    setCreating(false);
     fetchFlows();
   };
 
@@ -52,18 +68,6 @@ export default function FluxosPage() {
     toast.success("Excluído!");
     fetchFlows();
   };
-
-  if (creating) {
-    return (
-      <div>
-        <button onClick={() => setCreating(false)} className="mb-4 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          Voltar para fluxos
-        </button>
-        <FlowBuilder onSave={handleSave} />
-      </div>
-    );
-  }
 
   if (editing) {
     return (
@@ -87,7 +91,7 @@ export default function FluxosPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Fluxos</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm">{flows.length} fluxo{flows.length !== 1 ? "s" : ""}</p>
         </div>
-        <button onClick={() => setCreating(true)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25 flex items-center gap-2">
+        <button onClick={() => setNameModal(true)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25 flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
           Novo fluxo
         </button>
@@ -130,6 +134,28 @@ export default function FluxosPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {nameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Novo fluxo</h2>
+            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">Nome do fluxo</label>
+            <input
+              type="text"
+              value={newFlowName}
+              onChange={(e) => setNewFlowName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+              placeholder="Ex: Boas-vindas automático"
+              autoFocus
+              className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
+            />
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => { setNameModal(false); setNewFlowName(""); }} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+              <button onClick={handleCreate} disabled={!newFlowName.trim()} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">Criar fluxo</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

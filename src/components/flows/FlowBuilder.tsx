@@ -27,12 +27,13 @@ const NODE_ICONS: Record<string, string> = {
 
 export default function FlowBuilder({ onSave, initialSteps }: { onSave?: (steps: FlowStep[]) => void; initialSteps?: FlowStep[] }) {
   const [steps, setSteps] = useState<FlowStep[]>(
-    initialSteps && initialSteps.length > 0 ? initialSteps : [
+    initialSteps && initialSteps.length > 1 ? initialSteps : [
       { id: "start", type: "start", label: "Início", config: {} },
+      { id: "msg-" + Date.now(), type: "message", label: "Enviar mensagem", config: { text: "" } },
     ]
   );
   const [editing, setEditing] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>("start");
+  const [expanded, setExpanded] = useState<string | null>("msg-" + (initialSteps?.length || 0));
 
   const addStep = (type: FlowStep["type"], afterId: string) => {
     const id = Date.now().toString();
@@ -97,10 +98,12 @@ export default function FlowBuilder({ onSave, initialSteps }: { onSave?: (steps:
 
           return (
             <div key={step.id} className="relative">
-              {/* Connection line */}
+              {/* Connection arrow */}
               {i > 0 && (
                 <div className="flex justify-center py-1">
-                  <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 rounded" />
+                  <svg className="w-4 h-6 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 16 24">
+                    <path strokeLinecap="round" strokeWidth={2} d="M8 0v18m0 0l-4-4m4 4l4-4" />
+                  </svg>
                 </div>
               )}
 
