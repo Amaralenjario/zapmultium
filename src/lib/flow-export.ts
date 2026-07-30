@@ -1,51 +1,5 @@
 // FLOWV1 Export/Import Format
 
-interface FlowNode {
-  id: string;
-  type: string;
-  position: { x: number; y: number };
-  data: { label?: string; config?: Record<string, any>; [key: string]: any };
-}
-
-interface FlowEdge {
-  id: string;
-  source: string;
-  target: string;
-  sourceHandle?: string;
-  targetHandle?: string;
-}
-
-interface FlowV1Export {
-  version: 1;
-  exported_at: string;
-  nome: string;
-  entry_node_id: string;
-  nodes: FlowV1Node[];
-  edges: FlowV1Edge[];
-  triggers: FlowV1Trigger[];
-}
-
-interface FlowV1Node {
-  id: string;
-  type: string;
-  position: { x: number; y: number };
-  data: Record<string, any>;
-}
-
-interface FlowV1Edge {
-  id: string;
-  source: string;
-  target: string;
-}
-
-interface FlowV1Trigger {
-  tipo: string;
-  valor: string;
-  match_mode: string;
-  ativo: boolean;
-}
-
-// Our type → FLOWV1 type mapping
 const TO_FLOWV1: Record<string, string> = {
   start: "trigger",
   wait: "delay",
@@ -55,7 +9,6 @@ const TO_FLOWV1: Record<string, string> = {
   video: "send_video",
 };
 
-// FLOWV1 type → our type
 const FROM_FLOWV1: Record<string, string> = {
   trigger: "start",
   delay: "wait",
@@ -65,128 +18,130 @@ const FROM_FLOWV1: Record<string, string> = {
   send_video: "video",
 };
 
-// Convert our config to FLOWV1 data
-function toFlowV1Data(type: string, config: Record<string, any>): Record<string, any> {
-  switch (type) {
-    case "start":
-      return { label: "Início" };
-    case "wait":
-      return { seconds: config.delay || 5 };
-    case "message":
-      return { text: config.text || "" };
-    case "image":
-      return { mediaUrl: config.url || "", caption: "", filename: "image.png" };
-    case "audio":
-      return { mediaUrl: config.url || "", filename: "audio.ogg" };
-    case "video":
-      return { mediaUrl: config.url || "", caption: "", filename: "video.mp4" };
-    default:
-      return {};
-  }
-}
-
-// Convert FLOWV1 data to our config
-function fromFlowV1Data(type: string, data: Record<string, any>): Record<string, any> {
-  switch (type) {
-    case "send_text":
-      return { text: data.text || "" };
-    case "send_image":
-      return { url: data.mediaUrl || "" };
-    case "send_audio":
-      return { url: data.mediaUrl || "" };
-    case "send_video":
-      return { url: data.mediaUrl || "" };
-    case "delay":
-      return { delay: data.seconds || 5 };
-    case "trigger":
-      return {};
-    default:
-      return {};
-  }
-}
-
 export function exportFlowV1(
   name: string,
-  steps: { id: string; type: string; label?: string; config?: Record<string, any>; data?: { type?: string; config?: Record<string, any>; label?: string } }[],
-  edges: FlowEdge[]
+  steps: { id: string; type: string; label?: string; config?: Record<string, any>; position?: { x: number; y: number } }[],
+  edges: { id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }[]
 ): string {
-  const exportData: FlowV1Export = {
+  const data = {
     version: 1,
     exported_at: new Date().toISOString(),
-    nome: name,
-    entry_node_id: steps.find((n) => {
-      const ourType = n.data?.type || n.type;
-      return ourType === "start";
-    })?.id || steps[0]?.id || "",
+    nome: name || "Fluxo",
+    entry_node_id: steps.find((n) => n.type === "start")?.id || steps[0]?.id || "",
     nodes: steps.map((n) => {
-      // Support both: { type, config } (from handleExport) and { data: { type, config } } (from ReactFlow)
-      const nodeData = n.data || n;
-      const ourType = nodeData.type || "";
-      const config = (n.config || nodeData.config || {}) as Record<string, any>;
-      const v1Type = TO_FLOWV1[ourType] || ourType;
+      const v1Type = TO_FLOWV1[n.type] || n.type;
+      const nodeData: Record<string, any> = {};
+
+      switch (n.type) {
+        case "start":
+          nodeData.label = n.label || "Início";
+          break;
+        case "wait":
+          nodeData.seconds = n.config?.delay || 5;
+          break;
+        case "message":
+          nodeData.text = n.config?.text || "";
+          break;
+        case "image":
+          nodeData.mediaUrl = n.config?.url || "";
+          nodeData.caption = "";
+          nodeData.filename = (n.config?.url || "").split("/").pop() || "image.png";
+          break;
+        case "audio":
+          nodeData.mediaUrl = n.config?.url || "";
+          nodeData.filename = (n.config?.url || "").split("/").pop() || "audio.ogg";
+          break;
+        case "video":
+          nodeData.mediaUrl = n.config?.url || "";
+          nodeData.caption = "";
+          nodeData.filename = (n.config?.url || "").split("/").pop() || "video.mp4";
+          break;
+        case "condition":
+          nodeData.variable = n.config?.variable || "";
+          nodeData.value = n.config?.value || "";
+          break;
+      }
+
       return {
         id: n.id,
         type: v1Type,
-        position: (n as any).position || { x: 100, y: 100 },
-        data: toFlowV1Data(ourType, config),
+        data: nodeData,
+        position: n.position || { x: 100, y: 100 },
       };
     }),
     edges: edges.map((e) => ({
       id: e.id,
       source: e.source,
       target: e.target,
+      sourceHandle: e.sourceHandle || undefined,
+      targetHandle: e.targetHandle || undefined,
     })),
-    triggers: [
-      { tipo: "keyword", valor: "", match_mode: "word", ativo: true },
-    ],
+    triggers: [],
   };
 
-  const json = JSON.stringify(exportData);
-  const base64 = Buffer.from(json).toString("base64");
-  return `FLOWV1:${base64}`;
+  const json = JSON.stringify(data);
+  return `FLOWV1:${Buffer.from(json).toString("base64")}`;
 }
 
 export function importFlowV1(code: string): {
   name: string;
-  steps: FlowNode[];
-  edges: FlowEdge[];
+  steps: { id: string; type: string; label: string; config: Record<string, any>; position?: { x: number; y: number } }[];
+  edges: { id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }[];
 } | null {
   try {
     if (!code.startsWith("FLOWV1:")) return null;
     const base64 = code.replace("FLOWV1:", "");
     const json = Buffer.from(base64, "base64").toString("utf-8");
-    const data: FlowV1Export = JSON.parse(json);
+    const data = JSON.parse(json);
 
     if (!data.nodes || !Array.isArray(data.nodes)) return null;
-    if (data.version !== 1) return null;
 
-    const steps: FlowNode[] = data.nodes
-      .filter((n) => FROM_FLOWV1[n.type] || ["send_buttons", "send_document", "tag_action"].includes(n.type))
-      .map((n) => {
-        const ourType = FROM_FLOWV1[n.type] || n.type;
-        return {
-          id: n.id,
-          type: "flowNode",
-          position: n.position || { x: 300, y: 50 + data.nodes.indexOf(n) * 150 },
-          data: {
-            type: ourType,
-            label: n.data?.label || ourType,
-            config: fromFlowV1Data(n.type, n.data || {}),
-          },
-        };
-      });
+    const steps = data.nodes.map((n: any) => {
+      const ourType = FROM_FLOWV1[n.type] || n.type;
+      const config: Record<string, any> = {};
 
-    const edges: FlowEdge[] = (data.edges || []).map((e) => ({
-      id: e.id,
+      switch (n.type) {
+        case "send_text":
+          config.text = n.data?.text || "";
+          break;
+        case "send_image":
+          config.url = n.data?.mediaUrl || "";
+          break;
+        case "send_audio":
+          config.url = n.data?.mediaUrl || "";
+          break;
+        case "send_video":
+          config.url = n.data?.mediaUrl || "";
+          break;
+        case "delay":
+          config.delay = n.data?.seconds || 5;
+          break;
+        case "trigger":
+          break;
+        case "condition":
+          config.variable = n.data?.variable || "";
+          config.value = n.data?.value || "";
+          break;
+      }
+
+      return {
+        id: n.id,
+        type: ourType,
+        label: n.data?.label || ourType,
+        config,
+        position: n.position || { x: 300, y: 50 },
+      };
+    });
+
+    const edges = (data.edges || []).map((e: any) => ({
+      id: e.id || "",
       source: e.source,
       target: e.target,
+      sourceHandle: e.sourceHandle || undefined,
+      targetHandle: e.targetHandle || undefined,
     }));
 
-    return {
-      name: data.nome || "Fluxo importado",
-      steps,
-      edges,
-    };
+    return { name: data.nome || "Fluxo importado", steps, edges };
   } catch {
     return null;
   }
