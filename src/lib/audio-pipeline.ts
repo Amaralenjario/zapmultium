@@ -2,6 +2,14 @@
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 
+function detectOgg(buf: Buffer, url: string, contentType: string): boolean {
+  if (buf.length >= 4 && buf[0] === 0x4f && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) return true;
+  const u = url.toLowerCase();
+  if (u.includes(".ogg") || u.includes(".opus") || u.includes(".oga")) return true;
+  if (contentType.includes("audio/ogg") || contentType.includes("audio/opus")) return true;
+  return false;
+}
+
 export async function processAndSendMedia(
   fileUrl: string,
   mediaType: "image" | "audio" | "video",
@@ -26,7 +34,8 @@ export async function processAndSendMedia(
     const dl = await fetch(fileUrl);
     if (!dl.ok) throw new Error(`Download: ${dl.status}`);
     const buffer = Buffer.from(await dl.arrayBuffer());
-    const isOgg = fileUrl.includes(".ogg") || fileUrl.includes(".opus");
+    const contentType = (dl.headers.get("content-type") || "").toLowerCase();
+    const isOgg = detectOgg(buffer, fileUrl, contentType);
 
     // Tenta com e sem versão no path
     const mediaEndpoints = [
@@ -52,9 +61,9 @@ export async function processAndSendMedia(
       } catch {}
     }
 
-    // Se conseguiu media_id, envia como audio nativo
+    // Se conseguiu media_id, envia como audio nativo (sempre voice: true para aparecer como mensagem de voz)
     if (mediaId) {
-      const sendBody = { type: "audio", audio: { id: mediaId, voice: isOgg || undefined } };
+      const sendBody = { type: "audio", audio: { id: mediaId, voice: true } };
       const sendRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
         method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ messaging_product: "whatsapp", to, ...sendBody }),
@@ -66,7 +75,7 @@ export async function processAndSendMedia(
 
     // Se não conseguiu media_id → NUNCA usa document. Envia como audio com link mesmo assim.
     // Meta aceita link pra audio? Não na teoria, mas vamos tentar.
-    const fallbackBody = { messaging_product: "whatsapp", to, type: "audio", audio: { link: fileUrl } };
+    const fallbackBody = { messaging_product: "whatsapp", to, type: "audio", audio: { link: fileUrl, voice: true } };
     const fRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
       method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" }, body: JSON.stringify(fallbackBody),
     });
