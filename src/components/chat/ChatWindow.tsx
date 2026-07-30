@@ -188,10 +188,12 @@ export default function ChatWindow({
 
   useEffect(() => {
     if (loading) return;
-    const isInitial = messages.length > 0 && prevLength.current === 0;
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
+    // Delay to let DOM render messages first
+    requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      }
+    });
     prevLength.current = messages.length;
   }, [messages, loading]);
 
