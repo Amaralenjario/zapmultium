@@ -39,6 +39,7 @@ export default function ConversationList({
   const [sellerPhoneIds, setSellerPhoneIds] = useState<string[] | null>(null);
   const [filter, setFilter] = useState<"all" | "active" | "archived">("active");
   const [search, setSearch] = useState("");
+  const [leadTagsMap, setLeadTagsMap] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
   const supabase = createClient();
 
   const applyFilters = useCallback(() => {
@@ -133,10 +134,25 @@ export default function ConversationList({
       } catch {}
     };
 
+    const fetchLeadTags = async () => {
+      const { data } = await supabase.from("leads").select("phone, lead_tags(tag_id, tag:crm_tags(id, name, color))");
+      if (data) {
+        const map: Record<string, { id: string; name: string; color: string }[]> = {};
+        for (const lead of data) {
+          if (lead.phone && lead.lead_tags) {
+            const tags = (lead.lead_tags as any[]).filter((lt) => lt.tag).map((lt) => lt.tag);
+            if (tags.length > 0) map[lead.phone] = tags;
+          }
+        }
+        setLeadTagsMap(map);
+      }
+    };
+
     fetchConversations();
     fetchSellerChannels();
     fetchOperations();
     fetchActiveFlows();
+    fetchLeadTags();
 
     const channel = supabase
       .channel("conversations-list")
@@ -204,9 +220,11 @@ export default function ConversationList({
           conversations.map((conv) => {
             const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
             const isSelected = selectedId === conv.id;
-            const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
-            const operation = phoneMap[phoneNumberId];
-            const flowInfo = activeFlows[conv.id];
+              const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
+              const operation = phoneMap[phoneNumberId];
+              const flowInfo = activeFlows[conv.id];
+              const customerPhone = customer?.phone || "";
+              const tags = leadTagsMap[customerPhone] || [];
 
             return (
               <button
@@ -253,6 +271,14 @@ export default function ConversationList({
                         </svg>
                       )}
                     </div>
+                    {tags.length > 0 && (
+                      <div className="flex gap-0.5 flex-wrap mt-1">
+                        {tags.slice(0, 3).map((tag) => (
+                          <span key={tag.id} className="text-[9px] px-1 py-0 rounded-full font-medium" style={{ backgroundColor: tag.color + "20", color: tag.color }}>{tag.name}</span>
+                        ))}
+                        {tags.length > 3 && <span className="text-[9px] text-gray-400">+{tags.length - 3}</span>}
+                      </div>
+                    )}
                     <div className="flex items-center gap-1">
                       <button onClick={(e) => toggleArchive(conv.id, !!conv.archived, e)} className="opacity-0 group-hover:opacity-100 transition p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" title={conv.archived ? "Desarquivar" : "Arquivar"}>
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
