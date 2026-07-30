@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import CreateOperationModal from "@/components/operations/CreateOperationModal";
 import EditOperationModal from "@/components/operations/EditOperationModal";
+import toast from "react-hot-toast";
 
 interface Channel {
   id: string;
@@ -22,14 +23,23 @@ export default function OperacoesPage() {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
   const fetchOps = async () => {
     const res = await fetch("/api/operations");
-    const data = await res.json();
-    setOperations(data);
+    setOperations(await res.json());
   };
 
   useEffect(() => { fetchOps(); }, []);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const res = await fetch(`/api/operations/${deleteTarget.id}`, { method: "DELETE" });
+    if (!res.ok) { toast.error("Erro ao excluir"); return; }
+    toast.success("Operação excluída!");
+    setDeleteTarget(null);
+    fetchOps();
+  };
 
   return (
     <div>
@@ -78,6 +88,7 @@ export default function OperacoesPage() {
 
             <div className="flex border-t border-gray-100 dark:border-gray-800">
               <button onClick={() => setEditing(op)} className="flex-1 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition">Editar</button>
+              <button onClick={() => setDeleteTarget(op)} className="flex-1 py-2.5 text-xs font-medium text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition border-l border-gray-100 dark:border-gray-800">Excluir</button>
             </div>
           </div>
         ))}
@@ -85,6 +96,22 @@ export default function OperacoesPage() {
 
       {showCreate && <CreateOperationModal onClose={() => setShowCreate(false)} onCreated={fetchOps} />}
       {editing && <EditOperationModal operation={editing} onClose={() => setEditing(null)} onUpdated={fetchOps} />}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-100 dark:bg-red-600/20 flex items-center justify-center"><svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg></div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Excluir {deleteTarget.name}?</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Isso removerá a operação permanentemente.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+              <button onClick={handleDelete} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500">Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
