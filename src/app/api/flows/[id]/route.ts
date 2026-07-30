@@ -10,10 +10,11 @@ function getSupabase() {
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  const { name, config } = await request.json();
+  const { name, config, sort_order } = await request.json();
   const updates: Record<string, any> = {};
   if (name) updates.name = name;
   if (config) updates.config = config;
+  if (sort_order !== undefined) updates.sort_order = sort_order;
 
   const { data, error } = await getSupabase()
     .from("flows")

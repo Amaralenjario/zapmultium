@@ -74,29 +74,37 @@ export default function FlowBar({
   const doTrigger = async () => {
     if (!confirmFlow) return;
     const flow = confirmFlow;
-    // Set spinner FIRST to prevent double-click
     setTriggering(flow.id);
     setConfirmFlow(null);
     if (!phoneNumberId || !customerPhone) {
       toast.error("Canal não configurado");
+      setTriggering(null);
       return;
     }
-    setTriggering(flow.id);
     try {
       const res = await fetch("/api/flows/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          flow_id: flow.id,
-          conversation_id: conversationId,
-          customer_phone: customerPhone,
-          phone_number_id: phoneNumberId,
-        }),
+        body: JSON.stringify({ flow_id: flow.id, conversation_id: conversationId, customer_phone: customerPhone, phone_number_id: phoneNumberId }),
       });
       const result = await res.json();
       if (!result.ok && result.error) toast.error(result.error);
     } catch { toast.error("Erro"); }
     setTriggering(null);
+  };
+
+  const moveFlow = async (flow: FlowCard, dir: -1 | 1) => {
+    const idx = flows.indexOf(flow);
+    if (idx === -1) return;
+    const tgt = idx + dir;
+    if (tgt < 0 || tgt >= flows.length) return;
+    const target = flows[tgt];
+    await Promise.all([
+      fetch(`/api/flows/${flow.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: tgt }) }),
+      fetch(`/api/flows/${target.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: idx }) }),
+    ]);
+    const res = await fetch("/api/flows");
+    if (res.ok) setFlows(await res.json());
   };
 
   const stepLabels: Record<string, string> = {
@@ -172,6 +180,12 @@ export default function FlowBar({
                 <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
               )}
               <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{flow.name}</span>
+              <button onClick={(e) => { e.stopPropagation(); moveFlow(flow, -1); }} className="text-gray-400 hover:text-gray-600 p-0.5" title="Mover esquerda">
+                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); moveFlow(flow, 1); }} className="text-gray-400 hover:text-gray-600 p-0.5" title="Mover direita">
+                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
             </button>
           ))}
           {flows.length === 0 && (

@@ -39,7 +39,7 @@ export async function GET() {
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
   const isAdmin = profile?.role === "admin" || profile?.role === "supervisor";
 
-  let query = dbClient.from("flows").select("*").order("updated_at", { ascending: false });
+  let query = dbClient.from("flows").select("*").order("sort_order", { ascending: true }).order("updated_at", { ascending: false });
 
   // Operators only see their own flows
   if (!isAdmin) {
