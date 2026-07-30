@@ -34,6 +34,8 @@ export default function FlowBar({
   const [progress, setProgress] = useState<FlowProgress | null>(null);
   const [triggering, setTriggering] = useState<string | null>(null);
   const [confirmFlow, setConfirmFlow] = useState<FlowCard | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -93,18 +95,37 @@ export default function FlowBar({
     setTriggering(null);
   };
 
-  const moveFlow = async (flow: FlowCard, dir: -1 | 1) => {
-    const idx = flows.indexOf(flow);
-    if (idx === -1) return;
-    const tgt = idx + dir;
-    if (tgt < 0 || tgt >= flows.length) return;
-    const target = flows[tgt];
+  const moveFlow = async (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+    if (fromIdx >= flows.length || toIdx >= flows.length) return;
+    const from = flows[fromIdx];
+    const to = flows[toIdx];
     await Promise.all([
-      fetch(`/api/flows/${flow.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: tgt }) }),
-      fetch(`/api/flows/${target.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: idx }) }),
+      fetch(`/api/flows/${from.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: toIdx }) }),
+      fetch(`/api/flows/${to.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: fromIdx }) }),
     ]);
     const res = await fetch("/api/flows");
     if (res.ok) setFlows(await res.json());
+  };
+
+  const handleDragStart = (e: React.DragEvent, idx: number) => {
+    setDragIndex(idx);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(idx));
+  };
+
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(idx);
+  };
+
+  const handleDragEnd = () => {
+    if (dragIndex !== null && dragOverIndex !== null && dragIndex !== dragOverIndex) {
+      moveFlow(dragIndex, dragOverIndex);
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
   };
 
   const stepLabels: Record<string, string> = {
@@ -167,26 +188,41 @@ export default function FlowBar({
       <div className="px-3 py-1.5">
         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 font-semibold">Fluxos</p>
         <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1 max-h-10" style={{ scrollbarWidth: "thin" }}>
-          {flows.map((flow) => (
-            <button
+          {flows.map((flow, idx) => (
+            <div
               key={flow.id}
-              disabled={triggering === flow.id}
-              onClick={() => handleTrigger(flow)}
-              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-emerald-400 hover:shadow-sm transition text-left disabled:opacity-50"
+              draggable
+              onDragStart={(e) => handleDragStart(e, idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDragEnd={handleDragEnd}
+              onDragLeave={() => setDragOverIndex(null)}
+              className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition ${
+                dragIndex === idx ? "opacity-30 scale-95" :
+                dragOverIndex === idx ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 scale-105 shadow-md" :
+                "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-emerald-400 hover:shadow-sm"
+              }`}
             >
-              {triggering === flow.id ? (
-                <div className="animate-spin w-3 h-3 border-[1.5px] border-gray-300 border-t-emerald-500 rounded-full" />
-              ) : (
-                <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-              )}
-              <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{flow.name}</span>
-              <button onClick={(e) => { e.stopPropagation(); moveFlow(flow, -1); }} className="text-gray-400 hover:text-gray-600 p-0.5" title="Mover esquerda">
-                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              {/* Drag handle - 6 dots */}
+              <span className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 flex-shrink-0" title="Arrastar para reordenar">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+                  <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                  <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                </svg>
+              </span>
+              <button
+                disabled={triggering === flow.id}
+                onClick={() => handleTrigger(flow)}
+                className="flex items-center gap-1.5 text-left disabled:opacity-50"
+              >
+                {triggering === flow.id ? (
+                  <div className="animate-spin w-3 h-3 border-[1.5px] border-gray-300 border-t-emerald-500 rounded-full" />
+                ) : (
+                  <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                )}
+                <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{flow.name}</span>
               </button>
-              <button onClick={(e) => { e.stopPropagation(); moveFlow(flow, 1); }} className="text-gray-400 hover:text-gray-600 p-0.5" title="Mover direita">
-                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-              </button>
-            </button>
+            </div>
           ))}
           {flows.length === 0 && (
             <span className="text-[11px] text-gray-400 py-1">Nenhum fluxo disponível</span>
