@@ -76,15 +76,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: createError.message }, { status: 500 });
     }
 
-    // Process the first step
+    // Fire and forget - process in background, respond immediately
     const { processFlowStep } = await import("@/lib/flow-engine");
-    const result = await processFlowStep(execution.id);
+    processFlowStep(execution.id).catch(() => {});
 
-    return NextResponse.json({
-      ok: true,
-      execution,
-      result,
-    });
+    return NextResponse.json({ ok: true, execution });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

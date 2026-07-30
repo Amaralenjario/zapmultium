@@ -327,6 +327,7 @@ export default function ChatWindow({
         onCancelReply={() => setReplyTo(null)}
       />
       <FlowBar
+        key={conversation.id}
         conversationId={conversation.id}
         phoneNumberId={phoneNumberId}
         customerPhone={customerPhone}

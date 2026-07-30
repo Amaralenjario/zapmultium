@@ -37,8 +37,11 @@ export default function FlowBar({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setTriggering(null);
+    setConfirmFlow(null);
+    setProgress(null);
     fetch("/api/flows").then((r) => r.json()).then(setFlows).catch(() => {});
-  }, []);
+  }, [conversationId]);
 
   useEffect(() => {
     const fetchProgress = async () => {
