@@ -158,7 +158,7 @@ export default function FlowBar({
       {/* Horizontal flow trigger cards */}
       <div className="px-3 py-1.5">
         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 font-semibold">Fluxos</p>
-        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1 max-h-10" style={{ scrollbarWidth: "thin" }}>
           {flows.map((flow) => (
             <button
               key={flow.id}
