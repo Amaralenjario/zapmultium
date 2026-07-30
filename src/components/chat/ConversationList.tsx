@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "./Avatar";
 
@@ -38,28 +38,40 @@ export default function ConversationList({
   const [activeFlows, setActiveFlows] = useState<Record<string, { count: number; flowNames: string[] }>>({});
   const [sellerPhoneIds, setSellerPhoneIds] = useState<string[] | null>(null);
   const [filter, setFilter] = useState<"all" | "active" | "archived">("active");
+  const [search, setSearch] = useState("");
   const supabase = createClient();
 
-  useEffect(() => {
-    const applyFilters = () => {
-      let filtered = allConversations;
+  const applyFilters = useCallback(() => {
+    let filtered = allConversations;
 
-      // Seller channel filter
-      if (sellerPhoneIds !== null) {
-        filtered = filtered.filter((conv) => {
-          const phoneId = (conv as any).metadata?.phone_number_id || "";
-          return sellerPhoneIds.length > 0 ? sellerPhoneIds.includes(phoneId) : false;
-        });
-      }
+    // Seller channel filter
+    if (sellerPhoneIds !== null) {
+      filtered = filtered.filter((conv) => {
+        const phoneId = (conv as any).metadata?.phone_number_id || "";
+        return sellerPhoneIds.length > 0 ? sellerPhoneIds.includes(phoneId) : false;
+      });
+    }
 
-      // Archived filter
-      if (filter === "active") filtered = filtered.filter((c) => !c.archived);
-      else if (filter === "archived") filtered = filtered.filter((c) => !!c.archived);
+    // Archived filter
+    if (filter === "active") filtered = filtered.filter((c) => !c.archived);
+    else if (filter === "archived") filtered = filtered.filter((c) => !!c.archived);
 
-      setConversations(filtered);
-    };
-    applyFilters();
-  }, [allConversations, sellerPhoneIds, filter]);
+    // Search filter: nome, telefone, última mensagem
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      filtered = filtered.filter((conv) => {
+        const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
+        const name = (customer?.name || "").toLowerCase();
+        const phone = (customer?.phone || "").toLowerCase();
+        const msg = (conv.last_message || "").toLowerCase();
+        return name.includes(q) || phone.includes(q) || msg.includes(q);
+      });
+    }
+
+    setConversations(filtered);
+  }, [allConversations, sellerPhoneIds, filter, search]);
+
+  useEffect(() => { applyFilters(); }, [applyFilters]);
 
   useEffect(() => {
     const fetchConversations = async () => {
@@ -161,7 +173,7 @@ export default function ConversationList({
           <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#54656f] dark:text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
-          <input type="text" placeholder="Pesquisar conversa..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-[#2a3942] border-0 text-[14px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:ring-1 focus:ring-green-500 focus:outline-none transition" />
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar por nome, número ou mensagem..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-[#2a3942] border-0 text-[14px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:ring-1 focus:ring-green-500 focus:outline-none transition" />
         </div>
         <div className="flex gap-1">
           {(["all", "active", "archived"] as const).map((f) => (
