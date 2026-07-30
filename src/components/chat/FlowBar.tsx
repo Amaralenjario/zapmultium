@@ -114,7 +114,7 @@ export default function FlowBar({
   };
 
   return (
-    <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 bg-[#f0f2f5] dark:bg-[#1a252c]">
+    <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 bg-[#f0f2f5] dark:bg-[#1a252c] overflow-hidden">
       {/* Flow progress indicator */}
       {progress && (
         <div className="px-3 py-1.5 flex items-center gap-2 border-b border-gray-200/50 dark:border-gray-800/50">
