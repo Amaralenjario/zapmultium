@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Avatar from "@/components/chat/Avatar";
 import CreateSellerModal from "@/components/sellers/CreateSellerModal";
 import EditSellerModal from "@/components/sellers/EditSellerModal";
+import toast from "react-hot-toast";
 
 interface Seller {
   id: string;
@@ -32,6 +33,14 @@ export default function VendedoresPage() {
     const res = await fetch("/api/sellers");
     const data = await res.json();
     setSellers(data);
+  };
+
+  const handleDelete = async (seller: Seller) => {
+    if (!confirm(`Excluir "${seller.name}" permanentemente?`)) return;
+    const res = await fetch(`/api/sellers/${seller.id}`, { method: "DELETE" });
+    if (!res.ok) { toast.error("Erro ao excluir"); return; }
+    toast.success("Vendedor excluído!");
+    fetchSellers();
   };
 
   useEffect(() => { fetchSellers(); }, []);
@@ -94,7 +103,12 @@ export default function VendedoresPage() {
                   </span>
                 </td>
                 <td className="p-4 text-right">
-                  <button onClick={() => setEditing(s)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition text-sm font-medium">Editar</button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => setEditing(s)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition text-sm font-medium">Editar</button>
+                    <button onClick={() => handleDelete(s)} className="text-gray-400 hover:text-red-500 transition p-1" title="Excluir vendedor">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

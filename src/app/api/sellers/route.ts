@@ -105,12 +105,13 @@ export async function POST(request: Request) {
 
   const userId = authData.user.id;
 
-  // Criar perfil
+  // Criar perfil - upsert sem especificar coluna de conflito (usa PK)
   const { error: profileError } = await supabase.from("profiles").upsert({
     id: userId,
     full_name: name?.trim() || email,
     role: role || "operator",
-  }, { onConflict: "id" });
+    is_active: true,
+  });
 
   if (profileError) {
     console.error("Erro ao criar profile:", profileError);
