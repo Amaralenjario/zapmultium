@@ -27,7 +27,7 @@ export async function listAllChannels(): Promise<EvoHubChannel[]> {
   if (!KEY) return [];
   const res = await fetch(`${BASE}/api/v1/channels`, {
     headers: { Authorization: `Bearer ${KEY}` },
-    cache: "no-store",
+    next: { revalidate: 30 },
   });
   const data = await res.json();
   return data.channels || [];
