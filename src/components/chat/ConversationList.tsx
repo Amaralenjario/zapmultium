@@ -131,27 +131,25 @@ export default function ConversationList({
                 }`}
                 style={operation ? { borderLeftColor: operation.color } : { borderLeftColor: "transparent" }}
               >
-                <div className="relative flex-shrink-0" style={operation ? { boxShadow: `0 0 0 2px ${operation.color}40` } : undefined}>
-                  <Avatar name={customer?.name} size="md" />
-                </div>
+                <Avatar name={customer?.name} size="md" />
                 <div className="flex-1 min-w-0 border-b border-gray-100 dark:border-[#222d34] pb-2.5">
                   <div className="flex items-center justify-between">
-                    <p className="font-normal text-[16px] text-[#111b21] dark:text-[#e9edef] truncate">
-                      {customer?.name || customer?.phone || "Desconhecido"}
-                    </p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {operation && (
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} title={operation.name} />
+                      )}
+                      <p className="font-normal text-[16px] text-[#111b21] dark:text-[#e9edef] truncate">
+                        {customer?.name || customer?.phone || "Desconhecido"}
+                      </p>
+                    </div>
                     <span className="text-[11px] text-[#667781] dark:text-[#8696a0] flex-shrink-0 ml-2">
                       {formatTime(conv.last_message_at || conv.created_at)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between mt-0.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {operation && (
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} />
-                      )}
+                    <div className="flex items-center gap-1 min-w-0">
                       <p className="text-[13px] text-[#667781] dark:text-[#8696a0] truncate">
-                        {conv.last_message_sender === "agent" && (
-                          <span className="text-[#667781] dark:text-[#8696a0]">Você: </span>
-                        )}
+                        {conv.last_message_sender === "agent" && <span>Você: </span>}
                         {conv.last_message || ""}
                       </p>
                       {conv.last_message_sender === "agent" && (
