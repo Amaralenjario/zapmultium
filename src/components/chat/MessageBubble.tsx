@@ -89,7 +89,7 @@ export default function MessageBubble({
             </div>
           )}
           {isMedia ? (
-            <MediaContent messageId={message.id} content={message.content} type={message.content_type} />
+            <MediaContent messageId={message.id} content={message.content} type={message.content_type} metadata={message.metadata} />
           ) : (
             <p className="whitespace-pre-wrap break-words px-3.5 pt-2 pb-1.5">{message.content}</p>
           )}
@@ -131,10 +131,12 @@ export default function MessageBubble({
   );
 }
 
-function MediaContent({ messageId, content, type }: { messageId: string; content: string; type: string }) {
+function MediaContent({ messageId, content, type, metadata }: { messageId: string; content: string; type: string; metadata?: any }) {
   const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
-  const mediaUrl = `/api/media/${messageId}`;
+  // Flow messages have a direct public URL in content
+  const isFlow = metadata?.source === "flow";
+  const mediaUrl = isFlow && content.startsWith("http") ? content : `/api/media/${messageId}`;
 
   const handleSaveSticker = async (msgId: string) => {
     if (saving) return;

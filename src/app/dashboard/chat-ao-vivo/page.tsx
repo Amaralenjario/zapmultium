@@ -3,7 +3,6 @@
 import { useState } from "react";
 import ConversationList, { type Conversation } from "@/components/chat/ConversationList";
 import ChatWindow from "@/components/chat/ChatWindow";
-import FlowScheduler from "@/components/flows/FlowScheduler";
 
 export default function ChatPageClient() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -40,7 +39,6 @@ export default function ChatPageClient() {
           </div>
         )}
       </div>
-      <FlowScheduler />
     </div>
   );
 }
