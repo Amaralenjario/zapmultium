@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import CreateChannelModal from "@/components/whatsapp/CreateChannelModal";
+import OperationPickerModal from "@/components/whatsapp/OperationPickerModal";
 import toast from "react-hot-toast";
 
 interface Channel {
@@ -41,6 +42,7 @@ export default function WhatsappPageClient({
   const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [operations, setOperations] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [pickerFor, setPickerFor] = useState<Channel | null>(null);
 
   const fetchChannels = useCallback(async () => {
     const res = await fetch("/api/evohub/channels");
@@ -134,10 +136,7 @@ export default function WhatsappPageClient({
                     ) : (
                       <span className="text-xs text-gray-400">—</span>
                     )}
-                    <select value="" onChange={(e) => e.target.value && changeOperation(ch.id, e.target.value, ch.name)} className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-transparent border-0 cursor-pointer hover:underline focus:outline-none p-0">
-                      <option value="">Trocar</option>
-                      {operations.filter(o => o.id !== m?.opId).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-                    </select>
+                    <button onClick={() => setPickerFor(ch)} className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline ml-1">Trocar</button>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
@@ -183,6 +182,14 @@ export default function WhatsappPageClient({
       )}
 
       {showModal && <CreateChannelModal onClose={() => setShowModal(false)} onCreated={() => { fetchChannels(); setShowModal(false); }} />}
+      {pickerFor && (
+        <OperationPickerModal
+          operations={operations.filter(o => o.id !== phoneMap[pickerFor.id]?.opId)}
+          currentOpId={phoneMap[pickerFor.id]?.opId}
+          onSelect={(opId) => { changeOperation(pickerFor.id, opId, pickerFor.name); setPickerFor(null); }}
+          onClose={() => setPickerFor(null)}
+        />
+      )}
     </div>
   );
 }
