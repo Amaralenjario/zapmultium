@@ -13,6 +13,7 @@ interface Message {
   sender_type: "customer" | "agent" | "system" | "bot";
   content_type: string;
   created_at: string;
+  read_at?: string | null;
   conversation_id: string;
 }
 
@@ -72,26 +73,36 @@ export default function ChatWindow({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Polling para novas mensagens (fallback do Realtime)
+  // Polling para novas mensagens e atualizações (read_at, etc)
   useEffect(() => {
     const interval = setInterval(async () => {
-      const lastId = messages.length > 0 ? messages[messages.length - 1].id : null;
-      if (!lastId) return;
       const { data } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversation.id)
         .order("created_at", { ascending: true });
-      if (data) {
-        const newMsgs = data.filter((m) => !messages.some((existing) => existing.id === m.id));
-        if (newMsgs.length > 0) {
-          setMessages((prev) => [...prev, ...newMsgs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
-        }
+      if (data && data.length > 0) {
+        setMessages((prev) => {
+          if (data.length === prev.length) {
+            // Checar se alguma mensagem teve read_at atualizado
+            let changed = false;
+            const updated = prev.map((m) => {
+              const fresh = data.find((d) => d.id === m.id);
+              if (fresh && fresh.read_at !== m.read_at) { changed = true; return fresh; }
+              return m;
+            });
+            return changed ? updated : prev;
+          }
+          // Mensagens novas
+          const freshIds = new Set(data.map((m) => m.id));
+          const merged = [...prev.filter((m) => freshIds.has(m.id)), ...data.filter((d) => !prev.some((m) => m.id === d.id))];
+          return merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        });
       }
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [conversation.id, messages]);
+  }, [conversation.id]);
 
   useEffect(() => {
     const channel = supabase
