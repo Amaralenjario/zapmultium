@@ -10,7 +10,7 @@ const supabase = createClient(
 export async function GET() {
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, full_name, avatar_url, role, is_active, created_at");
+    .select("id, full_name, email, avatar_url, role, is_active, created_at");
 
   const { data: sellerChannels } = await supabase.from("seller_channels").select("user_id, evohub_channel_id");
 
@@ -45,7 +45,7 @@ export async function GET() {
     return {
       id: p.id,
       name: p.full_name,
-      email: "",
+      email: p.email || "",
       avatar_url: p.avatar_url,
       role: p.role,
       is_active: p.is_active,
@@ -109,6 +109,7 @@ export async function POST(request: Request) {
   const { error: profileError } = await supabase.from("profiles").upsert({
     id: userId,
     full_name: name?.trim() || email,
+    email: email.trim().toLowerCase(),
     role: role || "operator",
     is_active: true,
   });

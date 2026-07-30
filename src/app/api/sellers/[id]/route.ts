@@ -14,6 +14,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   if (name !== undefined) profileUpdates.full_name = name;
   if (role !== undefined) profileUpdates.role = role;
   if (is_active !== undefined) profileUpdates.is_active = is_active;
+  if (email !== undefined) profileUpdates.email = email;
 
   if (Object.keys(profileUpdates).length > 0) {
     await supabase.from("profiles").update(profileUpdates).eq("id", params.id);
