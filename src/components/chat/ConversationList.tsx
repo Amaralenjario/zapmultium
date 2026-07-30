@@ -119,13 +119,16 @@ export default function ConversationList({
               <button
                 key={conv.id}
                 onClick={() => onSelect(conv)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 transition text-left ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 transition text-left border-l-[3px] ${
                   isSelected
                     ? "bg-[#f0f2f5] dark:bg-[#2a3942]"
                     : "hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]"
                 }`}
+                style={operation ? { borderLeftColor: operation.color } : { borderLeftColor: "transparent" }}
               >
-                <Avatar name={customer?.name} size="md" />
+                <div className="relative flex-shrink-0" style={operation ? { boxShadow: `0 0 0 2px ${operation.color}40` } : undefined}>
+                  <Avatar name={customer?.name} size="md" />
+                </div>
                 <div className="flex-1 min-w-0 border-b border-gray-100 dark:border-[#222d34] pb-2.5">
                   <div className="flex items-center justify-between">
                     <p className="font-normal text-[16px] text-[#111b21] dark:text-[#e9edef] truncate">
