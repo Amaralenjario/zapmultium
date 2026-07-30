@@ -32,7 +32,7 @@ export async function GET(_: Request, { params }: { params: { messageId: string 
     if (!msg?.metadata) return new Response("Not found", { status: 404 });
 
     const meta = msg.metadata;
-    const mediaId = meta.media_id;
+    const mediaId = meta.media_id || meta.wa_message_id;
     const phoneNumberId = meta.phone_number_id;
 
     if (!mediaId || !phoneNumberId) return new Response("No media", { status: 404 });
