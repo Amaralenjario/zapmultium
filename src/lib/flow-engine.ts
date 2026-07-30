@@ -87,7 +87,10 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
   const { processAndSendMedia } = await import("@/lib/audio-pipeline");
   const result = await processAndSendMedia(url, mediaType, execution.customer_phone, execution.phone_number_id, channelToken);
 
-  if (result.error) throw new Error(result.error);
+  if (result.error) {
+    console.error("Flow media pipeline error:", result.error);
+    throw new Error(result.error);
+  }
   const waMsgId = result.waMessageId;
   if (!waMsgId) throw new Error("Falha ao enviar mídia - sem message_id");
 
