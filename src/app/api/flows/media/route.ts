@@ -6,15 +6,16 @@ const LIMITS: Record<string, number> = { image: 5 * 1024 * 1024, audio: 16 * 102
 const ALLOWED: Record<string, string[]> = {
   image: ["image/png", "image/jpeg", "image/webp"],
   audio: ["audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm", "audio/aac", "audio/mp3"],
-  video: ["video/mp4", "video/webm", "video/3gpp"],
+  video: ["video/mp4", "video/webm", "video/3gpp", "video/quicktime", "video/x-msvideo"],
 };
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceKey) {
+    return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  }
+  return createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 export async function POST(request: Request) {

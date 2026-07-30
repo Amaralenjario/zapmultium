@@ -1,11 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceKey) {
+    return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  }
+  return createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
@@ -111,7 +112,7 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
 
   const supabase = getSupabase();
   const labels: Record<string, string> = { image: "📷 Imagem", audio: "🎵 Áudio", video: "🎬 Vídeo" };
-  await supabase.from("messages").insert({
+  const { error: insertError } = await supabase.from("messages").insert({
     conversation_id: execution.conversation_id,
     sender_type: "agent",
     content: url,
@@ -124,6 +125,11 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
       source: "flow",
     },
   });
+
+  if (insertError) {
+    console.error("Falha ao inserir mídia do fluxo:", insertError);
+    throw new Error(`DB insert media: ${insertError.message}`);
+  }
 
   await supabase.from("conversations").update({
     last_message: labels[mediaType] || "📎 Mídia",
