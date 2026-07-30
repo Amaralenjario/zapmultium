@@ -203,21 +203,36 @@ export async function processAndSendMedia(
   try {
     let finalUrl = fileUrl;
 
-    // Camada 1: Transloadit (apenas áudio)
+    // Camada 1: Transloadit (apenas áudio) → OGG Opus
     if (mediaType === "audio") {
       finalUrl = await convertToOggOpus(finalUrl);
     }
 
-    // Camada 2: Espelhamento no Supabase
+    // Camada 2: Espelhamento no Supabase Storage (URL pública garantida)
     finalUrl = await mirrorToSupabase(finalUrl, mediaType);
 
-    // Camada 3: Upload na Meta
-    const mediaId = await uploadToMetaMedia(finalUrl, channelToken, phoneNumberId);
+    // Camada 3: Envio via EvoHub com link (comprovado que funciona)
+    const body: any = {
+      messaging_product: "whatsapp",
+      to,
+      type: mediaType === "video" ? "video" : mediaType,
+    };
+    body[mediaType] = { link: finalUrl };
 
-    // Camada 4: Envio via EvoHub (media_id com fallback URL)
-    const result = await sendViaEvoHub(to, phoneNumberId, channelToken, mediaId, finalUrl, mediaType);
+    console.log("Sending media via EvoHub:", mediaType, finalUrl.slice(0, 80));
+    const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${channelToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-    return { waMessageId: result.messages?.[0]?.id || null };
+    const data = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(data));
+
+    return { waMessageId: data.messages?.[0]?.id || null };
   } catch (err: any) {
     console.error("Pipeline error:", err);
     return { waMessageId: null, error: err.message };
