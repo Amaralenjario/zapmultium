@@ -42,6 +42,12 @@ export default function ChatWindow({
   const operation = phoneMap[phoneNumberId];
   const customerPhone = customer?.phone || "";
 
+  const [showFlowModal, setShowFlowModal] = useState(false);
+  const [availableFlows, setAvailableFlows] = useState<any[]>([]);
+  const [activeExecution, setActiveExecution] = useState<any>(null);
+  const [triggering, setTriggering] = useState(false);
+  const [loadingFlows, setLoadingFlows] = useState(false);
+
   const fetchMessages = async () => {
     const { data } = await supabase
       .from("messages")
@@ -179,6 +185,56 @@ export default function ChatWindow({
     return () => { supabase.removeChannel(channel); };
   }, [conversation.id]);
 
+  // Check for active flow executions
+  useEffect(() => {
+    const checkExecution = async () => {
+      try {
+        const res = await fetch(`/api/flows/executions?conversation_id=${conversation.id}`);
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const active = data.find((e: any) => ["running", "paused", "pending"].includes(e.status));
+          if (active) setActiveExecution(active);
+        }
+      } catch {}
+    };
+    checkExecution();
+  }, [conversation.id]);
+
+  const handleOpenFlowModal = async () => {
+    setLoadingFlows(true);
+    setShowFlowModal(true);
+    const res = await fetch("/api/flows");
+    const data = await res.json();
+    setAvailableFlows(data || []);
+    setLoadingFlows(false);
+  };
+
+  const handleTriggerFlow = async (flow: any) => {
+    setTriggering(true);
+    try {
+      const res = await fetch("/api/flows/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          flow_id: flow.id,
+          conversation_id: conversation.id,
+          customer_phone: customerPhone,
+          phone_number_id: phoneNumberId,
+        }),
+      });
+      const result = await res.json();
+      if (result.ok) {
+        setActiveExecution(result.execution);
+        setShowFlowModal(false);
+      } else {
+        alert(result.error || "Erro ao disparar fluxo");
+      }
+    } catch {
+      alert("Erro ao disparar fluxo");
+    }
+    setTriggering(false);
+  };
+
   const headerBg = operation?.color || "#075e54";
 
   return (
@@ -194,6 +250,15 @@ export default function ChatWindow({
           <p className="font-medium text-[15px] truncate">{customer?.name || customer?.phone || "Desconhecido"}</p>
           <p className="text-[12px] text-white/80 truncate">{customerPhone}</p>
         </div>
+        <button onClick={handleOpenFlowModal} className="p-2 hover:bg-white/10 rounded-full transition relative" title="Disparar fluxo">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {activeExecution && (
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse" />
+          )}
+        </button>
         <button className="p-2 hover:bg-white/10 rounded-full transition">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
@@ -255,6 +320,61 @@ export default function ChatWindow({
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
       />
+
+      {activeExecution && (
+        <div className="flex items-center gap-2 px-3 py-1.5 text-xs bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800">
+          <svg className="w-3.5 h-3.5 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-blue-600 dark:text-blue-400">Fluxo ativo</span>
+          <button onClick={() => setActiveExecution(null)} className="ml-auto text-blue-400 hover:text-blue-600">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
+      {showFlowModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowFlowModal(false)}>
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Disparar Fluxo</h2>
+            {loadingFlows ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin w-6 h-6 border-[3px] border-gray-300 border-t-emerald-500 rounded-full" />
+              </div>
+            ) : availableFlows.length === 0 ? (
+              <p className="text-center py-8 text-gray-400 text-sm">Nenhum fluxo disponível</p>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {availableFlows.map((flow) => (
+                  <button
+                    key={flow.id}
+                    disabled={triggering}
+                    onClick={() => handleTriggerFlow(flow)}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition text-left disabled:opacity-50"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{flow.name}</p>
+                      <p className="text-xs text-gray-400">{flow.config?.steps?.length || 0} etapas</p>
+                    </div>
+                    <svg className="w-4 h-4 ml-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-4">
+              <button onClick={() => setShowFlowModal(false)} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

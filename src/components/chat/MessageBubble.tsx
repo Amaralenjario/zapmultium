@@ -6,6 +6,7 @@ import { useState } from "react";
 import AudioPlayer from "./AudioPlayer";
 import DocumentPreview from "./DocumentPreview";
 import EmojiPicker from "./EmojiPicker";
+import toast from "react-hot-toast";
 
 interface Message {
   id: string;
@@ -117,7 +118,7 @@ export default function MessageBubble({
       </div>
       {/* Reactions */}
       {reactionList.length > 0 && (
-        <div className={`flex ${isAgent ? "justify-end" : "justify-start"} -mt-1`}>
+        <div className={`flex ${isAgent ? "justify-end" : "justify-start"} -mt-1 relative z-10`}>
           <div className={`inline-flex gap-0.5 bg-white dark:bg-gray-800 rounded-full px-2 py-0.5 shadow-sm border border-gray-200 dark:border-gray-700 ${isAgent ? "mr-0" : "ml-0"}`}>
             {reactionList.map(([user, emoji]) => (
               <span key={user} className="text-sm leading-none" title={user}>{emoji}</span>
@@ -132,11 +133,23 @@ export default function MessageBubble({
 
 function MediaContent({ messageId, content, type }: { messageId: string; content: string; type: string }) {
   const [error, setError] = useState(false);
+  const [saving, setSaving] = useState(false);
   const mediaUrl = `/api/media/${messageId}`;
+
+  const handleSaveSticker = async (msgId: string) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/stickers/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId: msgId }) });
+      if (res.ok) toast.success("Figurinha salva!");
+      else toast.error("Erro ao salvar");
+    } catch { toast.error("Erro"); }
+    setSaving(false);
+  };
 
   if (error) return <p className="px-3.5 py-2 text-gray-500 dark:text-gray-400 text-sm">{content}</p>;
 
-  if (type === "sticker") return <div className="p-1"><img src={mediaUrl} alt="" className="rounded-lg max-w-[140px] max-h-[140px] object-contain" loading="lazy" onError={() => setError(true)} /></div>;
+  if (type === "sticker") return <div className="p-1 relative group/sticker"><img src={mediaUrl} alt="" className="rounded-lg max-w-[140px] max-h-[140px] object-contain" loading="lazy" onError={() => setError(true)} /><button onClick={() => handleSaveSticker(messageId)} className="absolute top-1 right-1 opacity-0 group-hover/sticker:opacity-100 transition bg-gray-800/70 text-white text-[10px] px-1.5 py-0.5 rounded hover:bg-gray-800">{saving ? "..." : "Salvar"}</button></div>;
   if (type === "image") return <div className="p-1"><img src={mediaUrl} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover" loading="lazy" onError={() => setError(true)} /></div>;
   if (type === "video") return <div className="p-1"><video controls className="rounded-lg max-w-[300px] max-h-[300px]" preload="metadata"><source src={mediaUrl} /></video></div>;
   if (type === "audio") return <AudioPlayer src={mediaUrl} />;

@@ -6,7 +6,7 @@ const KEY = process.env.EVOHUB_API_KEY;
 
 export async function POST(request: Request) {
   try {
-    const { conversationId, phoneNumberId, to, message, context } = await request.json();
+    const { conversationId, phoneNumberId, to, message, context, type } = await request.json();
 
     if (!phoneNumberId || !to || !message) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
@@ -28,12 +28,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Canal não encontrado" }, { status: 404 });
     }
 
-    const msgBody: any = {
-      messaging_product: "whatsapp",
-      to,
-      type: "text",
-      text: { body: message },
-    };
+    const msgType = type || "text";
+    let msgBody: any;
+
+    if (msgType === "sticker" || msgType === "image") {
+      const imageType = msgType === "sticker" ? "sticker" : "image";
+      msgBody = {
+        messaging_product: "whatsapp",
+        to,
+        type: imageType,
+        [imageType]: { link: message },
+      };
+    } else {
+      msgBody = {
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { body: message },
+      };
+    }
     if (context) msgBody.context = { message_id: context };
 
     const res = await fetch(`${BASE}/meta/v23.0/${phoneNumberId}/messages`, {
@@ -64,7 +77,7 @@ export async function POST(request: Request) {
         conversation_id: conversationId,
         sender_type: "agent",
         content: message,
-        content_type: "text",
+        content_type: msgType === "sticker" ? "sticker" : "text",
         metadata: { wa_message_id: data.messages?.[0]?.id, phone_number_id: phoneNumberId, context: context ? { id: context } : undefined },
       });
 
