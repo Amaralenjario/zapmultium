@@ -69,7 +69,7 @@ export async function GET(_: Request, { params }: { params: { messageId: string 
     return new Response(buffer, {
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "public, max-age=300",
       },
     });
   } catch (e: any) {
