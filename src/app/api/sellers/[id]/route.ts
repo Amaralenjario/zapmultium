@@ -44,12 +44,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 
   if (evohub_channel_id !== undefined) {
-    console.log("Updating seller_channels for", params.id, evohub_channel_id);
     const { error: delErr } = await dbClient.from("seller_channels").delete().eq("user_id", params.id);
-    if (delErr) console.error("Delete seller_channels error:", delErr);
+    if (delErr) return NextResponse.json({ error: `Erro ao remover canal: ${delErr.message}` }, { status: 500 });
     if (evohub_channel_id) {
       const { error: insErr } = await dbClient.from("seller_channels").insert({ user_id: params.id, evohub_channel_id });
-      if (insErr) console.error("Insert seller_channels error:", insErr);
+      if (insErr) return NextResponse.json({ error: `Erro ao vincular canal: ${insErr.message}` }, { status: 500 });
     }
   }
 

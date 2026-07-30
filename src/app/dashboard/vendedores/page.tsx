@@ -66,14 +66,20 @@ export default function VendedoresPage() {
   };
 
   const handleAssignChannel = async (sellerId: string, channelId: string) => {
+    // Update UI immediately (optimistic)
+    setSellers((prev) => prev.map((s) => s.id === sellerId ? { ...s, evohub_channel_id: channelId || null } : s));
+
     const res = await fetch(`/api/sellers/${sellerId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ evohub_channel_id: channelId || null }),
     });
-    if (!res.ok) { toast.error("Erro ao vincular instância"); return; }
+    if (!res.ok) {
+      toast.error("Erro ao vincular instância");
+      fetchSellers(); // revert on error
+      return;
+    }
     toast.success("Instância vinculada!");
-    fetchSellers();
   };
 
   return (
