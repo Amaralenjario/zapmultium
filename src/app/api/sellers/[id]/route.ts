@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada");
+function getClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceKey) {
+    return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
   }
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  return createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const { name, role, is_active, evohub_channel_id, email, password } = await request.json();
 
   try {
-    const supabase = getAdminClient();
+    const supabase = getClient();
     const profileUpdates: any = {};
     if (name !== undefined) profileUpdates.full_name = name;
     if (role !== undefined) profileUpdates.role = role;
@@ -24,18 +24,28 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await supabase.from("profiles").update(profileUpdates).eq("id", params.id);
     }
 
+    // Auth updates (require service role key)
     if (email || password) {
-      const authUpdates: any = {};
-      if (email) authUpdates.email = email;
-      if (password) authUpdates.password = password;
-      await supabase.auth.admin.updateUserById(params.id, authUpdates);
+      try {
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (serviceKey) {
+          const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+          const authUpdates: any = {};
+          if (email) authUpdates.email = email;
+          if (password) authUpdates.password = password;
+          await adminClient.auth.admin.updateUserById(params.id, authUpdates);
+        }
+      } catch {}
     }
 
+    // Channel assignment
     if (evohub_channel_id !== undefined) {
-      await supabase.from("seller_channels").delete().eq("user_id", params.id);
-      if (evohub_channel_id) {
-        await supabase.from("seller_channels").insert({ user_id: params.id, evohub_channel_id });
-      }
+      try {
+        await supabase.from("seller_channels").delete().eq("user_id", params.id);
+        if (evohub_channel_id) {
+          await supabase.from("seller_channels").insert({ user_id: params.id, evohub_channel_id });
+        }
+      } catch {}
     }
 
     return NextResponse.json({ ok: true });
@@ -46,14 +56,17 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   try {
-    const supabase = getAdminClient();
-
-    // Soft-delete profile
+    const supabase = getClient();
     await supabase.from("profiles").update({ is_active: false }).eq("id", params.id);
     await supabase.from("seller_channels").delete().eq("user_id", params.id);
 
-    // Hard-delete auth user
-    try { await supabase.auth.admin.deleteUser(params.id); } catch {}
+    try {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (serviceKey) {
+        const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+        await adminClient.auth.admin.deleteUser(params.id);
+      }
+    } catch {}
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {
