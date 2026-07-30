@@ -55,20 +55,20 @@ function FlowNode({ data, id }: any) {
 
       {editing && data.type === "message" && (
         <div className="p-2">
-          <textarea value={text} onChange={(e) => { setText(e.target.value); data.config.text = e.target.value; }} placeholder="Digite a mensagem..." className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs text-gray-900 dark:text-white resize-none" rows={2} onClick={(e) => e.stopPropagation()} />
+          <textarea value={text} onChange={(e) => { setText(e.target.value); data.config.text = e.target.value; }} onKeyDown={(e) => e.stopPropagation()} placeholder="Digite a mensagem..." className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs text-gray-900 dark:text-white resize-none" rows={2} onClick={(e) => e.stopPropagation()} />
         </div>
       )}
       {editing && data.type === "wait" && (
         <div className="p-2 flex items-center gap-2 text-xs">
           <span className="text-gray-500">Aguardar</span>
-          <input type="number" min={0} max={60} value={delay} onChange={(e) => { const v = Math.min(60, Math.max(0, parseInt(e.target.value) || 0)); setDelay(v); data.config.delay = v; }} className="w-14 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-1 py-0.5 text-center text-gray-900 dark:text-white" />
+          <input type="number" min={0} max={60} value={delay} onChange={(e) => { const v = Math.min(60, Math.max(0, parseInt(e.target.value) || 0)); setDelay(v); data.config.delay = v; }} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} className="w-14 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-1 py-0.5 text-center text-gray-900 dark:text-white" />
           <span className="text-gray-500">seg</span>
         </div>
       )}
       {editing && data.type === "condition" && (
         <div className="p-2 space-y-1 text-xs">
-          <input placeholder="Nome da variável" onChange={(e) => { data.config.variable = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
-          <input placeholder="Valor esperado" onChange={(e) => { data.config.value = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
+          <input placeholder="Nome da variável" onChange={(e) => { data.config.variable = e.target.value; }} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
+          <input placeholder="Valor esperado" onChange={(e) => { data.config.value = e.target.value; }} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
         </div>
       )}
 
