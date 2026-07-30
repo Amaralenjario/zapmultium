@@ -70,24 +70,13 @@ function DeletableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition,
 
 const edgeTypes = { deletable: DeletableEdge };
 
-// ── Flow Node with inline preview ──
-function FlowNode({ data }: any) {
-  const [editing, setEditing] = useState(false);
+// ── Flow Node - always editable, previews inline ──
+function FlowNode({ data, id }: any) {
   const isStart = data.type === "start";
   const cfg = data.config || {};
 
-  const preview = useMemo(() => {
-    if (data.type === "message") return cfg.text ? `"${cfg.text.length > 28 ? cfg.text.slice(0, 28) + "..." : cfg.text}"` : "Clique para editar";
-    if (data.type === "image") return cfg.url ? `📷 ${cfg.url.slice(0, 25)}...` : "URL da imagem";
-    if (data.type === "audio") return cfg.url ? `🎵 ${cfg.url.slice(0, 25)}...` : "URL ou upload do áudio";
-    if (data.type === "video") return cfg.url ? `▶ ${cfg.url.slice(0, 25)}...` : "URL ou upload do vídeo";
-    if (data.type === "wait") return `${cfg.delay || 0} seg`;
-    if (data.type === "condition") return `${cfg.variable || "?"} = ${cfg.value || "?"}`;
-    return "";
-  }, [data.type, cfg]);
-
   return (
-    <div className="rounded-xl border-2 bg-white dark:bg-gray-900 shadow-lg min-w-[200px] overflow-visible group" style={{ borderColor: data.color }}>
+    <div className="rounded-xl border-2 bg-white dark:bg-gray-900 shadow-lg min-w-[220px] overflow-visible group" style={{ borderColor: data.color }}>
       {!isStart && <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-gray-400 !border-2 !border-white dark:!border-gray-900" />}
 
       {/* Header */}
@@ -112,63 +101,39 @@ function FlowNode({ data }: any) {
         )}
       </div>
 
-      {/* Inline preview (always visible) - click to toggle edit */}
-      <div className="px-3 py-1.5 cursor-pointer text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition border-t border-gray-100 dark:border-gray-800" onClick={() => setEditing(!editing)}>
-        {preview}
-      </div>
-
-      {/* Editor (toggles on) */}
-      {editing && data.type === "message" && (
-        <div className="px-2 pb-2">
+      {/* Body - always editable */}
+      {data.type === "message" && (
+        <div className="p-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           <textarea
-            value={cfg.text || ""}
+            defaultValue={cfg.text || ""}
             onChange={(e) => { data.config.text = e.target.value; }}
-            onKeyDown={(e) => e.stopPropagation()}
             placeholder="Digite a mensagem..."
             className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs resize-none"
             rows={2}
-            onClick={(e) => e.stopPropagation()}
-            autoFocus
           />
         </div>
       )}
-      {editing && data.type === "wait" && (
-        <div className="px-2 pb-2 flex items-center gap-2">
-          <span className="text-[11px] text-gray-500">Aguardar</span>
+
+      {data.type === "wait" && (
+        <div className="p-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <span className="text-xs text-gray-500">Aguardar</span>
           <input
-            type="number" min={1} max={60}
-            value={cfg.delay || 5}
+            type="number" min={1} max={60} defaultValue={cfg.delay || 5}
             onChange={(e) => { data.config.delay = Math.min(60, Math.max(1, parseInt(e.target.value) || 5)); }}
-            onKeyDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
             className="w-14 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-1 py-0.5 text-center text-xs"
-            autoFocus
           />
-          <span className="text-[11px] text-gray-500">seg</span>
+          <span className="text-xs text-gray-500">seg</span>
         </div>
       )}
-      {editing && data.type === "condition" && (
-        <div className="px-2 pb-2 space-y-1">
-          <input
-            placeholder="Variável"
-            defaultValue={cfg.variable || ""}
-            onChange={(e) => { data.config.variable = e.target.value; }}
-            onKeyDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs"
-            autoFocus
-          />
-          <input
-            placeholder="Valor esperado"
-            defaultValue={cfg.value || ""}
-            onChange={(e) => { data.config.value = e.target.value; }}
-            onKeyDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs"
-          />
+
+      {data.type === "condition" && (
+        <div className="p-2 space-y-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <input placeholder="Variável" defaultValue={cfg.variable || ""} onChange={(e) => { data.config.variable = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs" />
+          <input placeholder="Valor esperado" defaultValue={cfg.value || ""} onChange={(e) => { data.config.value = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs" />
         </div>
       )}
-      {editing && (data.type === "image" || data.type === "audio" || data.type === "video") && (
+
+      {(data.type === "image" || data.type === "video" || data.type === "audio") && (
         <MediaEditor type={data.type} config={data.config} />
       )}
 
@@ -184,13 +149,12 @@ function FlowNode({ data }: any) {
   );
 }
 
-// ── Media editor with file upload ──
+// ── Media editor with file upload + preview ──
 function MediaEditor({ type, config }: { type: string; config: any }) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const labels: Record<string, string> = { image: "Imagem (max 5MB)", audio: "Áudio (max 16MB)", video: "Vídeo (max 16MB)" };
-  const label = labels[type] || "Arquivo";
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -209,19 +173,25 @@ function MediaEditor({ type, config }: { type: string; config: any }) {
   };
 
   return (
-    <div className="px-2 pb-2 space-y-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="p-2 space-y-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
       <input
-        placeholder={`URL do ${labels[type]?.toLowerCase() || "arquivo"} (https://...)`}
+        placeholder={`URL do ${type} (https://...)`}
         defaultValue={config.url || ""}
         onChange={(e) => { config.url = e.target.value; }}
         className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs"
       />
       <label className={`flex items-center justify-center gap-1 px-2 py-1 rounded border border-dashed text-[10px] cursor-pointer transition ${uploading ? "opacity-50" : "hover:border-emerald-400 hover:text-emerald-500"} border-gray-300 dark:border-gray-600 text-gray-500`}>
-        {uploading ? "Enviando..." : `📁 Upload ${label}`}
+        {uploading ? "Enviando..." : `📁 Upload ${labels[type]}`}
         <input ref={fileRef} type="file" accept={type === "image" ? "image/*" : type === "video" ? "video/*" : "audio/*"} onChange={handleUpload} className="hidden" disabled={uploading} />
       </label>
       {config.url && type === "image" && (
-        <img src={config.url} alt="" className="w-full h-20 object-cover rounded border border-gray-200" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        <img src={config.url} alt="" className="w-full h-24 object-cover rounded border border-gray-200" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+      )}
+      {config.url && type === "video" && (
+        <video src={config.url} controls className="w-full h-24 rounded border border-gray-200" preload="metadata" />
+      )}
+      {config.url && type === "audio" && (
+        <audio src={config.url} controls className="w-full h-8" />
       )}
     </div>
   );
@@ -321,7 +291,13 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
     const type = event.dataTransfer.getData("application/reactflow");
     if (!type || !rfInstance || !reactFlowWrapper.current) return;
     const bounds = reactFlowWrapper.current.getBoundingClientRect();
-    const position = rfInstance.project({ x: event.clientX - bounds.left - 100, y: event.clientY - bounds.top - 25 });
+    const position = rfInstance.project({
+      x: event.clientX - bounds.left - 100,
+      y: event.clientY - bounds.top - 25,
+    });
+    // Random offset to prevent overlapping
+    position.x += Math.floor(Math.random() * 60) - 30;
+    position.y += Math.floor(Math.random() * 40) - 20;
     const newId = uid();
     const cfg = NODE_CONFIGS[type];
     const newNode: any = {
