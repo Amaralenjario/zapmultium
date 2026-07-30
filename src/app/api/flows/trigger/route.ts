@@ -84,7 +84,7 @@ export async function POST(request: Request) {
         customer_phone,
         phone_number_id,
         current_node_id: startNode.id,
-        status: "running",
+        status: "pending",
         context: {},
         execution_key: executionKey,
       })
