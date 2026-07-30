@@ -148,6 +148,14 @@ export default function WhatsappPageClient({
                       </span>
                     </div>
                   )}
+                  {(ch as any).displayPhone && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400 dark:text-gray-500">Telefone</span>
+                      <span className="font-medium text-gray-900 dark:text-white text-xs">
+                        {(ch as any).displayPhone}
+                      </span>
+                    </div>
+                  )}
                   {mapping?.phoneId && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400 dark:text-gray-500">Phone ID</span>

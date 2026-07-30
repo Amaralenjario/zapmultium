@@ -92,7 +92,42 @@ export async function createChannel(name: string, type: string = "whatsapp") {
   };
 }
 
-export async function getChannelToken(channelId: string): Promise<string | null> {
-  const channel = await getChannel(channelId);
-  return channel?.token || null;
+export async function getPhoneNumberFromMeta(channelToken: string, phoneNumberId: string): Promise<string | null> {
+  if (!channelToken || !phoneNumberId) return null;
+  try {
+    const res = await fetch(`${BASE}/meta/v23.0/${phoneNumberId}`, {
+      headers: { Authorization: `Bearer ${channelToken}` },
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return data?.display_phone_number || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function enrichChannelsWithPhoneNumbers(channels: EvoHubChannel[]): Promise<(EvoHubChannel & { displayPhone?: string })[]> {
+  const supabase = createClient();
+  const { data: opChannels } = await supabase
+    .from("operations_channels")
+    .select("evohub_channel_id, phone_number_id")
+    .eq("is_active", true);
+
+  const phoneIdMap: Record<string, string> = {};
+  for (const row of opChannels || []) {
+    if (row.phone_number_id) {
+      phoneIdMap[row.evohub_channel_id] = row.phone_number_id;
+    }
+  }
+
+  return Promise.all(
+    channels.map(async (ch) => {
+      const phoneId = phoneIdMap[ch.id];
+      if (phoneId && ch.token) {
+        const phone = await getPhoneNumberFromMeta(ch.token, phoneId);
+        return { ...ch, displayPhone: phone || undefined };
+      }
+      return ch;
+    })
+  );
 }

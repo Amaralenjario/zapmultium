@@ -1,9 +1,10 @@
-import { listChannelsForUser } from "@/lib/evohub";
+import { listChannelsForUser, enrichChannelsWithPhoneNumbers } from "@/lib/evohub";
 import { createClient } from "@/lib/supabase/server";
 import WhatsappPageClient from "./WhatsappPageClient";
 
 export default async function WhatsappsPage() {
   const channels = await listChannelsForUser();
+  const enriched = await enrichChannelsWithPhoneNumbers(channels);
 
   const supabase = createClient();
   const { data: opChannels } = await supabase
@@ -21,5 +22,5 @@ export default async function WhatsappsPage() {
     };
   }
 
-  return <WhatsappPageClient initialChannels={channels} phoneMap={phoneMap} />;
+  return <WhatsappPageClient initialChannels={enriched as any} phoneMap={phoneMap} />;
 }
