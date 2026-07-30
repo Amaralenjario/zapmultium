@@ -13,6 +13,7 @@ interface Seller {
   role: string;
   is_active: boolean;
   instancia: string | null;
+  evohub_channel_id?: string | null;
   created_at: string;
 }
 

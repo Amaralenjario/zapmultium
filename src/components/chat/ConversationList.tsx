@@ -32,8 +32,10 @@ export default function ConversationList({
   onSelect: (conv: Conversation) => void;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [allConversations, setAllConversations] = useState<Conversation[]>([]);
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
   const [activeFlows, setActiveFlows] = useState<Record<string, { count: number; flowNames: string[] }>>({});
+  const [sellerPhoneIds, setSellerPhoneIds] = useState<string[] | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -43,7 +45,50 @@ export default function ConversationList({
         .select("id, status, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)")
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(50);
-      setConversations(data || []);
+      setAllConversations(data || []);
+      // Filter by seller channel if applicable
+      if (sellerPhoneIds === null) {
+        setConversations(data || []);
+      } else if (sellerPhoneIds.length > 0) {
+        setConversations((data || []).filter((conv) => {
+          const phoneId = (conv as any).metadata?.phone_number_id || "";
+          return sellerPhoneIds.includes(phoneId);
+        }));
+      } else {
+        setConversations([]);
+      }
+    };
+
+    // Get seller's allowed phone_number_ids for operator role
+    const fetchSellerChannels = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      if (profile?.role === "admin" || profile?.role === "supervisor") {
+        setSellerPhoneIds(null); // null = unrestricted
+        return;
+      }
+      // Operator: get allowed channels, map to phone_number_id
+      const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
+      if (!sc || sc.length === 0) {
+        setSellerPhoneIds([]);
+        return;
+      }
+      const channelIds = sc.map((s) => s.evohub_channel_id);
+      // Map channel IDs to phone_number_ids via operations_channels + known mapping
+      const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
+      const phoneIdMap: Record<string, string> = {
+        "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+        "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+        "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+        "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+        "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+      };
+      for (const row of oc || []) {
+        if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id;
+      }
+      const ids = channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean);
+      setSellerPhoneIds(ids);
     };
 
     const fetchOperations = async () => {
@@ -63,6 +108,7 @@ export default function ConversationList({
     };
 
     fetchConversations();
+    fetchSellerChannels();
     fetchOperations();
 
     // Fetch active flow executions

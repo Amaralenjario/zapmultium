@@ -8,9 +8,8 @@ const supabase = createClient(
 );
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  const { name, role, is_active, instancia, email, password } = await request.json();
+  const { name, role, is_active, evohub_channel_id, email, password } = await request.json();
 
-  // Atualizar profile
   const profileUpdates: any = {};
   if (name !== undefined) profileUpdates.full_name = name;
   if (role !== undefined) profileUpdates.role = role;
@@ -20,7 +19,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     await supabase.from("profiles").update(profileUpdates).eq("id", params.id);
   }
 
-  // Atualizar auth user se email ou senha
   if (email || password) {
     const authUpdates: any = {};
     if (email) authUpdates.email = email;
@@ -28,14 +26,13 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     await supabase.auth.admin.updateUserById(params.id, authUpdates);
   }
 
-  // Atualizar vendedores se instancia
-  if (instancia !== undefined) {
-    const { data: existing } = await supabase.from("vendedores").select("id").eq("id", params.id).limit(1);
-    if (existing && existing.length > 0) {
-      await supabase.from("vendedores").update({ instancia_evolution: instancia }).eq("id", params.id);
+  // Save channel assignment
+  if (evohub_channel_id !== undefined) {
+    if (evohub_channel_id) {
+      await supabase.from("seller_channels").delete().eq("user_id", params.id);
+      await supabase.from("seller_channels").insert({ user_id: params.id, evohub_channel_id });
     } else {
-      const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", params.id).single();
-      await supabase.from("vendedores").insert({ id: params.id, nome: profile?.full_name || name || "", instancia_evolution: instancia });
+      await supabase.from("seller_channels").delete().eq("user_id", params.id);
     }
   }
 
@@ -43,8 +40,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  // Desativar usuário (soft delete)
   await supabase.from("profiles").update({ is_active: false }).eq("id", params.id);
+  await supabase.from("seller_channels").delete().eq("user_id", params.id);
   await supabase.auth.admin.deleteUser(params.id);
   return NextResponse.json({ ok: true });
 }

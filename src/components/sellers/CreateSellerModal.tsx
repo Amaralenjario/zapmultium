@@ -1,16 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 
 const ROLES = ["operator", "supervisor", "admin"];
+
+interface Channel {
+  id: string;
+  name: string;
+  displayPhone?: string;
+}
+
+interface PhoneMapEntry {
+  phoneId: string;
+  opName: string;
+  opColor: string;
+}
 
 export default function CreateSellerModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("operator");
+  const [selectedChannel, setSelectedChannel] = useState("");
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [phoneMap, setPhoneMap] = useState<Record<string, PhoneMapEntry>>({});
+  const [loadingChannels, setLoadingChannels] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/evohub/channels")
+      .then((r) => r.json())
+      .then((data) => {
+        setChannels(data.channels || []);
+        setPhoneMap(data.phoneMap || {});
+      })
+      .catch(() => {})
+      .finally(() => setLoadingChannels(false));
+  }, []);
+
+  const getChannelLabel = (ch: Channel) => {
+    const pm = phoneMap[ch.id];
+    if (pm?.opName) return `${pm.opName}${pm.phoneId ? " (" + pm.phoneId + ")" : ""}`;
+    if (ch.displayPhone) return `${ch.name} (${ch.displayPhone})`;
+    return ch.name;
+  };
 
   const handleCreate = async () => {
     if (!name.trim() || !email.trim() || !password) return;
@@ -18,7 +52,13 @@ export default function CreateSellerModal({ onClose, onCreated }: { onClose: () 
     const res = await fetch("/api/sellers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), email: email.trim(), password, role }),
+      body: JSON.stringify({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        role,
+        evohub_channel_id: selectedChannel || undefined,
+      }),
     });
     const data = await res.json();
     if (!res.ok) { toast.error(data.error || "Erro ao criar"); setLoading(false); return; }
@@ -53,6 +93,21 @@ export default function CreateSellerModal({ onClose, onCreated }: { onClose: () 
             <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none">
               {ROLES.map((r) => <option key={r} value={r}>{r === "admin" ? "Administrador" : r === "supervisor" ? "Supervisor" : "Operador"}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Instância WhatsApp</label>
+            {loadingChannels ? (
+              <div className="flex items-center gap-2 py-2.5 text-sm text-gray-400">
+                <div className="animate-spin w-3.5 h-3.5 border-2 border-gray-300 border-t-green-500 rounded-full" /> Carregando canais...
+              </div>
+            ) : (
+              <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none">
+                <option value="">Nenhuma (sem acesso a conversas)</option>
+                {channels.map((ch) => (
+                  <option key={ch.id} value={ch.id}>{getChannelLabel(ch)}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 

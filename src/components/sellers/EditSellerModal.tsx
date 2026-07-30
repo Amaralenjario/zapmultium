@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import toast from "react-hot-toast";
 
 const ROLES = ["operator", "supervisor", "admin"];
@@ -13,6 +13,19 @@ interface Seller {
   role: string;
   is_active: boolean;
   instancia: string | null;
+  evohub_channel_id?: string | null;
+}
+
+interface Channel {
+  id: string;
+  name: string;
+  displayPhone?: string;
+}
+
+interface PhoneMapEntry {
+  phoneId: string;
+  opName: string;
+  opColor: string;
 }
 
 export default function EditSellerModal({ seller, onClose, onUpdated }: { seller: Seller; onClose: () => void; onUpdated: () => void }) {
@@ -20,16 +33,37 @@ export default function EditSellerModal({ seller, onClose, onUpdated }: { seller
   const [email, setEmail] = useState(seller.email || "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState(seller.role);
-  const [instancia, setInstancia] = useState(seller.instancia || "");
+  const [selectedChannel, setSelectedChannel] = useState(seller.evohub_channel_id || "");
   const [isActive, setIsActive] = useState(seller.is_active);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(seller.avatar_url);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [phoneMap, setPhoneMap] = useState<Record<string, PhoneMapEntry>>({});
+  const [loadingChannels, setLoadingChannels] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/api/evohub/channels")
+      .then((r) => r.json())
+      .then((data) => {
+        setChannels(data.channels || []);
+        setPhoneMap(data.phoneMap || {});
+      })
+      .catch(() => {})
+      .finally(() => setLoadingChannels(false));
+  }, []);
+
+  const getChannelLabel = (ch: Channel) => {
+    const pm = phoneMap[ch.id];
+    if (pm?.opName) return `${pm.opName}${pm.phoneId ? " (" + pm.phoneId + ")" : ""}`;
+    if (ch.displayPhone) return `${ch.name} (${ch.displayPhone})`;
+    return ch.name;
+  };
 
   const handleSave = async () => {
     setSaving(true);
-    const body: any = { name, role, is_active: isActive, instancia };
+    const body: any = { name, role, is_active: isActive, evohub_channel_id: selectedChannel || null };
     if (email) body.email = email;
     if (password) body.password = password;
     if (avatarUrl !== seller.avatar_url) body.avatar_url = avatarUrl;
@@ -116,7 +150,18 @@ export default function EditSellerModal({ seller, onClose, onUpdated }: { seller
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Instância WhatsApp</label>
-            <input type="text" value={instancia} onChange={(e) => setInstancia(e.target.value)} placeholder="Ex: GABI - 8176" className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" />
+            {loadingChannels ? (
+              <div className="flex items-center gap-2 py-2.5 text-sm text-gray-400">
+                <div className="animate-spin w-3.5 h-3.5 border-2 border-gray-300 border-t-green-500 rounded-full" /> Carregando canais...
+              </div>
+            ) : (
+              <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none">
+                <option value="">Nenhuma (sem acesso a conversas)</option>
+                {channels.map((ch) => (
+                  <option key={ch.id} value={ch.id}>{getChannelLabel(ch)}</option>
+                ))}
+              </select>
+            )}
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="rounded" />

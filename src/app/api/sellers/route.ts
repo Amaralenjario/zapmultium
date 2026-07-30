@@ -8,16 +8,40 @@ const supabase = createClient(
 );
 
 export async function GET() {
-  // Buscar todos os profiles + dados da tabela vendedores
   const { data: profiles } = await supabase
     .from("profiles")
     .select("id, full_name, avatar_url, role, is_active, created_at");
 
+  const { data: sellerChannels } = await supabase.from("seller_channels").select("user_id, evohub_channel_id");
+
+  // Build channel map: user_id → evohub_channel_id
+  const channelMap: Record<string, string> = {};
+  for (const sc of sellerChannels || []) {
+    if (sc.user_id && sc.evohub_channel_id) channelMap[sc.user_id] = sc.evohub_channel_id;
+  }
+
+  // Fetch channel names from operations_channels
+  const { data: opChannels } = await supabase
+    .from("operations_channels")
+    .select("evohub_channel_id, evohub_channel_name, phone_number_id, operation:operation_id(name)")
+    .eq("is_active", true);
+
+  const channelNameMap: Record<string, { name: string; phoneId: string; opName: string }> = {};
+  for (const oc of opChannels || []) {
+    const op = Array.isArray(oc.operation) ? oc.operation[0] : oc.operation;
+    channelNameMap[oc.evohub_channel_id] = {
+      name: oc.evohub_channel_name || "",
+      phoneId: oc.phone_number_id || "",
+      opName: op?.name || "",
+    };
+  }
+
   const { data: sellers } = await supabase.from("vendedores").select("*");
 
-  // Merge
   const merged = (profiles || []).map((p) => {
     const seller = (sellers || []).find((s) => s.nome === p.full_name || s.id === p.id);
+    const chId = channelMap[p.id] || "";
+    const chInfo = chId ? channelNameMap[chId] : null;
     return {
       id: p.id,
       name: p.full_name,
@@ -25,14 +49,16 @@ export async function GET() {
       avatar_url: p.avatar_url,
       role: p.role,
       is_active: p.is_active,
-      instancia: seller?.instancia_evolution || null,
+      instancia: chInfo?.name || chInfo?.opName || seller?.instancia_evolution || null,
+      evohub_channel_id: chId || null,
       created_at: p.created_at,
     };
   });
 
-  // Também incluir vendedores sem profile
   for (const s of sellers || []) {
     if (!merged.find((m) => m.name === s.nome)) {
+      const chId = channelMap[s.id] || "";
+      const chInfo = chId ? channelNameMap[chId] : null;
       merged.push({
         id: s.id,
         name: s.nome,
@@ -40,7 +66,8 @@ export async function GET() {
         avatar_url: null,
         role: "operator",
         is_active: true,
-        instancia: s.instancia_evolution,
+        instancia: chInfo?.name || chInfo?.opName || s.instancia_evolution || null,
+        evohub_channel_id: chId || null,
         created_at: s.created_at,
       });
     }
@@ -50,12 +77,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { name, email, password, role } = await request.json();
+  const { name, email, password, role, evohub_channel_id } = await request.json();
   if (!email || !password) {
     return NextResponse.json({ error: "Email e senha obrigatórios" }, { status: 400 });
   }
 
-  // Criar usuário no Auth
   const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
@@ -67,12 +93,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: authError.message }, { status: 400 });
   }
 
-  // Criar perfil
+  const userId = authUser.user.id;
+
   await supabase.from("profiles").upsert({
-    id: authUser.user.id,
+    id: userId,
     full_name: name,
     role: role || "operator",
   });
 
-  return NextResponse.json({ id: authUser.user.id, name, email, role: role || "operator" }, { status: 201 });
+  // Save channel assignment
+  if (evohub_channel_id) {
+    await supabase.from("seller_channels").delete().eq("user_id", userId);
+    await supabase.from("seller_channels").insert({ user_id: userId, evohub_channel_id });
+  }
+
+  return NextResponse.json({ id: userId, name, email, role: role || "operator" }, { status: 201 });
 }
