@@ -71,8 +71,7 @@ export default function FluxosPage() {
 
   if (editing) {
     return (
-      <div className="relative h-[calc(100vh-5rem)] -m-8">
-        <button onClick={() => setEditing(null)} className="absolute top-3 left-3 z-10 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1 bg-white dark:bg-gray-900 px-3 py-1.5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
+      <div className="fixed inset-0 top-[4rem] z-20 bg-white dark:bg-gray-950">        <button onClick={() => setEditing(null)} className="absolute top-3 left-3 z-30 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1 bg-white dark:bg-gray-900 px-3 py-1.5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           Voltar
         </button>
