@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Avatar from "@/components/chat/Avatar";
 import CreateSellerModal from "@/components/sellers/CreateSellerModal";
 import EditSellerModal from "@/components/sellers/EditSellerModal";
@@ -18,6 +18,8 @@ interface Seller {
   created_at: string;
 }
 
+interface ChannelOption { id: string; label: string; }
+
 const roleLabels: Record<string, string> = {
   admin: "Administrador",
   supervisor: "Supervisor",
@@ -28,12 +30,32 @@ export default function VendedoresPage() {
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Seller | null>(null);
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
 
   const fetchSellers = async () => {
     const res = await fetch("/api/sellers");
     const data = await res.json();
-    setSellers(data);
+    if (Array.isArray(data)) setSellers(data);
   };
+
+  const fetchChannels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/evohub/channels");
+      const data = await res.json();
+      const chans = data.channels || [];
+      const pm = data.phoneMap || {};
+      setChannels(chans.map((ch: any) => {
+        const p = pm[ch.id];
+        const display = ch.displayPhone || ch.metadata?.meta_connection?.phone_number || "";
+        const label = p?.opName
+          ? (display ? `${p.opName} - ${display}` : `${p.opName} (${ch.name})`)
+          : (display ? `${ch.name} - ${display}` : ch.name);
+        return { id: ch.id, label };
+      }));
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchSellers(); fetchChannels(); }, [fetchChannels]);
 
   const handleDelete = async (seller: Seller) => {
     if (!confirm(`Excluir "${seller.name}" permanentemente?`)) return;
@@ -43,7 +65,16 @@ export default function VendedoresPage() {
     fetchSellers();
   };
 
-  useEffect(() => { fetchSellers(); }, []);
+  const handleAssignChannel = async (sellerId: string, channelId: string) => {
+    const res = await fetch(`/api/sellers/${sellerId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ evohub_channel_id: channelId || null }),
+    });
+    if (!res.ok) { toast.error("Erro ao vincular instância"); return; }
+    toast.success("Instância vinculada!");
+    fetchSellers();
+  };
 
   return (
     <div>
@@ -92,9 +123,16 @@ export default function VendedoresPage() {
                   }`}>{roleLabels[s.role] || s.role}</span>
                 </td>
                 <td className="p-4">
-                  {s.instancia ? (
-                    <span className="text-sm text-green-600 dark:text-green-400 font-medium">{s.instancia}</span>
-                  ) : <span className="text-gray-400">—</span>}
+                  <select
+                    value={s.evohub_channel_id || ""}
+                    onChange={(e) => handleAssignChannel(s.id, e.target.value)}
+                    className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:border-green-500 focus:ring-1 focus:ring-green-500/20 focus:outline-none max-w-[200px]"
+                  >
+                    <option value="">Nenhuma</option>
+                    {channels.map((ch) => (
+                      <option key={ch.id} value={ch.id}>{ch.label}</option>
+                    ))}
+                  </select>
                 </td>
                 <td className="p-4">
                   <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.is_active ? "text-green-600 dark:text-green-400" : "text-gray-400"}`}>
