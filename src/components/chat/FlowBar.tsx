@@ -58,8 +58,17 @@ export default function FlowBar({
   }, [conversationId]);
 
   const handleTrigger = async (flow: FlowCard) => {
-    // Show confirmation
     setConfirmFlow(flow);
+  };
+
+  const cancelExecution = async (execId: string) => {
+    await fetch("/api/flows/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ execution_id: execId }),
+    });
+    setProgress(null);
+    toast.success("Fluxo cancelado");
   };
 
   const doTrigger = async () => {
@@ -166,8 +175,11 @@ export default function FlowBar({
           {flows.length === 0 && (
             <span className="text-[11px] text-gray-400 py-1">Nenhum fluxo disponível</span>
           )}
+          </div>
+          <button onClick={() => progress && cancelExecution(progress.id)} className="ml-1 p-0.5 text-gray-400 hover:text-red-500 transition" title="Cancelar fluxo">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
-      </div>
 
       {confirmFlow && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setConfirmFlow(null)}>
