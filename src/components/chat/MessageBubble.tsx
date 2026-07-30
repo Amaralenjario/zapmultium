@@ -3,6 +3,7 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useState, useEffect } from "react";
+import AudioPlayer from "./AudioPlayer";
 
 interface Message {
   id: string;
@@ -118,13 +119,7 @@ function MediaContent({ messageId, content, type }: { messageId: string; content
   }
 
   if (type === "audio") {
-    return (
-      <div className="px-3.5 py-2">
-        <audio controls className="max-w-[260px] h-10" preload="metadata">
-          <source src={mediaUrl} />
-        </audio>
-      </div>
-    );
+    return <AudioPlayer src={mediaUrl} />;
   }
 
   if (type === "document") {
