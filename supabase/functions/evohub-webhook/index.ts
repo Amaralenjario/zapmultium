@@ -180,12 +180,13 @@ async function processWhatsAppMessages(payload: any) {
             if (existing && existing.length > 0) continue;
           }
 
+          const mediaId = msg.image?.id || msg.video?.id || msg.audio?.id || msg.document?.id || null;
           await supabase.from("messages").insert({
             conversation_id: convId,
             sender_type: "customer",
             content,
             content_type: contentType,
-            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId },
+            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId, media_id: mediaId },
             created_at: msg.timestamp
               ? new Date(parseInt(msg.timestamp) * 1000).toISOString()
               : new Date().toISOString(),
