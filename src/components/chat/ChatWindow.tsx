@@ -189,7 +189,9 @@ export default function ChatWindow({
   useEffect(() => {
     if (loading) return;
     const isInitial = messages.length > 0 && prevLength.current === 0;
-    bottomRef.current?.scrollIntoView({ behavior: isInitial ? "instant" : "smooth" });
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
     prevLength.current = messages.length;
   }, [messages, loading]);
 
