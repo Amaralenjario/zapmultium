@@ -78,28 +78,46 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const { name, email, password, role, evohub_channel_id } = await request.json();
+
   if (!email || !password) {
     return NextResponse.json({ error: "Email e senha obrigatórios" }, { status: 400 });
   }
 
-  const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: name },
-  });
-
-  if (authError) {
-    return NextResponse.json({ error: authError.message }, { status: 400 });
+  if (password.length < 6) {
+    return NextResponse.json({ error: "A senha deve ter pelo menos 6 caracteres" }, { status: 400 });
   }
 
-  const userId = authUser.user.id;
-
-  await supabase.from("profiles").upsert({
-    id: userId,
-    full_name: name,
-    role: role || "operator",
+  // Criar usuário no Auth com email auto-confirmado
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: email.trim().toLowerCase(),
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: name?.trim() || email },
   });
+
+  if (authError || !authData?.user) {
+    console.error("Erro ao criar auth user:", authError);
+    return NextResponse.json({
+      error: authError?.message || "Falha ao criar usuário. Verifique o email e a senha.",
+      code: authError?.status || 500,
+    }, { status: 400 });
+  }
+
+  const userId = authData.user.id;
+
+  // Criar perfil
+  const { error: profileError } = await supabase.from("profiles").upsert({
+    id: userId,
+    full_name: name?.trim() || email,
+    role: role || "operator",
+  }, { onConflict: "id" });
+
+  if (profileError) {
+    console.error("Erro ao criar profile:", profileError);
+    // Remove o auth user se o profile falhar (rollback)
+    await supabase.auth.admin.deleteUser(userId);
+    return NextResponse.json({ error: "Falha ao criar perfil do vendedor" }, { status: 500 });
+  }
 
   // Save channel assignment
   if (evohub_channel_id) {
@@ -107,5 +125,10 @@ export async function POST(request: Request) {
     await supabase.from("seller_channels").insert({ user_id: userId, evohub_channel_id });
   }
 
-  return NextResponse.json({ id: userId, name, email, role: role || "operator" }, { status: 201 });
+  return NextResponse.json({
+    id: userId,
+    name: name?.trim() || email,
+    email: email.trim().toLowerCase(),
+    role: role || "operator",
+  }, { status: 201 });
 }

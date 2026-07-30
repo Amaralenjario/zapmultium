@@ -9,6 +9,7 @@ interface Channel {
   id: string;
   name: string;
   displayPhone?: string;
+  metadata?: { meta_connection?: { phone_number?: string } };
 }
 
 interface PhoneMapEntry {
@@ -41,8 +42,11 @@ export default function CreateSellerModal({ onClose, onCreated }: { onClose: () 
 
   const getChannelLabel = (ch: Channel) => {
     const pm = phoneMap[ch.id];
-    if (pm?.opName) return `${pm.opName}${pm.phoneId ? " (" + pm.phoneId + ")" : ""}`;
-    if (ch.displayPhone) return `${ch.name} (${ch.displayPhone})`;
+    const displayNumber = ch.displayPhone || ch.metadata?.meta_connection?.phone_number || "";
+    if (pm?.opName) {
+      return displayNumber ? `${pm.opName} - ${displayNumber}` : `${pm.opName} (${ch.name})`;
+    }
+    if (displayNumber) return `${ch.name} - ${displayNumber}`;
     return ch.name;
   };
 
