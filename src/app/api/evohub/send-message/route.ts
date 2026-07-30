@@ -65,7 +65,7 @@ export async function POST(request: Request) {
         sender_type: "agent",
         content: message,
         content_type: "text",
-        metadata: { wa_message_id: data.messages?.[0]?.id, phone_number_id: phoneNumberId },
+        metadata: { wa_message_id: data.messages?.[0]?.id, phone_number_id: phoneNumberId, context: context ? { id: context } : undefined },
       });
 
       await supabase
