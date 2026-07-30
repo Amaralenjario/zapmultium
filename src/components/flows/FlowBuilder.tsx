@@ -25,10 +25,12 @@ const NODE_ICONS: Record<string, string> = {
   end: "⏹",
 };
 
-export default function FlowBuilder({ onSave }: { onSave?: (steps: FlowStep[]) => void }) {
-  const [steps, setSteps] = useState<FlowStep[]>([
-    { id: "start", type: "start", label: "Início", config: {} },
-  ]);
+export default function FlowBuilder({ onSave, initialSteps }: { onSave?: (steps: FlowStep[]) => void; initialSteps?: FlowStep[] }) {
+  const [steps, setSteps] = useState<FlowStep[]>(
+    initialSteps && initialSteps.length > 0 ? initialSteps : [
+      { id: "start", type: "start", label: "Início", config: {} },
+    ]
+  );
   const [editing, setEditing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>("start");
 
