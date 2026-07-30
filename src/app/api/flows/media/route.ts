@@ -9,81 +9,11 @@ const ALLOWED: Record<string, string[]> = {
   video: ["video/mp4", "video/webm", "video/3gpp", "video/quicktime", "video/x-msvideo"],
 };
 
-const TRANSLOADIT_KEY = process.env.TRANSLOADIT_AUTH_KEY;
-const TRANSLOADIT_SECRET = process.env.TRANSLOADIT_AUTH_SECRET;
-
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (serviceKey) return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
   return createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
-}
-
-async function uploadToStorage(buffer: Buffer, fileName: string, contentType: string) {
-  const supabase = getSupabase();
-  const { data: buckets } = await supabase.storage.listBuckets();
-  if (!buckets?.find((b) => b.name === BUCKET)) {
-    await supabase.storage.createBucket(BUCKET, { public: true, fileSizeLimit: 20 * 1024 * 1024 });
-  }
-  const { error } = await supabase.storage.from(BUCKET).upload(fileName, buffer, { contentType, upsert: true });
-  if (error) throw error;
-  const { data: publicUrl } = supabase.storage.from(BUCKET).getPublicUrl(fileName);
-  return publicUrl.publicUrl;
-}
-
-// ─── Transloadit: converte áudio para OGG Opus no upload ───
-async function convertAudioToOgg(audioUrl: string): Promise<string | null> {
-  if (!TRANSLOADIT_KEY || !TRANSLOADIT_SECRET) {
-    console.log("Transloadit: sem credenciais");
-    return null;
-  }
-
-  // Always convert audio - even if extension says .ogg, re-encode for voice note compatibility
-  console.log("Transloadit: convertendo", audioUrl.slice(0, 80));
-
-  const assembly = {
-    steps: {
-      encode: {
-        robot: "/audio/encode",
-        use: ":original",
-        preset: "opus",
-        ffmpeg_stack: "v6.0.0",
-        ffmpeg: { ac: 1, ar: 32000, b: "32k" },
-      },
-    },
-  };
-
-  const res = await fetch("https://api2.transloadit.com/assemblies", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Transloadit-Client": "zapmultium/1.0" },
-    body: JSON.stringify({
-      auth: { key: TRANSLOADIT_KEY, expires: new Date(Date.now() + 3600000).toISOString() },
-      steps: assembly.steps,
-      files: { imported: [{ url: audioUrl }] },
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    console.error("Transloadit: falha ao criar assembly", JSON.stringify(data).slice(0, 200));
-    return null;
-  }
-
-  console.log("Transloadit: assembly criado", data.assembly_id);
-
-  // Poll for result
-  for (let i = 0; i < 20; i++) {
-    await new Promise((r) => setTimeout(r, 1500));
-    const pollRes = await fetch(`https://api2.transloadit.com/assemblies/${data.assembly_id}`, {
-      headers: { "Transloadit-Client": "zapmultium/1.0" },
-    });
-    const pollData = await pollRes.json();
-    if (pollData.ok === "COMPLETED") {
-      return pollData.results?.encode?.[0]?.ssl_url || pollData.results?.encode?.[0]?.url || null;
-    }
-    if (pollData.error || pollData.ok === "ABORTED" || pollData.ok === "FAILED") return null;
-  }
-  return null;
 }
 
 export async function POST(request: Request) {
@@ -104,31 +34,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Tipo não permitido: ${file.type}` }, { status: 400 });
     }
 
+    const supabase = getSupabase();
+    const { data: buckets } = await supabase.storage.listBuckets();
+    if (!buckets?.find((b) => b.name === BUCKET)) {
+      await supabase.storage.createBucket(BUCKET, { public: true, fileSizeLimit: 20 * 1024 * 1024 });
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const ext = file.name.split(".").pop() || "bin";
     const fileName = `flow_${Date.now()}.${ext}`;
 
-    // Upload original to storage
-    const originalUrl = await uploadToStorage(buffer, fileName, file.type);
+    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(fileName, buffer, {
+      contentType: file.type,
+      upsert: true,
+    });
 
-    let finalUrl = originalUrl;
-    let converted = false;
+    if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
-    // Convert audio to OGG Opus on upload
-    if (mediaType === "audio") {
-      const oggUrl = await convertAudioToOgg(originalUrl);
-      if (oggUrl) {
-        const oggRes = await fetch(oggUrl);
-        if (oggRes.ok) {
-          const oggBuffer = Buffer.from(await oggRes.arrayBuffer());
-          finalUrl = await uploadToStorage(oggBuffer, `flow_${Date.now()}.ogg`, "audio/ogg");
-          converted = true;
-          console.log("Audio convertido para OGG:", finalUrl.slice(0, 80));
-        }
-      }
-    }
+    const { data: publicUrl } = supabase.storage.from(BUCKET).getPublicUrl(fileName);
 
-    return NextResponse.json({ url: finalUrl, type: mediaType, name: file.name, size: file.size, converted });
+    return NextResponse.json({ url: publicUrl.publicUrl, type: mediaType, name: file.name, size: file.size });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
