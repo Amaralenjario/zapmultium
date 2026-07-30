@@ -49,34 +49,19 @@ export async function listChannelsForUser(): Promise<EvoHubChannel[]> {
 
   const allChannels = await listAllChannels();
 
-  let filtered: EvoHubChannel[];
   if (profile?.role === "admin" || profile?.role === "supervisor") {
-    filtered = allChannels;
-  } else {
-    const { data: sellerChannels } = await supabase
-      .from("seller_channels")
-      .select("evohub_channel_id")
-      .eq("user_id", user.id);
-
-    if (!sellerChannels || sellerChannels.length === 0) return [];
-
-    const allowedIds = new Set(sellerChannels.map((s) => s.evohub_channel_id));
-    filtered = allChannels.filter((ch) => allowedIds.has(ch.id));
+    return allChannels;
   }
 
-  // Buscar detalhes de cada canal para phone_number e waba_id
-  const channelsWithDetails = await Promise.all(
-    filtered.map(async (ch) => {
-      try {
-        const detail = await getChannel(ch.id);
-        return detail || ch;
-      } catch {
-        return ch;
-      }
-    })
-  );
+  const { data: sellerChannels } = await supabase
+    .from("seller_channels")
+    .select("evohub_channel_id")
+    .eq("user_id", user.id);
 
-  return channelsWithDetails;
+  if (!sellerChannels || sellerChannels.length === 0) return [];
+
+  const allowedIds = new Set(sellerChannels.map((s) => s.evohub_channel_id));
+  return allChannels.filter((ch) => allowedIds.has(ch.id));
 }
 
 export async function getChannel(id: string): Promise<EvoHubChannel | null> {

@@ -53,8 +53,12 @@ export default function WhatsappPageClient({
     const res = await fetch("/api/evohub/channels");
     if (res.ok) {
       const data = await res.json();
-      setChannels(data.channels);
-      setPhoneMap(data.phoneMap);
+      if (data.channels && data.channels.length > 0) {
+        setChannels(data.channels);
+      }
+      if (data.phoneMap) {
+        setPhoneMap(data.phoneMap);
+      }
     }
   }, []);
 
