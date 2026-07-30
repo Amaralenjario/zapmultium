@@ -16,9 +16,9 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex bg-gray-50 dark:bg-gray-950 min-h-screen">
+    <div className="flex bg-gray-50 dark:bg-gray-950 min-h-screen overflow-x-hidden">
       <Sidebar />
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1 p-8 overflow-x-hidden">{children}</main>
       <FlowScheduler />
     </div>
   );

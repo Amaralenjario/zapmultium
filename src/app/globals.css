@@ -40,3 +40,9 @@
 .dark * {
   scrollbar-color: #374151 transparent;
 }
+
+/* Previne scroll horizontal em todo o sistema */
+body,
+html {
+  overflow-x: hidden;
+}
