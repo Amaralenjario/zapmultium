@@ -187,7 +187,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
       )}
 
       {/* Messages */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2">
+      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin w-8 h-8 border-[3px] border-gray-300 border-t-[#075e54] dark:border-gray-600 dark:border-t-green-400 rounded-full" />
@@ -202,7 +202,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
             </div>
           </div>
         ) : (
-          <div className="py-2">
+          <div className="mt-auto py-2">
             <div className="flex justify-center mb-3">
               <span className="text-[11px] bg-white/90 dark:bg-[#182229] text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">As mensagens são criptografadas de ponta a ponta</span>
             </div>
