@@ -54,12 +54,33 @@ export default function CrmKanban() {
   const supabase = createClient();
 
   const fetchAll = useCallback(async () => {
-    const [leadsRes, colsRes, tagsRes] = await Promise.all([
+    const [leadsRes, colsRes, tagsRes, custRes] = await Promise.all([
       supabase.from("leads").select("*, lead_tags(tag_id, tag:crm_tags(id, name, color))").order("created_at", { ascending: false }),
       fetch("/api/crm/columns").then((r) => r.json()),
       fetch("/api/crm/tags").then((r) => r.json()),
+      supabase.from("customers").select("name, phone, last_interaction_at").order("last_interaction_at", { ascending: false }),
     ]);
-    setLeads(leadsRes.data || []);
+    
+    const existingLeads = leadsRes.data || [];
+    const existingPhones = new Set(existingLeads.map((l: any) => l.phone));
+    
+    // Add WhatsApp customers as leads if they don't have a lead entry yet
+    const customersAsLeads = (custRes.data || [])
+      .filter((c: any) => c.phone && !existingPhones.has(c.phone))
+      .map((c: any) => ({
+        id: `customer_${c.phone}`,
+        name: c.name || c.phone,
+        phone: c.phone,
+        email: null,
+        source: "whatsapp",
+        status: "new",
+        priority: "normal",
+        notes: null,
+        created_at: c.last_interaction_at || new Date().toISOString(),
+        lead_tags: [],
+      }));
+    
+    setLeads([...existingLeads, ...customersAsLeads]);
     if (Array.isArray(colsRes)) setColumns(colsRes);
     if (Array.isArray(tagsRes)) setTags(tagsRes);
     setLoading(false);
