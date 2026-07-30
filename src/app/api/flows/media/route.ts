@@ -52,8 +52,28 @@ export async function POST(request: Request) {
     if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
     const { data: publicUrl } = supabase.storage.from(BUCKET).getPublicUrl(fileName);
+    let finalUrl = publicUrl.publicUrl;
 
-    return NextResponse.json({ url: publicUrl.publicUrl, type: mediaType, name: file.name, size: file.size });
+    // For audio: convert to OGG via Edge Function (timeout 8s)
+    if (mediaType === "audio" && !fileName.endsWith(".ogg") && !fileName.endsWith(".opus")) {
+      const edgeUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/convert-audio`;
+      try {
+        const efRes = await Promise.race([
+          fetch(edgeUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}` },
+            body: JSON.stringify({ fileUrl: finalUrl }),
+          }),
+          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+        ]);
+        const efData = await (efRes as Response).json();
+        if (efData.oggUrl) finalUrl = efData.oggUrl;
+      } catch (e) {
+        console.log("Audio conversion skipped:", (e as Error)?.message || "timeout");
+      }
+    }
+
+    return NextResponse.json({ url: finalUrl, type: mediaType, name: file.name, size: file.size });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
