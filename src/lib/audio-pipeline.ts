@@ -1,7 +1,43 @@
-// Audio Pipeline - upload via EvoHub media endpoint
+// Audio Pipeline - upload Meta → media_id → audio nativo
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 const EVOHUB_API_KEY = process.env.EVOHUB_API_KEY;
+
+// Get Meta token: try stored in DB, fallback to EvoHub API
+async function getMetaToken(phoneNumberId: string): Promise<string | null> {
+  const { createClient } = await import("@supabase/supabase-js");
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  // 1) Check stored token
+  const { data } = await supabase
+    .from("operations_channels")
+    .select("meta_token, evohub_channel_id")
+    .eq("phone_number_id", phoneNumberId)
+    .maybeSingle();
+
+  if (data?.meta_token) return data.meta_token;
+
+  // 2) Fetch from EvoHub and store for next time
+  if (data?.evohub_channel_id && EVOHUB_API_KEY) {
+    try {
+      const res = await fetch(`${EVOHUB_API_URL}/api/v1/channels/${data.evohub_channel_id}`, {
+        headers: { Authorization: `Bearer ${EVOHUB_API_KEY}` },
+      });
+      const ch = await res.json();
+      const token = ch?.token || null;
+      if (token) {
+        await supabase.from("operations_channels").update({ meta_token: token }).eq("phone_number_id", phoneNumberId);
+        return token;
+      }
+    } catch {}
+  }
+
+  return null;
+}
 
 export async function processAndSendMedia(
   fileUrl: string,
@@ -14,9 +50,7 @@ export async function processAndSendMedia(
     if (mediaType !== "audio") {
       const body: any = { messaging_product: "whatsapp", to, type: mediaType === "video" ? "video" : mediaType, [mediaType]: { link: fileUrl } };
       const res = await fetch(`${EVOHUB_API_URL}/meta/${phoneNumberId}/messages`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       const data = await res.json();
       const wamid = data?.messages?.[0]?.id;
@@ -25,61 +59,46 @@ export async function processAndSendMedia(
       return { waMessageId: wamid };
     }
 
-    // ─── Audio: upload via EvoHub media endpoint → media_id → audio nativo ───
+    // ─── Audio: get Meta token → upload Meta → media_id → audio nativo ───
     const dl = await fetch(fileUrl);
     if (!dl.ok) throw new Error(`Download: ${dl.status}`);
     const buffer = Buffer.from(await dl.arrayBuffer());
     const contentType = dl.headers.get("content-type") || "audio/ogg";
     const isOgg = contentType.includes("ogg") || contentType.includes("opus");
 
-    // Try EvoHub media endpoint with API key (platform-level auth)
-    const form = new FormData();
-    form.append("file", new Blob([buffer], { type: contentType }), "audio.ogg");
-    form.append("type", contentType);
-    form.append("messaging_product", "whatsapp");
+    const metaToken = await getMetaToken(phoneNumberId);
+    if (metaToken) {
+      // Upload to Meta with real token
+      const form = new FormData();
+      form.append("file", new Blob([buffer], { type: contentType }), "audio.ogg");
+      form.append("type", contentType);
+      form.append("messaging_product", "whatsapp");
 
-    // Tenta com a API key do EvoHub (token de plataforma)
-    const uploadToken = EVOHUB_API_KEY || channelToken;
-    const uploadRes = await fetch(`${EVOHUB_API_URL}/meta/${phoneNumberId}/media`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${uploadToken}` },
-      body: form,
-    });
-    const uploadData = await uploadRes.json();
-
-    let mediaId: string | null = uploadData?.id || null;
-
-    // Se EvoHub não aceitar, tenta Meta direto com channel token
-    if (!mediaId) {
-      const metaRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/media`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${channelToken}` },
-        body: form,
+      const uploadRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/media`, {
+        method: "POST", headers: { Authorization: `Bearer ${metaToken}` }, body: form,
       });
-      const metaData = await metaRes.json();
-      mediaId = metaData?.id || null;
+      const uploadData = await uploadRes.json();
+      if (uploadRes.ok && uploadData.id) {
+        const sendBody = { type: "audio", audio: { id: uploadData.id, voice: isOgg || undefined } };
+        const sendRes = await fetch(`${EVOHUB_API_URL}/meta/${phoneNumberId}/messages`, {
+          method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ messaging_product: "whatsapp", to, ...sendBody }),
+        });
+        const sendData = await sendRes.json();
+        const wamid = sendData?.messages?.[0]?.id;
+        if (wamid) return { waMessageId: wamid };
+      }
     }
 
-    // Send
-    const sendBody: any = { messaging_product: "whatsapp", to };
-    if (mediaId) {
-      sendBody.type = "audio";
-      sendBody.audio = { id: mediaId, voice: isOgg || undefined };
-    } else {
-      sendBody.type = "document";
-      sendBody.document = { link: fileUrl, filename: "audio.mp3" };
-    }
-
-    const sendRes = await fetch(`${EVOHUB_API_URL}/meta/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify(sendBody),
+    // Fallback: document
+    const fallbackBody = { messaging_product: "whatsapp", to, type: "document", document: { link: fileUrl, filename: "audio.mp3" } };
+    const fallbackRes = await fetch(`${EVOHUB_API_URL}/meta/${phoneNumberId}/messages`, {
+      method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" }, body: JSON.stringify(fallbackBody),
     });
-    const sendData = await sendRes.json();
-    const wamid = sendData?.messages?.[0]?.id;
+    const fallbackData = await fallbackRes.json();
+    const wamid = fallbackData?.messages?.[0]?.id;
     if (wamid) return { waMessageId: wamid };
-    if (!sendRes.ok) throw new Error(JSON.stringify(sendData));
-    return { waMessageId: wamid };
+    throw new Error(JSON.stringify(fallbackData));
   } catch (err: any) {
     return { waMessageId: null, error: err.message };
   }
