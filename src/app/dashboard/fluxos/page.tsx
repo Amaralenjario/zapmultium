@@ -20,6 +20,9 @@ export default function FluxosPage() {
   const [creating, setCreating] = useState(false);
   const [nameModal, setNameModal] = useState(false);
   const [newFlowName, setNewFlowName] = useState("");
+  const [tab, setTab] = useState<"flows" | "logs">("flows");
+  const [executions, setExecutions] = useState<any[]>([]);
+  const [logsFilter, setLogsFilter] = useState("all");
 
   const handleCreate = async () => {
     if (!newFlowName.trim()) return;
@@ -69,6 +72,22 @@ export default function FluxosPage() {
     fetchFlows();
   };
 
+  const fetchExecutions = async () => {
+    const res = await fetch(`/api/flows/logs?status=${logsFilter}&limit=50`);
+    if (res.ok) setExecutions(await res.json());
+  };
+
+  useEffect(() => { fetchExecutions(); const i = setInterval(fetchExecutions, 3000); return () => clearInterval(i); }, [logsFilter]);
+
+  const cancelExecution = async (execId: string) => {
+    await fetch(`/api/flows/advance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ execution_id: execId }),
+    });
+    fetchExecutions();
+  };
+
   if (editing) {
     return (
       <div className="fixed inset-0 top-[4rem] z-20 bg-white dark:bg-gray-950">        <button onClick={() => setEditing(null)} className="absolute top-3 left-3 z-30 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1 bg-white dark:bg-gray-900 px-3 py-1.5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
@@ -86,10 +105,13 @@ export default function FluxosPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Fluxos</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">{flows.length} fluxo{flows.length !== 1 ? "s" : ""}</p>
+          <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+            <button onClick={() => setTab("flows")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${tab === "flows" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500"}`}>Fluxos</button>
+            <button onClick={() => setTab("logs")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${tab === "logs" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500"}`}>Execuções</button>
+          </div>
         </div>
         <button onClick={() => setNameModal(true)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25 flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -97,43 +119,78 @@ export default function FluxosPage() {
         </button>
       </div>
 
-      {flows.length === 0 ? (
-        <div className="text-center py-20 text-gray-400">
-          <svg className="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-          <p className="text-lg">Nenhum fluxo criado</p>
-          <p className="text-sm mt-1">Crie seu primeiro fluxo de atendimento automatizado</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {flows.map((flow) => (
-            <div key={flow.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:shadow-md transition cursor-pointer" onClick={() => setEditing(flow)}>
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{flow.name}</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(flow.created_at).toLocaleDateString("pt-BR")}
-                  </p>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                  flow.status === "active" ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400" :
-                  flow.status === "draft" ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400" :
-                  "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
-                }`}>
-                  {flow.status === "active" ? "Ativo" : flow.status === "draft" ? "Rascunho" : "Inativo"}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
-                <span className="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{flow.trigger_type}</span>
-                <span>{(flow.config?.steps?.length || 1) - 1} etapa(s)</span>
-              </div>
-
-              <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
-                <button onClick={(e) => { e.stopPropagation(); setEditing(flow); }} className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">Editar</button>
-                <button onClick={(e) => { e.stopPropagation(); handleDelete(flow); }} className="text-xs font-medium text-red-400 hover:text-red-500">Excluir</button>
-              </div>
+      {tab === "flows" && (
+        <>
+          {flows.length === 0 ? (
+            <div className="text-center py-20 text-gray-400">
+              <svg className="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              <p className="text-lg">Nenhum fluxo criado</p>
+              <p className="text-sm mt-1">Crie seu primeiro fluxo de atendimento automatizado</p>
             </div>
-          ))}
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {flows.map((flow) => (
+                <div key={flow.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:shadow-md transition cursor-pointer" onClick={() => setEditing(flow)}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{flow.name}</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">{new Date(flow.created_at).toLocaleDateString("pt-BR")}</p>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${flow.status === "active" ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400" : flow.status === "draft" ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400" : "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"}`}>{flow.status === "active" ? "Ativo" : flow.status === "draft" ? "Rascunho" : "Inativo"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                    <span className="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{flow.trigger_type}</span>
+                    <span>{(flow.config?.steps?.length || 1) - 1} etapa(s)</span>
+                  </div>
+                  <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+                    <button onClick={(e) => { e.stopPropagation(); setEditing(flow); }} className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">Editar</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(flow); }} className="text-xs font-medium text-red-400 hover:text-red-500">Excluir</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "logs" && (
+        <div>
+          <div className="flex gap-1 mb-3">
+            {(["all", "running", "paused", "completed", "error"] as const).map((s) => (
+              <button key={s} onClick={() => setLogsFilter(s)} className={`text-[11px] px-3 py-1.5 rounded-lg font-medium transition ${logsFilter === s ? "bg-emerald-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"}`}>
+                {s === "all" ? "Todas" : s === "running" ? "Em execução" : s === "paused" ? "Pausadas" : s === "completed" ? "Concluídas" : "Erros"}
+              </button>
+            ))}
+          </div>
+
+          {executions.length === 0 ? (
+            <div className="text-center py-12 text-gray-400 text-sm">Nenhuma execução encontrada</div>
+          ) : (
+            <div className="space-y-2">
+              {executions.map((exec) => (
+                <div key={exec.id} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${exec.status === "running" ? "bg-blue-500 animate-pulse" : exec.status === "paused" ? "bg-amber-500" : exec.status === "completed" ? "bg-emerald-500" : "bg-red-500"}`} />
+                      <span className="font-medium text-sm text-gray-900 dark:text-white">{exec.flowName}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${exec.status === "running" ? "bg-blue-100 text-blue-600 dark:bg-blue-600/20 dark:text-blue-400" : exec.status === "paused" ? "bg-amber-100 text-amber-600 dark:bg-amber-600/20 dark:text-amber-400" : exec.status === "completed" ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-600/20 dark:text-emerald-400" : "bg-red-100 text-red-600 dark:bg-red-600/20 dark:text-red-400"}`}>
+                        {exec.status === "running" ? "Executando" : exec.status === "paused" ? "Pausado" : exec.status === "completed" ? "Concluído" : "Erro"}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-gray-400">{new Date(exec.startedAt).toLocaleString("pt-BR")}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
+                    <span>{exec.customerName}</span>
+                    {exec.customerPhone && <span className="text-gray-400">{exec.customerPhone}</span>}
+                    {exec.nextStepAt && exec.status === "paused" && (
+                      <span className="text-amber-500">Retoma {new Date(exec.nextStepAt).toLocaleTimeString("pt-BR")}</span>
+                    )}
+                    {exec.error && <span className="text-red-400 truncate max-w-[300px]">{exec.error}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
