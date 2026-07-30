@@ -8,7 +8,7 @@ export default function ChatPageClient() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
 
   return (
-    <div className="-m-8 h-[calc(100vh)] flex overflow-hidden">
+    <div className="flex h-[calc(100vh-6rem)]" style={{ overflow: "hidden" }}>
       <div className="w-[380px] flex-shrink-0 border-r border-gray-200 dark:border-[#222d34] overflow-hidden">
         <ConversationList
           selectedId={selectedConversation?.id || null}
