@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Avatar from "@/components/chat/Avatar";
 import CreateSellerModal from "@/components/sellers/CreateSellerModal";
 import EditSellerModal from "@/components/sellers/EditSellerModal";
+import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 
 interface Seller {
@@ -65,19 +66,17 @@ export default function VendedoresPage() {
     fetchSellers();
   };
 
+  const supabaseClient = createClient();
+
   const handleAssignChannel = async (sellerId: string, channelId: string) => {
-    // Update UI immediately (optimistic)
+    // Update UI immediately
     setSellers((prev) => prev.map((s) => s.id === sellerId ? { ...s, evohub_channel_id: channelId || null } : s));
 
-    const res = await fetch(`/api/sellers/${sellerId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evohub_channel_id: channelId || null }),
-    });
-    if (!res.ok) {
-      toast.error("Erro ao vincular instância");
-      fetchSellers(); // revert on error
-      return;
+    const { error } = await supabaseClient.from("seller_channels").delete().eq("user_id", sellerId);
+    if (error) { toast.error(`Erro: ${error.message}`); fetchSellers(); return; }
+    if (channelId) {
+      const { error: insErr } = await supabaseClient.from("seller_channels").insert({ user_id: sellerId, evohub_channel_id: channelId });
+      if (insErr) { toast.error(`Erro: ${insErr.message}`); fetchSellers(); return; }
     }
     toast.success("Instância vinculada!");
   };
