@@ -23,6 +23,8 @@ export default function FluxosPage() {
   const [tab, setTab] = useState<"flows" | "logs">("flows");
   const [executions, setExecutions] = useState<any[]>([]);
   const [logsFilter, setLogsFilter] = useState("all");
+  const [importModal, setImportModal] = useState(false);
+  const [importCode, setImportCode] = useState("");
 
   const handleCreate = async () => {
     if (!newFlowName.trim()) return;
@@ -72,6 +74,30 @@ export default function FluxosPage() {
     fetchFlows();
   };
 
+  const handleImportFlow = () => {
+    setImportCode("");
+    setImportModal(true);
+  };
+
+  const doImport = async () => {
+    if (!importCode.trim()) return;
+    const { importFlowV1 } = await import("@/lib/flow-export");
+    const result = importFlowV1(importCode.trim());
+    if (!result) { toast.error("Código FLOWV1 inválido"); return; }
+
+    const res = await fetch("/api/flows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: result.name, config: { steps: result.steps, edges: result.edges } }),
+    });
+    if (!res.ok) { toast.error("Erro ao importar"); return; }
+    const flow = await res.json();
+    toast.success("Fluxo importado!");
+    setImportModal(false);
+    setEditing(flow);
+    fetchFlows();
+  };
+
   const fetchExecutions = async () => {
     const res = await fetch(`/api/flows/logs?status=${logsFilter}&limit=50`);
     if (res.ok) setExecutions(await res.json());
@@ -113,10 +139,16 @@ export default function FluxosPage() {
             <button onClick={() => setTab("logs")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${tab === "logs" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500"}`}>Execuções</button>
           </div>
         </div>
-        <button onClick={() => setNameModal(true)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25 flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          Novo fluxo
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleImportFlow} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+            Importar
+          </button>
+          <button onClick={() => setNameModal(true)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25 flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Novo fluxo
+          </button>
+        </div>
       </div>
 
       {tab === "flows" && (
@@ -211,6 +243,27 @@ export default function FluxosPage() {
             <div className="flex gap-3 mt-5">
               <button onClick={() => { setNameModal(false); setNewFlowName(""); }} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
               <button onClick={handleCreate} disabled={!newFlowName.trim()} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">Criar fluxo</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Importar Fluxo</h2>
+            <p className="text-xs text-gray-500 mb-3">Cole o código FLOWV1 exportado de outra ferramenta</p>
+            <textarea
+              value={importCode}
+              onChange={(e) => setImportCode(e.target.value)}
+              placeholder="FLOWV1:eyJ2ZXJzaW9uIjoxLC..."
+              rows={6}
+              className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none font-mono text-xs"
+              autoFocus
+            />
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setImportModal(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+              <button onClick={doImport} disabled={!importCode.trim()} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">Importar</button>
             </div>
           </div>
         </div>

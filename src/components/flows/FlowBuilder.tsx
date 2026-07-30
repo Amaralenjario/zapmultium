@@ -317,6 +317,20 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
     onSave?.({ steps, edges });
   };
 
+  const handleExport = async () => {
+    if (!rfInstance) return;
+    const flow = rfInstance.toObject();
+    const steps: FlowStep[] = flow.nodes.map((n) => ({ id: n.id, type: n.data.type, label: n.data.label, config: n.data.config }));
+    const { exportFlowV1 } = await import("@/lib/flow-export");
+    const code = exportFlowV1("Fluxo", steps as any, flow.edges as any);
+    try {
+      await navigator.clipboard.writeText(code);
+      alert("Código FLOWV1 copiado para a área de transferência!");
+    } catch {
+      alert("Código FLOWV1:\n\n" + code.slice(0, 500) + "...");
+    }
+  };
+
   const types = ["message", "image", "video", "audio", "wait", "condition"];
 
   return (
@@ -344,9 +358,12 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
             </div>
           );
         })}
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+        <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-1">
           <button onClick={handleSave} className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-semibold text-white hover:bg-emerald-500 transition">
             Salvar fluxo
+          </button>
+          <button onClick={handleExport} className="w-full rounded-lg border border-gray-200 dark:border-gray-600 px-3 py-2 text-[11px] font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+            Exportar FLOWV1
           </button>
         </div>
       </div>
