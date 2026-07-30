@@ -117,7 +117,7 @@ export default function ChatWindow({
     fetch("/api/evohub/send-reaction", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phoneNumberId, messageId: msg.metadata.wa_message_id, emoji }),
+      body: JSON.stringify({ phoneNumberId, messageId: msg.metadata.wa_message_id, emoji, to: customerPhone }),
     }).catch(() => {});
     const reactions = { ...(msg.metadata?.reactions || {}), "me": emoji };
     setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, metadata: { ...m.metadata, reactions } } : m));

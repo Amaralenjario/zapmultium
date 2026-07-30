@@ -13,8 +13,8 @@ const CHANNEL_MAP: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    const { phoneNumberId, messageId, emoji } = await request.json();
-    if (!phoneNumberId || !messageId || !emoji || !KEY) {
+    const { phoneNumberId, messageId, emoji, to } = await request.json();
+    if (!phoneNumberId || !messageId || !emoji || !to || !KEY) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
     }
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         messaging_product: "whatsapp",
         recipient_type: "individual",
-        to: phoneNumberId,
+        to,
         type: "reaction",
         reaction: {
           message_id: messageId,

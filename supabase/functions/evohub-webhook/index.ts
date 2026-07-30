@@ -194,7 +194,8 @@ async function processWhatsAppMessages(payload: any) {
               .limit(1);
             if (targetMsgs && targetMsgs.length > 0) {
               const target = targetMsgs[0];
-              const reactions = target.metadata?.reactions || {};
+              const meta = target.metadata || {};
+              const reactions = meta.reactions || {};
               if (emoji === "") {
                 // Remover reação
                 delete reactions[msg.from || "unknown"];
@@ -202,7 +203,7 @@ async function processWhatsAppMessages(payload: any) {
                 reactions[msg.from || "unknown"] = emoji;
               }
               await supabase.from("messages").update({
-                metadata: { ...target.metadata, reactions },
+                metadata: { ...meta, reactions },
               }).eq("id", target.id);
             }
           }
