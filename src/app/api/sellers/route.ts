@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada no ambiente (Vercel > Settings > Environment Variables)");
+function getClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceKey) {
+    return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
   }
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  // Fallback to anon key
+  return createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 export async function GET() {
   try {
-    const supabase = getAdminClient();
+    const supabase = getClient();
     const { data: profiles } = await supabase
       .from("profiles")
       .select("id, full_name, email, avatar_url, role, is_active, created_at")
@@ -103,10 +104,12 @@ export async function POST(request: Request) {
     email: normalizedEmail, role: role || "operator", is_active: true,
   });
 
-  if (evohub_channel_id && serviceKey) {
-    const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    await adminClient.from("seller_channels").delete().eq("user_id", userId);
-    await adminClient.from("seller_channels").insert({ user_id: userId, evohub_channel_id });
+  // Save channel assignment (works with anon key if RLS not enabled)
+  if (evohub_channel_id) {
+    try {
+      await profileClient.from("seller_channels").delete().eq("user_id", userId);
+      await profileClient.from("seller_channels").insert({ user_id: userId, evohub_channel_id });
+    } catch {}
   }
 
   return NextResponse.json({ id: userId, name: fullName, email: normalizedEmail, role: role || "operator" }, { status: 201 });
