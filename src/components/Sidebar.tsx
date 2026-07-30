@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const menuItems = [
   {
@@ -30,11 +31,12 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 min-h-screen border-r border-gray-800 bg-gray-900 flex flex-col">
-      <div className="p-6 border-b border-gray-800">
-        <Link href="/dashboard" className="text-xl font-bold text-green-500">
+    <aside className="w-64 min-h-screen border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col">
+      <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+        <Link href="/dashboard" className="text-xl font-bold text-green-600 dark:text-green-500">
           ZapMultium
         </Link>
+        <ThemeToggle />
       </div>
 
       <nav className="flex-1 p-4 space-y-1">
@@ -46,8 +48,8 @@ export default function Sidebar() {
               href={item.href}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${
                 isActive
-                  ? "bg-green-600/20 text-green-500"
-                  : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                  ? "bg-green-50 text-green-600 dark:bg-green-600/20 dark:text-green-500"
+                  : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-white"
               }`}
             >
               <item.icon />
@@ -57,8 +59,8 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t border-gray-800">
-        <span className="text-xs text-gray-500">ZapMultium v1.0</span>
+      <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+        <span className="text-xs text-gray-400 dark:text-gray-500">ZapMultium v1.0</span>
       </div>
     </aside>
   );

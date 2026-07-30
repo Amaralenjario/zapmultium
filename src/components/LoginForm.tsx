@@ -32,7 +32,7 @@ export default function LoginForm() {
   return (
     <form onSubmit={handleLogin} className="space-y-5">
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="email" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
           Email
         </label>
         <input
@@ -42,12 +42,12 @@ export default function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           placeholder="seu@email.com"
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition"
+          className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none transition"
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="password" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
           Senha
         </label>
         <input
@@ -57,7 +57,7 @@ export default function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           placeholder="••••••••"
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition"
+          className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none transition"
         />
       </div>
 

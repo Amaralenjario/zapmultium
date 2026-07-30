@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -16,10 +17,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR">
-      <body className={`min-h-screen bg-gray-950 text-white antialiased ${inter.variable} font-sans`}>
-        <Toaster position="top-right" />
-        {children}
+    <html lang="pt-BR" className="dark">
+      <body className={`min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-white antialiased ${inter.variable} font-sans`}>
+        <ThemeProvider>
+          <Toaster position="top-right" />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

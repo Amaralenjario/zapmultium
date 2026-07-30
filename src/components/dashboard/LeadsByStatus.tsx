@@ -1,6 +1,7 @@
 "use client";
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { useTheme } from "@/components/ThemeProvider";
 
 const COLORS: Record<string, string> = {
   new: "#3b82f6",
@@ -19,6 +20,9 @@ const LABELS: Record<string, string> = {
 };
 
 export default function LeadsByStatus({ data }: { data: { status: string; count: number }[] }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   const chartData = data.map((d) => ({
     name: LABELS[d.status] || d.status,
     value: d.count,
@@ -27,9 +31,9 @@ export default function LeadsByStatus({ data }: { data: { status: string; count:
 
   if (chartData.every((d) => d.value === 0)) {
     return (
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-        <h3 className="text-sm font-medium text-gray-400 mb-4">Leads por status</h3>
-        <div className="h-48 flex items-center justify-center text-gray-500 text-sm">
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6">
+        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Leads por status</h3>
+        <div className="h-48 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
           Nenhum lead ainda
         </div>
       </div>
@@ -37,8 +41,8 @@ export default function LeadsByStatus({ data }: { data: { status: string; count:
   }
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-      <h3 className="text-sm font-medium text-gray-400 mb-4">Leads por status</h3>
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6">
+      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Leads por status</h3>
       <div className="flex items-center gap-4">
         <div className="w-40 h-40 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
@@ -49,7 +53,12 @@ export default function LeadsByStatus({ data }: { data: { status: string; count:
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: "8px", color: "#f3f4f6" }}
+                contentStyle={{
+                  background: isDark ? "#111827" : "#ffffff",
+                  border: `1px solid ${isDark ? "#374151" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  color: isDark ? "#f3f4f6" : "#111827",
+                }}
               />
             </PieChart>
           </ResponsiveContainer>
@@ -59,9 +68,9 @@ export default function LeadsByStatus({ data }: { data: { status: string; count:
             <div key={entry.name} className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full" style={{ background: entry.color }} />
-                <span className="text-gray-400">{entry.name}</span>
+                <span className="text-gray-500 dark:text-gray-400">{entry.name}</span>
               </div>
-              <span className="font-medium">{entry.value}</span>
+              <span className="font-medium text-gray-900 dark:text-white">{entry.value}</span>
             </div>
           ))}
         </div>
