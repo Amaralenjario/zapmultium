@@ -93,9 +93,8 @@ export default function ChatWindow({
         .eq("sender_type", "customer")
         .is("read_at", null);
 
-      // Enviar read receipt pra Meta via EvoHub
+      // Enviar read receipt pra Meta
       if (phoneNumberId) {
-        const KEY = process.env.NEXT_PUBLIC_EVOHUB_API_KEY;
         fetch("/api/evohub/mark-read", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
