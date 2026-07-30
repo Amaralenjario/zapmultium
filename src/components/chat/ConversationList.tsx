@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "./Avatar";
-import { getInstanceName } from "@/lib/instances";
 
 export interface Customer {
   name: string;
@@ -31,6 +30,7 @@ export default function ConversationList({
   onSelect: (conv: Conversation) => void;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
   const supabase = createClient();
 
   useEffect(() => {
@@ -43,7 +43,26 @@ export default function ConversationList({
       setConversations(data || []);
     };
 
+    const fetchOperations = async () => {
+      const { data } = await supabase
+        .from("operations_channels")
+        .select("phone_number_id, operation:operation_id(name, color)")
+        .eq("is_active", true)
+        .not("phone_number_id", "is", null);
+      if (data) {
+        const map: Record<string, { name: string; color: string }> = {};
+        for (const row of data) {
+          const op = Array.isArray(row.operation) ? row.operation[0] : row.operation;
+          if (row.phone_number_id && op) {
+            map[row.phone_number_id] = { name: op.name, color: op.color };
+          }
+        }
+        setPhoneMap(map);
+      }
+    };
+
     fetchConversations();
+    fetchOperations();
 
     const channel = supabase
       .channel("conversations-list")
@@ -94,7 +113,7 @@ export default function ConversationList({
             const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
             const isSelected = selectedId === conv.id;
             const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
-            const instanceName = getInstanceName(phoneNumberId);
+            const operation = phoneMap[phoneNumberId];
 
             return (
               <button
@@ -115,9 +134,12 @@ export default function ConversationList({
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    {instanceName && (
-                      <span className="text-[10px] bg-purple-100 text-purple-600 dark:bg-purple-600/20 dark:text-purple-400 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
-                        {instanceName}
+                    {operation && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 text-white"
+                        style={{ backgroundColor: operation.color }}
+                      >
+                        {operation.name}
                       </span>
                     )}
                   </div>

@@ -1,11 +1,8 @@
-"use client";
-
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import Avatar from "./Avatar";
-import { getInstanceName } from "@/lib/instances";
 import type { Conversation } from "./ConversationList";
 
 interface Message {
@@ -26,6 +23,7 @@ export default function ChatWindow({
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
@@ -34,7 +32,7 @@ export default function ChatWindow({
     : conversation.customer;
 
   const phoneNumberId = (conversation as any).metadata?.phone_number_id || "";
-  const instanceName = getInstanceName(phoneNumberId);
+  const operation = phoneMap[phoneNumberId];
   const customerPhone = customer?.phone || "";
 
   const fetchMessages = async () => {
@@ -49,6 +47,24 @@ export default function ChatWindow({
 
   useEffect(() => {
     fetchMessages();
+
+    supabase
+      .from("operations_channels")
+      .select("phone_number_id, operation:operation_id(name, color)")
+      .eq("is_active", true)
+      .not("phone_number_id", "is", null)
+      .then(({ data }) => {
+        if (data) {
+          const map: Record<string, { name: string; color: string }> = {};
+          for (const row of data) {
+            const op = Array.isArray(row.operation) ? row.operation[0] : row.operation;
+            if (row.phone_number_id && op) {
+              map[row.phone_number_id] = { name: op.name, color: op.color };
+            }
+          }
+          setPhoneMap(map);
+        }
+      });
   }, [conversation.id]);
 
   useEffect(() => {
@@ -80,8 +96,10 @@ export default function ChatWindow({
           <p className="font-medium text-sm truncate">{customer?.name || customer?.phone || "Desconhecido"}</p>
           <div className="flex items-center gap-2">
             <p className="text-xs text-white/70">{conversation.status === "active" ? "Online" : conversation.status}</p>
-            {instanceName && (
-              <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">{instanceName}</span>
+            {operation && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: operation.color }}>
+                {operation.name}
+              </span>
             )}
           </div>
         </div>
