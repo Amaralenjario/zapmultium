@@ -37,7 +37,13 @@ function getStatusConfig(status: string) {
   return STATUS_CONFIG[status] || { label: status, color: "text-gray-400", dot: "bg-gray-400" };
 }
 
-export default function WhatsappPageClient({ initialChannels }: { initialChannels: Channel[] }) {
+export default function WhatsappPageClient({
+  initialChannels,
+  phoneMap,
+}: {
+  initialChannels: Channel[];
+  phoneMap: Record<string, { phoneId: string; opName: string; opColor: string }>;
+}) {
   const [showModal, setShowModal] = useState(false);
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
@@ -91,8 +97,9 @@ export default function WhatsappPageClient({ initialChannels }: { initialChannel
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channels.map((ch) => {
           const statusCfg = getStatusConfig(ch.status);
-          const isActive = ch.status === "active";
-          const link = `https://app.evohub.ai/connect/${ch.token}`;
+            const isActive = ch.status === "active";
+            const link = `https://app.evohub.ai/connect/${ch.token}`;
+            const mapping = phoneMap[ch.id];
 
           return (
             <div key={ch.id} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden hover:shadow-md transition">
@@ -122,19 +129,28 @@ export default function WhatsappPageClient({ initialChannels }: { initialChannel
                     <span className="text-gray-400 dark:text-gray-500">Tipo</span>
                     <span className="font-medium text-gray-900 dark:text-white capitalize">{ch.type}</span>
                   </div>
+                  {mapping?.opName && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400 dark:text-gray-500">Operação</span>
+                      <span className="inline-flex items-center gap-1.5 font-medium text-xs" style={{ color: mapping.opColor }}>
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: mapping.opColor }} />
+                        {mapping.opName}
+                      </span>
+                    </div>
+                  )}
+                  {mapping?.phoneId && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400 dark:text-gray-500">Phone ID</span>
+                      <span className="font-medium text-gray-900 dark:text-white text-xs font-mono">
+                        {mapping.phoneId}
+                      </span>
+                    </div>
+                  )}
                   {(ch.metadata as any)?.meta_connection?.phone_number && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400 dark:text-gray-500">Número</span>
                       <span className="font-medium text-gray-900 dark:text-white text-xs">
                         {(ch.metadata as any).meta_connection.phone_number}
-                      </span>
-                    </div>
-                  )}
-                  {(ch.metadata as any)?.meta_connection?.waba_id && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-400 dark:text-gray-500">BM (WABA)</span>
-                      <span className="font-medium text-gray-900 dark:text-white text-xs font-mono">
-                        {(ch.metadata as any).meta_connection.waba_id}
                       </span>
                     </div>
                   )}
