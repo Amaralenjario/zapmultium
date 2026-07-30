@@ -66,9 +66,14 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
 
-    const fileName = `audio_${Date.now()}.ogg`;
-    const { error: uploadErr } = await supabase.storage.from("flow-media").upload(fileName, oggBuf, {
-      contentType: "audio/ogg", upsert: true,
+    // Convert original filename to OGG version
+    const originalName = fileUrl.split("/").pop()?.split("?")[0] || "audio";
+    const baseName = originalName.split(".").slice(0, -1).join(".") || originalName;
+    const oggName = `${baseName}.ogg`;
+
+    // Upload OGG with original name so flow pipeline can find it
+    const { error: uploadErr } = await supabase.storage.from("flow-media").upload(oggName, oggBuf, {
+      contentType: "audio/ogg", upsert: true, cacheControl: "3600",
     });
     if (uploadErr) throw new Error(uploadErr.message);
 

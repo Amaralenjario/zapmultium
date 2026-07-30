@@ -30,8 +30,16 @@ export async function processAndSendMedia(
       return { waMessageId: wamid };
     }
 
-    // ─── Audio: upload via EvoHub media endpoint (multipart) → media_id ───
-    const dl = await fetch(fileUrl);
+    // ─── Audio: check for OGG version first ───
+    // If original is .mp3, check if .ogg version exists (converted by Edge Function)
+    let audioUrl = fileUrl;
+    if (!fileUrl.endsWith(".ogg") && !fileUrl.endsWith(".opus")) {
+      const oggUrl = fileUrl.replace(/\.(mp3|mp4|wav|aac|m4a)$/i, "") + ".ogg";
+      const check = await fetch(oggUrl, { method: "HEAD" });
+      if (check.ok) audioUrl = oggUrl;
+    }
+
+    const dl = await fetch(audioUrl);
     if (!dl.ok) throw new Error(`Download: ${dl.status}`);
     const buffer = Buffer.from(await dl.arrayBuffer());
     const contentType = (dl.headers.get("content-type") || "").toLowerCase();

@@ -187,9 +187,9 @@ export async function processFlowStep(executionId: string): Promise<{
     // Acquire row lock
     const { data: execution, error: lockError } = await supabase
       .from("flow_executions")
-      .update({ updated_at: new Date().toISOString() })
+      .update({ status: "running", updated_at: new Date().toISOString() })
       .eq("id", executionId)
-      .in("status", ["running", "paused", "pending"])
+      .in("status", ["paused", "pending"])
       .select("*")
       .single();
 
