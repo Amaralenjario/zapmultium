@@ -205,6 +205,14 @@ async function processWhatsAppMessages(payload: any) {
               await supabase.from("messages").update({
                 metadata: { ...meta, reactions },
               }).eq("id", target.id);
+
+              // Atualizar preview da conversa
+              const previewText = emoji === "" ? "removeu reação" : `reagiu ${emoji}`;
+              await supabase.from("conversations").update({
+                last_message: previewText,
+                last_message_at: new Date().toISOString(),
+                last_message_sender: "customer",
+              }).eq("id", convId);
             }
           }
           continue; // Não criar mensagem
