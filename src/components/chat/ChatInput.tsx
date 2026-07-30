@@ -33,7 +33,11 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
       return;
     }
 
+    // Clear immediately for instant feedback
+    setMessage("");
     setSending(true);
+    if (onCancelReply) onCancelReply();
+    inputRef.current?.focus();
 
     try {
       const res = await fetch("/api/evohub/send-message", {
@@ -41,21 +45,10 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId, phoneNumberId, to: customerPhone, message: trimmed, context: (replyTo as any)?.metadata?.wa_message_id || undefined }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error?.error_data?.details || "Erro ao enviar");
-        setSending(false);
-        return;
-      }
-
-      setMessage("");
-      setSending(false);
-      onMessageSent();
-    } catch {
-      toast.error("Erro de conexão");
-      setSending(false);
-    }
+      if (!res.ok) toast.error("Erro ao enviar");
+      else onMessageSent();
+    } catch { toast.error("Erro de conexão"); }
+    setSending(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
