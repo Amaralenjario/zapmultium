@@ -46,9 +46,9 @@ async function sendWhatsAppMessage(execution: any, text: string) {
 
   // Persist the message in the database
   const supabase = getSupabase();
-  await supabase.from("messages").insert({
+  const { error: insertError } = await supabase.from("messages").insert({
     conversation_id: execution.conversation_id,
-    sender_type: "bot",
+    sender_type: "agent",
     content: text,
     content_type: "text",
     metadata: {
@@ -56,8 +56,14 @@ async function sendWhatsAppMessage(execution: any, text: string) {
       phone_number_id: execution.phone_number_id,
       flow_execution_id: execution.id,
       flow_step_node_id: execution.current_node_id,
+      source: "flow",
     },
   });
+
+  if (insertError) {
+    console.error("Falha ao inserir mensagem do fluxo:", insertError);
+    throw new Error(`DB insert: ${insertError.message}`);
+  }
 
   await supabase.from("conversations").update({
     last_message: text,
@@ -134,6 +140,24 @@ export async function processFlowStep(executionId: string): Promise<{
       }
 
       case "wait": {
+        // Find next node BEFORE pausing so scheduler picks up the right node
+        nextNodeId = findNextNode(currentNode.id, edges);
+        if (!nextNodeId) {
+          // No next node after wait → complete instead
+          await supabase.from("flow_executions").update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", executionId);
+          return { ok: true, completed: true };
+        }
+
+        // Advance current_node_id to the next node so scheduler processes it
+        await supabase.from("flow_executions").update({
+          current_node_id: nextNodeId,
+          updated_at: new Date().toISOString(),
+        }).eq("id", executionId);
+
         const delayMin = parseInt(currentNode.config?.delay) || 1;
         const delayMs = delayMin * 60 * 1000;
         const nextStepAt = new Date(Date.now() + delayMs).toISOString();
@@ -143,6 +167,15 @@ export async function processFlowStep(executionId: string): Promise<{
           updated_at: new Date().toISOString(),
         }).eq("id", executionId);
         shouldContinue = false;
+
+        // Log wait start
+        await supabase.from("flow_execution_logs").insert({
+          execution_id: executionId,
+          node_id: currentNode.id,
+          action: "wait_start",
+          result: { delay: delayMin, nextStepAt, nextNodeId },
+        });
+
         return { ok: true, paused: true, nextStepAt, currentStep: currentNode.id };
       }
 
