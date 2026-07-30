@@ -41,13 +41,14 @@ export default function WhatsappPageClient({
   phoneMap: initialPhoneMap,
 }: {
   initialChannels: Channel[];
-  phoneMap: Record<string, { phoneId: string; opName: string; opColor: string }>;
+  phoneMap: Record<string, { phoneId: string; opName: string; opColor: string; opId: string }>;
 }) {
   const [showModal, setShowModal] = useState(false);
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
-  const [phoneMap, setPhoneMap] = useState(initialPhoneMap);
+  const [phoneMap, setPhoneMap] = useState<Record<string, { phoneId: string; opName: string; opColor: string; opId: string }>>(initialPhoneMap);
   const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [operations, setOperations] = useState<{ id: string; name: string; color: string }[]>([]);
 
   const fetchChannels = useCallback(async () => {
     const res = await fetch("/api/evohub/channels");
@@ -62,7 +63,33 @@ export default function WhatsappPageClient({
     }
   }, []);
 
-  useEffect(() => { fetchChannels(); }, []);
+  useEffect(() => { fetchChannels(); fetchOperations(); }, []);
+
+  const fetchOperations = async () => {
+    const res = await fetch("/api/operations");
+    if (res.ok) setOperations(await res.json());
+  };
+
+  const changeOperation = async (channelId: string, newOpId: string, channelName: string) => {
+    const currentMapping = phoneMap[channelId];
+    if (currentMapping?.opId) {
+      // Remover da operação atual
+      const { data: channels } = await fetch(`/api/operations/${currentMapping.opId}/channels?channel_id=${channelId}`).then(r => r.json()).catch(() => []);
+    }
+    // Adicionar na nova
+    const res = await fetch(`/api/operations/${newOpId}/channels`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        evohub_channel_id: channelId,
+        evohub_channel_name: channelName,
+        phone_number_id: currentMapping?.phoneId || null,
+      }),
+    });
+    if (!res.ok) { toast.error("Erro ao trocar"); return; }
+    toast.success("Operação alterada!");
+    fetchChannels();
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -142,10 +169,25 @@ export default function WhatsappPageClient({
                   {mapping?.opName && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400 dark:text-gray-500">Operação</span>
-                      <span className="inline-flex items-center gap-1.5 font-medium text-xs" style={{ color: mapping.opColor }}>
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: mapping.opColor }} />
-                        {mapping.opName}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1.5 font-medium text-xs" style={{ color: mapping.opColor }}>
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: mapping.opColor }} />
+                          {mapping.opName}
+                        </span>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) changeOperation(ch.id, e.target.value, ch.name);
+                          }}
+                          className="bg-transparent text-gray-400 text-xs border-0 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"
+                          title="Trocar operação"
+                        >
+                          <option value="">Trocar</option>
+                          {operations.filter(o => o.id !== (phoneMap[ch.id]?.opId)).map((o) => (
+                            <option key={o.id} value={o.id}>{o.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
                   {(ch as any).displayPhone && (
