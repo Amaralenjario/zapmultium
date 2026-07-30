@@ -43,6 +43,7 @@ export default function MessageBubble({
   isFirst,
   showDate,
   quotedContent,
+  quotedByAgent,
   onReply,
   onReact,
 }: {
@@ -50,6 +51,7 @@ export default function MessageBubble({
   isFirst?: boolean;
   showDate?: string;
   quotedContent?: string | null;
+  quotedByAgent?: boolean;
   onReply?: () => void;
   onReact?: (emoji: string) => void;
 }) {
@@ -81,7 +83,7 @@ export default function MessageBubble({
           {/* Quoted message */}
           {(context?.id || quotedContent) && (
             <div className={`mx-2 mt-2 px-2.5 py-1.5 rounded-md border-l-[3px] text-xs ${isAgent ? "bg-black/10 border-[#075e54]" : "bg-black/5 dark:bg-white/5 border-[#25d366]"}`}>
-              <p className="text-[11px] opacity-60 mb-0.5 truncate">{context?.from || (isAgent ? "Cliente" : "Você")}</p>
+              <p className="text-[11px] opacity-60 mb-0.5 truncate">{quotedByAgent ? "Você" : (context?.from || "Cliente")}</p>
               <p className="truncate opacity-80">{quotedContent || "Mensagem"}</p>
             </div>
           )}

@@ -79,10 +79,8 @@ export default function ChatWindow({
   }, [conversation.id]);
 
   const markAsRead = async () => {
-    // Zerar unread_count e marcar como lido
     await supabase.from("conversations").update({ unread_count: 0, last_message_read: true }).eq("id", conversation.id);
 
-    // Marcar mensagens do cliente como lidas
     const { data: unread } = await supabase
       .from("messages")
       .select("id, metadata")
@@ -99,15 +97,15 @@ export default function ChatWindow({
         .eq("sender_type", "customer")
         .is("read_at", null);
 
-      // Enviar read receipt pra Meta
-      if (phoneNumberId) {
+      // Enviar read receipt para a última mensagem (marca todas como lidas no WhatsApp)
+      const lastMsg = unread[unread.length - 1];
+      if (phoneNumberId && lastMsg?.metadata?.wa_message_id) {
         fetch("/api/evohub/mark-read", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             phoneNumberId,
-            channelId: conversation.id,
-            messageId: unread[unread.length - 1]?.metadata?.wa_message_id,
+            messageId: lastMsg.metadata.wa_message_id,
           }),
         }).catch(() => {});
       }
@@ -230,13 +228,15 @@ export default function ChatWindow({
               const dateLabel = shouldShowDate(prev?.created_at || "", msg.created_at)
                 ? formatDateHeader(new Date(msg.created_at))
                 : undefined;
+              const quotedMsg = msg.metadata?.context?.id ? messages.find(m => m.metadata?.wa_message_id === msg.metadata?.context?.id) : null;
               return (
                 <MessageBubble
                   key={msg.id}
                   message={msg}
                   isFirst={!consecutive}
                   showDate={dateLabel}
-                  quotedContent={msg.metadata?.context?.id ? messages.find(m => m.metadata?.wa_message_id === msg.metadata?.context?.id)?.content : undefined}
+                  quotedContent={quotedMsg?.content}
+                  quotedByAgent={quotedMsg?.sender_type === "agent"}
                   onReply={() => setReplyTo(msg)}
                   onReact={(emoji) => handleReact(msg, emoji)}
                 />
