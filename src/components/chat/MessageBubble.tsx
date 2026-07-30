@@ -99,12 +99,23 @@ export default function MessageBubble({
 }
 
 function MediaContent({ messageId, content, type }: { messageId: string; content: string; type: string }) {
+  const [error, setError] = useState(false);
   const mediaUrl = `/api/media/${messageId}`;
+
+  if (error) {
+    return <p className="px-3.5 py-2 text-gray-500 dark:text-gray-400 text-sm">{content}</p>;
+  }
 
   if (type === "image" || type === "sticker") {
     return (
       <div className="p-1">
-        <img src={mediaUrl} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover" loading="lazy" />
+        <img
+          src={mediaUrl}
+          alt=""
+          className="rounded-lg max-w-[300px] max-h-[300px] object-cover"
+          loading="lazy"
+          onError={() => setError(true)}
+        />
       </div>
     );
   }
