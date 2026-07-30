@@ -75,6 +75,55 @@ async function sendWhatsAppMessage(execution: any, text: string) {
   return data.messages?.[0]?.id;
 }
 
+async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image" | "audio") {
+  const { getInstanceByPhoneId, getRealChannelToken } = await import("@/lib/instances");
+  const instance = getInstanceByPhoneId(execution.phone_number_id);
+  if (!instance?.channelId) throw new Error("Canal não encontrado");
+  const channelToken = await getRealChannelToken(instance.channelId);
+  if (!channelToken) throw new Error("Token do canal não encontrado");
+
+  const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${execution.phone_number_id}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${channelToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: execution.customer_phone,
+      type: mediaType,
+      [mediaType]: { link: url },
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data));
+
+  const supabase = getSupabase();
+  await supabase.from("messages").insert({
+    conversation_id: execution.conversation_id,
+    sender_type: "agent",
+    content: url,
+    content_type: mediaType,
+    metadata: {
+      wa_message_id: data.messages?.[0]?.id,
+      phone_number_id: execution.phone_number_id,
+      flow_execution_id: execution.id,
+      flow_step_node_id: execution.current_node_id,
+      source: "flow",
+    },
+  });
+
+  await supabase.from("conversations").update({
+    last_message: mediaType === "image" ? "📷 Imagem" : "🎵 Áudio",
+    last_message_sender: "agent",
+    last_message_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", execution.conversation_id);
+
+  return data.messages?.[0]?.id;
+}
+
 export async function processFlowStep(executionId: string): Promise<{
   ok: boolean;
   completed?: boolean;
@@ -136,6 +185,17 @@ export async function processFlowStep(executionId: string): Promise<{
           const text = currentNode.config?.text || "";
           if (text) {
             const waId = await sendWhatsAppMessage(execution, text);
+            logResult.wa_message_id = waId;
+          }
+          nextNodeId = findNextNode(currentNode.id, edges);
+          break;
+        }
+
+        case "image":
+        case "audio": {
+          const url = currentNode.config?.url || "";
+          if (url) {
+            const waId = await sendWhatsAppMedia(execution, url, currentNode.type as "image" | "audio");
             logResult.wa_message_id = waId;
           }
           nextNodeId = findNextNode(currentNode.id, edges);
