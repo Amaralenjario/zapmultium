@@ -143,7 +143,6 @@ export async function processFlowStep(executionId: string): Promise<{
         // Find next node BEFORE pausing so scheduler picks up the right node
         nextNodeId = findNextNode(currentNode.id, edges);
         if (!nextNodeId) {
-          // No next node after wait → complete instead
           await supabase.from("flow_executions").update({
             status: "completed",
             completed_at: new Date().toISOString(),
@@ -158,8 +157,8 @@ export async function processFlowStep(executionId: string): Promise<{
           updated_at: new Date().toISOString(),
         }).eq("id", executionId);
 
-        const delayMin = parseInt(currentNode.config?.delay) || 1;
-        const delayMs = delayMin * 60 * 1000;
+        const delaySec = Math.min(60, Math.max(0, parseInt(currentNode.config?.delay) || 5));
+        const delayMs = delaySec * 1000;
         const nextStepAt = new Date(Date.now() + delayMs).toISOString();
         await supabase.from("flow_executions").update({
           status: "paused",
@@ -168,14 +167,15 @@ export async function processFlowStep(executionId: string): Promise<{
         }).eq("id", executionId);
         shouldContinue = false;
 
-        // Log wait start
         await supabase.from("flow_execution_logs").insert({
           execution_id: executionId,
           node_id: currentNode.id,
           action: "wait_start",
-          result: { delay: delayMin, nextStepAt, nextNodeId },
+          result: { delaySec, nextStepAt, nextNodeId },
         });
 
+        logResult.delaySec = delaySec;
+        logResult.nextStepAt = nextStepAt;
         return { ok: true, paused: true, nextStepAt, currentStep: currentNode.id };
       }
 
@@ -227,11 +227,8 @@ export async function processFlowStep(executionId: string): Promise<{
       updated_at: new Date().toISOString(),
     }).eq("id", executionId);
 
-    // Immediately process the next step if it's not a wait
-    const nextNode = steps.find((s: any) => s.id === nextNodeId);
-    if (nextNode && nextNode.type !== "wait") {
-      return processFlowStep(executionId);
-    }
+    // Always recurse - processFlowStep handles waits correctly
+    return processFlowStep(executionId);
   } else {
     await supabase.from("flow_executions").update({
       status: "completed",

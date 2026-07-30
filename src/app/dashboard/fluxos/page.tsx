@@ -78,6 +78,7 @@ export default function FluxosPage() {
         </button>
         <FlowBuilder
           initialSteps={editing.config?.steps || [{ id: "start", type: "start", label: "Início", config: {} }]}
+          initialEdges={editing.config?.edges || []}
           onSave={handleSave}
         />
       </div>

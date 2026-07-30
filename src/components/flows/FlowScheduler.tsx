@@ -12,8 +12,8 @@ export default function FlowScheduler() {
       } catch {}
     };
 
-    // Poll every 10 seconds for expired wait nodes
-    intervalRef.current = setInterval(poll, 10_000);
+    // Poll every 1 second for precise wait timing
+    intervalRef.current = setInterval(poll, 1000);
     poll();
 
     return () => {

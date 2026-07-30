@@ -19,7 +19,7 @@ import "reactflow/dist/style.css";
 
 const NODE_CONFIGS: Record<string, { label: string; color: string; defaultData: any }> = {
   message: { label: "Mensagem", color: "#3b82f6", defaultData: { text: "" } },
-  wait: { label: "Aguardar", color: "#f59e0b", defaultData: { delay: 1 } },
+  wait: { label: "Aguardar", color: "#f59e0b", defaultData: { delay: 5 } },
   condition: { label: "Condição", color: "#8b5cf6", defaultData: { variable: "", value: "" } },
 };
 
@@ -61,8 +61,8 @@ function FlowNode({ data, id }: any) {
       {editing && data.type === "wait" && (
         <div className="p-2 flex items-center gap-2 text-xs">
           <span className="text-gray-500">Aguardar</span>
-          <input type="number" value={delay} onChange={(e) => { const v = parseInt(e.target.value) || 1; setDelay(v); data.config.delay = v; }} className="w-14 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-1 py-0.5 text-center text-gray-900 dark:text-white" />
-          <span className="text-gray-500">min</span>
+          <input type="number" min={0} max={60} value={delay} onChange={(e) => { const v = Math.min(60, Math.max(0, parseInt(e.target.value) || 0)); setDelay(v); data.config.delay = v; }} className="w-14 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-1 py-0.5 text-center text-gray-900 dark:text-white" />
+          <span className="text-gray-500">seg</span>
         </div>
       )}
       {editing && data.type === "condition" && (
@@ -90,7 +90,7 @@ const nodeTypes = { flowNode: FlowNode };
 
 interface FlowStep { id: string; type: string; label: string; config: Record<string, any>; }
 
-export default function FlowBuilder({ onSave, initialSteps }: { onSave?: (result: { steps: FlowStep[]; edges: { id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }[] }) => void; initialSteps?: FlowStep[] }) {
+export default function FlowBuilder({ onSave, initialSteps, initialEdges }: { onSave?: (result: { steps: FlowStep[]; edges: { id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }[] }) => void; initialSteps?: FlowStep[]; initialEdges?: { id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }[] }) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
 
@@ -112,8 +112,19 @@ export default function FlowBuilder({ onSave, initialSteps }: { onSave?: (result
     }];
   };
 
+  const buildInitialEdges = (): any[] => {
+    if (initialEdges && initialEdges.length > 0) {
+      return initialEdges.map((e) => ({
+        id: e.id, source: e.source, target: e.target,
+        sourceHandle: e.sourceHandle || undefined, targetHandle: e.targetHandle || undefined,
+        animated: true, style: { stroke: "#22c55e", strokeWidth: 2 },
+      }));
+    }
+    return [];
+  };
+
   const [nodes, setNodes, onNodesChange] = useNodesState(buildInitialNodes());
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(buildInitialEdges());
 
   const deleteNode = useCallback((nodeId: string) => {
     setNodes((nds) => nds.filter((n) => n.id !== nodeId));
