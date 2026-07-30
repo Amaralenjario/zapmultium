@@ -78,7 +78,9 @@ export async function POST(request: Request) {
 
     // Fire and forget - process in background, respond immediately
     const { processFlowStep } = await import("@/lib/flow-engine");
-    processFlowStep(execution.id).catch(() => {});
+    processFlowStep(execution.id).catch((err) => {
+      console.error("Background flow processing failed:", err?.message || err);
+    });
 
     return NextResponse.json({ ok: true, execution });
   } catch (err: any) {

@@ -68,25 +68,25 @@ async function convertToOggOpus(audioUrl: string): Promise<string> {
 }
 
 async function waitForTransloadit(assemblyId: string): Promise<string | null> {
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 15; i++) { // Max 30s (15 × 2s)
     await new Promise((r) => setTimeout(r, 2000));
-    const res = await fetch(`https://api2.transloadit.com/assemblies/${assemblyId}`, {
-      headers: { "Transloadit-Client": "zapmultium/1.0" },
-    });
-    const data = await res.json();
-    if (data.ok && data.ok !== "REQUESTING" && data.ok !== "ASSEMBLING" && data.ok !== "EXECUTING") {
-      if (data.ok === "COMPLETED" && data.results?.encode?.[0]?.url) {
-        return data.results.encode[0].url;
+    try {
+      const res = await fetch(`https://api2.transloadit.com/assemblies/${assemblyId}`, {
+        headers: { "Transloadit-Client": "zapmultium/1.0" },
+        signal: AbortSignal.timeout(5000),
+      });
+      const data = await res.json();
+      if (data.ok && data.ok !== "REQUESTING" && data.ok !== "ASSEMBLING" && data.ok !== "EXECUTING") {
+        if (data.ok === "COMPLETED" && data.results?.encode?.[0]?.ssl_url) {
+          return data.results.encode[0].ssl_url;
+        }
+        if (data.ok === "COMPLETED" && data.results?.encode?.[0]?.url) {
+          return data.results.encode[0].url;
+        }
+        return null;
       }
-      if (data.ok === "COMPLETED" && data.results?.encode?.[0]?.ssl_url) {
-        return data.results.encode[0].ssl_url;
-      }
-      return null;
-    }
-    if (data.error) {
-      console.error("Transloadit assembly error:", data.error);
-      return null;
-    }
+      if (data.error) { console.error("Transloadit error:", data.error); return null; }
+    } catch (e) { console.error("Transloadit poll error:", e); }
   }
   console.error("Transloadit timeout");
   return null;
@@ -200,6 +200,10 @@ export async function processAndSendMedia(
   phoneNumberId: string,
   channelToken: string
 ): Promise<{ waMessageId: string | null; error?: string }> {
+  // Global timeout: 25s (Vercel Hobby has 10s, Pro has 60s)
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25_000);
+
   try {
     let finalUrl = fileUrl;
 
@@ -208,10 +212,10 @@ export async function processAndSendMedia(
       finalUrl = await convertToOggOpus(finalUrl);
     }
 
-    // Camada 2: Espelhamento no Supabase Storage (URL pública garantida)
+    // Camada 2: Espelhamento no Supabase Storage
     finalUrl = await mirrorToSupabase(finalUrl, mediaType);
 
-    // Camada 3: Envio via EvoHub com link (comprovado que funciona)
+    // Camada 3: Envio via EvoHub com link
     const body: any = {
       messaging_product: "whatsapp",
       to,
@@ -219,7 +223,7 @@ export async function processAndSendMedia(
     };
     body[mediaType] = { link: finalUrl };
 
-    console.log("Sending media via EvoHub:", mediaType, finalUrl.slice(0, 80));
+    console.log("Sending media:", mediaType, finalUrl.slice(0, 80));
     const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
       method: "POST",
       headers: {
@@ -227,14 +231,19 @@ export async function processAndSendMedia(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
 
     const data = await res.json();
+    clearTimeout(timer);
     if (!res.ok) throw new Error(JSON.stringify(data));
-
     return { waMessageId: data.messages?.[0]?.id || null };
   } catch (err: any) {
-    console.error("Pipeline error:", err);
+    clearTimeout(timer);
+    if (err.name === "AbortError") {
+      return { waMessageId: null, error: "Timeout: pipeline excedeu 25s" };
+    }
+    console.error("Pipeline error:", err.message);
     return { waMessageId: null, error: err.message };
   }
 }
