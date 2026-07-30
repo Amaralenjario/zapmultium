@@ -118,7 +118,8 @@ async function processWhatsAppMessages(payload: any) {
           })
           .eq("id", convId);
       } else {
-        const { data: newConv } = await supabase
+        // Tentar criar, se já existir (race condition), buscar a existente
+        const { data: newConv, error: insertErr } = await supabase
           .from("conversations")
           .insert({
             customer_id: cust.id,
@@ -129,7 +130,29 @@ async function processWhatsAppMessages(payload: any) {
           })
           .select("id")
           .single();
-        convId = newConv!.id;
+
+        if (insertErr) {
+          // Já existe - buscar a existente
+          const { data: fallback } = await supabase
+            .from("conversations")
+            .select("id, unread_count")
+            .eq("customer_id", cust.id)
+            .eq("status", "active")
+            .limit(1);
+          if (fallback && fallback.length > 0) {
+            convId = fallback[0].id;
+            unread = (fallback[0].unread_count || 0) + 1;
+            await supabase.from("conversations").update({
+              last_message_at: new Date().toISOString(),
+              unread_count: unread,
+              updated_at: new Date().toISOString(),
+            }).eq("id", convId);
+          } else {
+            continue;
+          }
+        } else {
+          convId = newConv!.id;
+        }
       }
 
       // Inserir mensagens
