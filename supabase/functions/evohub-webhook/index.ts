@@ -162,6 +162,18 @@ async function processWhatsAppMessages(payload: any) {
         }
 
         if (content) {
+          // Check for duplicate by wa_message_id
+          const waId = msg.id;
+          if (waId) {
+            const { data: existing } = await supabase
+              .from("messages")
+              .select("id")
+              .eq("conversation_id", convId)
+              .filter("metadata->>wa_message_id", "eq", waId)
+              .limit(1);
+            if (existing && existing.length > 0) continue;
+          }
+
           await supabase.from("messages").insert({
             conversation_id: convId,
             sender_type: "customer",

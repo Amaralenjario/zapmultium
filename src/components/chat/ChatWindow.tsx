@@ -78,7 +78,12 @@ export default function ChatWindow({
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversation.id}` },
-        (payload) => setMessages((prev) => [...prev, payload.new as Message])
+        (payload) => {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === (payload.new as Message).id)) return prev;
+            return [...prev, payload.new as Message];
+          });
+        }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
