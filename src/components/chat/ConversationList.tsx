@@ -39,13 +39,15 @@ export default function ConversationList({
   const [sellerPhoneIds, setSellerPhoneIds] = useState<string[] | null>(null);
   const [filter, setFilter] = useState<"all" | "unread" | "active" | "archived">("all");
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [leadTagsMap, setLeadTagsMap] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
   const [availableTags, setAvailableTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const supabase = createClient();
 
   const applyFilters = useCallback(() => {
-    let filtered = allConversations;
+    // Use server search results when searching
+    let filtered = searchResults !== null ? searchResults : allConversations;
 
     // Seller channel filter
     if (sellerPhoneIds !== null) {
@@ -70,8 +72,8 @@ export default function ConversationList({
       });
     }
 
-    // Search filter: nome, telefone, última mensagem
-    if (search.trim()) {
+    // Search client-side only as fallback when server results are loaded
+    if (search.trim() && searchResults === null) {
       const q = search.trim().toLowerCase();
       filtered = filtered.filter((conv) => {
         const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
@@ -83,9 +85,24 @@ export default function ConversationList({
     }
 
     setConversations(filtered);
-  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, leadTagsMap]);
+  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, leadTagsMap, searchResults]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
+
+  // Server-side search
+  useEffect(() => {
+    if (!search.trim() || search.trim().length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/conversations/search?q=${encodeURIComponent(search.trim())}`);
+        if (res.ok) setSearchResults(await res.json());
+      } catch { setSearchResults(null); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Derive available tags from leadTagsMap
   useEffect(() => {
