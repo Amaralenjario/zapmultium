@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect } from "react";
 import CreateChannelModal from "@/components/whatsapp/CreateChannelModal";
 import toast from "react-hot-toast";
 
@@ -39,20 +38,27 @@ function getStatusConfig(status: string) {
 
 export default function WhatsappPageClient({
   initialChannels,
-  phoneMap,
+  phoneMap: initialPhoneMap,
 }: {
   initialChannels: Channel[];
   phoneMap: Record<string, { phoneId: string; opName: string; opColor: string }>;
 }) {
   const [showModal, setShowModal] = useState(false);
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
+  const [phoneMap, setPhoneMap] = useState(initialPhoneMap);
   const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const router = useRouter();
 
-  const handleCreated = useCallback(() => {
-    router.refresh();
-  }, [router]);
+  const fetchChannels = useCallback(async () => {
+    const res = await fetch("/api/evohub/channels");
+    if (res.ok) {
+      const data = await res.json();
+      setChannels(data.channels);
+      setPhoneMap(data.phoneMap);
+    }
+  }, []);
+
+  useEffect(() => { fetchChannels(); }, []);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -97,9 +103,9 @@ export default function WhatsappPageClient({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channels.map((ch) => {
           const statusCfg = getStatusConfig(ch.status);
-            const isActive = ch.status === "active";
-            const link = `https://app.evohub.evolutionfoundation.com.br/connect/${ch.token}`;
-            const mapping = phoneMap[ch.id];
+          const isActive = ch.status === "active";
+          const link = `https://app.evohub.evolutionfoundation.com.br/connect/${ch.token}`;
+          const mapping = phoneMap[ch.id];
 
           return (
             <div key={ch.id} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden hover:shadow-md transition">
@@ -143,14 +149,6 @@ export default function WhatsappPageClient({
                       <span className="text-gray-400 dark:text-gray-500">Phone ID</span>
                       <span className="font-medium text-gray-900 dark:text-white text-xs font-mono">
                         {mapping.phoneId}
-                      </span>
-                    </div>
-                  )}
-                  {(ch.metadata as any)?.meta_connection?.phone_number && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-400 dark:text-gray-500">Número</span>
-                      <span className="font-medium text-gray-900 dark:text-white text-xs">
-                        {(ch.metadata as any).meta_connection.phone_number}
                       </span>
                     </div>
                   )}
@@ -205,31 +203,18 @@ export default function WhatsappPageClient({
               </div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Excluir instância?</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Isso excluirá <strong className="text-gray-700 dark:text-gray-300">{deleteTarget.name}</strong> permanentemente da EvoHub. Esta ação não pode ser desfeita.
+                Isso excluirá <strong className="text-gray-700 dark:text-gray-300">{deleteTarget.name}</strong> permanentemente da EvoHub.
               </p>
             </div>
-
             <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                disabled={deleting}
-                className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50 transition"
-              >
-                {deleting ? "Excluindo..." : "Sim, excluir"}
-              </button>
+              <button onClick={() => setDeleteTarget(null)} disabled={deleting} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition">Cancelar</button>
+              <button onClick={handleDelete} disabled={deleting} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50 transition">{deleting ? "Excluindo..." : "Sim, excluir"}</button>
             </div>
           </div>
         </div>
       )}
 
-      {showModal && <CreateChannelModal onClose={() => setShowModal(false)} onCreated={handleCreated} />}
+      {showModal && <CreateChannelModal onClose={() => setShowModal(false)} onCreated={fetchChannels} />}
     </div>
   );
 }
