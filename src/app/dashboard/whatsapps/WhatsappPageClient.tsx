@@ -14,6 +14,14 @@ interface Channel {
   created_at: string;
 }
 
+const KNOWN_PHONES: Record<string, string> = {
+  "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+  "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+  "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+  "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+  "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+};
+
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
   active: { label: "Conectado", dot: "bg-emerald-400", bg: "bg-emerald-500/10", text: "text-emerald-400" },
   inactive: { label: "Pendente", dot: "bg-amber-400", bg: "bg-amber-500/10", text: "text-amber-400" },
@@ -67,13 +75,13 @@ export default function WhatsappPageClient({
   };
 
   const changeOperation = async (channelId: string, newOpId: string, channelName: string) => {
-    const current = phoneMap[channelId];
+    const phoneId = phoneMap[channelId]?.phoneId || KNOWN_PHONES[channelId] || "";
     const res = await fetch(`/api/operations/${newOpId}/channels`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evohub_channel_id: channelId, evohub_channel_name: channelName, phone_number_id: current?.phoneId || null }),
+      body: JSON.stringify({ evohub_channel_id: channelId, evohub_channel_name: channelName, phone_number_id: phoneId || null }),
     });
-    if (!res.ok) { toast.error("Erro"); return; }
+    if (!res.ok) { const d = await res.json(); toast.error(d.error || "Erro"); return; }
     toast.success("Operação alterada!");
     fetchChannels();
   };
