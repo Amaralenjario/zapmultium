@@ -14,6 +14,8 @@ import ReactFlow, {
   BackgroundVariant,
   ReactFlowProvider,
   ReactFlowInstance,
+  Handle,
+  Position,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -38,6 +40,7 @@ function createNode(type: string, position: { x: number; y: number }) {
 
 function FlowNode({ data }: any) {
   const [editing, setEditing] = useState(false);
+  const isStart = data.type === "start";
 
   return (
     <div
@@ -45,6 +48,9 @@ function FlowNode({ data }: any) {
       style={{ borderColor: data.color }}
       onDoubleClick={() => setEditing(!editing)}
     >
+      {!isStart && (
+        <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-gray-400 !border-2 !border-white dark:!border-gray-900" />
+      )}
       <div className="flex items-center gap-2 px-3 py-2 text-white text-sm font-semibold" style={{ backgroundColor: data.color }}>
         <span>{data.icon}</span>
         <span>{data.label}</span>
@@ -84,6 +90,7 @@ function FlowNode({ data }: any) {
       <div className="px-3 py-1 text-[10px] text-gray-400 border-t border-gray-100 dark:border-gray-800">
         Duplo clique para {editing ? "fechar" : "editar"}
       </div>
+      <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !bg-emerald-500 !border-2 !border-white dark:!border-gray-900" />
     </div>
   );
 }
@@ -174,9 +181,9 @@ export default function FlowBuilder({ onSave, initialSteps }: { onSave?: (steps:
   const nodeTypes_list = ["message", "wait", "condition"];
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] -m-8">
+    <div className="flex h-[calc(100vh-8rem)] w-full">
       {/* Sidebar */}
-      <div className="w-56 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
+      <div className="w-56 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 overflow-y-auto">
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Blocos</h3>
         {nodeTypes_list.map((type) => {
           const cfg = NODE_CONFIGS[type];
@@ -202,7 +209,7 @@ export default function FlowBuilder({ onSave, initialSteps }: { onSave?: (steps:
       </div>
 
       {/* Canvas */}
-      <div className="flex-1" ref={reactFlowWrapper}>
+      <div className="flex-1 h-full" ref={reactFlowWrapper}>
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodes}
