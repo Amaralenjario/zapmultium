@@ -240,7 +240,7 @@ export default function ChatWindow({
   const headerBg = operation?.color || "#075e54";
 
   return (
-    <div className="flex flex-col h-full bg-[#efeae2] dark:bg-[#0b141a] overflow-hidden w-full min-w-0">
+    <div className="flex flex-col h-full bg-[#efeae2] dark:bg-[#0b141a]">
       <div className="flex items-center gap-3 px-4 py-2.5 text-white flex-shrink-0" style={{ backgroundColor: headerBg }}>
         <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
