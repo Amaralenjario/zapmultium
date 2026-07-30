@@ -40,7 +40,12 @@ function createNode(type: string, position: { x: number; y: number }) {
 
 function FlowNode({ data }: any) {
   const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(data.config?.text || "");
+  const [delay, setDelay] = useState(data.config?.delay || 1);
   const isStart = data.type === "start";
+
+  const saveText = (val: string) => { setText(val); data.config.text = val; };
+  const saveDelay = (val: number) => { setDelay(val); data.config.delay = val; };
 
   return (
     <div
@@ -59,8 +64,8 @@ function FlowNode({ data }: any) {
       {editing && data.type === "message" && (
         <div className="p-2">
           <textarea
-            value={data.config.text || ""}
-            onChange={(e) => { data.config.text = e.target.value; setEditing(true); }}
+            value={text}
+            onChange={(e) => saveText(e.target.value)}
             placeholder="Digite a mensagem..."
             className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs text-gray-900 dark:text-white resize-none"
             rows={2}
@@ -73,8 +78,8 @@ function FlowNode({ data }: any) {
           <span className="text-gray-500">Aguardar</span>
           <input
             type="number"
-            value={data.config.delay || 1}
-            onChange={(e) => { data.config.delay = parseInt(e.target.value) || 1; setEditing(true); }}
+            value={delay}
+            onChange={(e) => saveDelay(parseInt(e.target.value) || 1)}
             className="w-12 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-1 py-0.5 text-center text-gray-900 dark:text-white"
           />
           <span className="text-gray-500">min</span>
@@ -82,8 +87,8 @@ function FlowNode({ data }: any) {
       )}
       {editing && data.type === "condition" && (
         <div className="p-2 space-y-1 text-xs">
-          <input placeholder="Variável" className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
-          <input placeholder="Valor" className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
+          <input placeholder="Variável" onChange={(e) => { data.config.variable = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
+          <input placeholder="Valor" onChange={(e) => { data.config.value = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-gray-900 dark:text-white" />
         </div>
       )}
 
