@@ -75,12 +75,27 @@ async function sendWhatsAppMessage(execution: any, text: string) {
   return data.messages?.[0]?.id;
 }
 
-async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image" | "audio") {
+async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image" | "audio" | "video") {
   const { getInstanceByPhoneId, getRealChannelToken } = await import("@/lib/instances");
   const instance = getInstanceByPhoneId(execution.phone_number_id);
   if (!instance?.channelId) throw new Error("Canal não encontrado");
   const channelToken = await getRealChannelToken(instance.channelId);
   if (!channelToken) throw new Error("Token do canal não encontrado");
+
+  const body: any = {
+    messaging_product: "whatsapp",
+    to: execution.customer_phone,
+    type: mediaType === "video" ? "video" : mediaType,
+  };
+
+  if (mediaType === "audio") {
+    // Send as regular audio (supported formats: mp3, ogg, aac, amr, wav)
+    body.audio = { link: url };
+  } else if (mediaType === "video") {
+    body.video = { link: url };
+  } else {
+    body.image = { link: url };
+  }
 
   const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${execution.phone_number_id}/messages`, {
     method: "POST",
@@ -88,18 +103,14 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
       Authorization: `Bearer ${channelToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: execution.customer_phone,
-      type: mediaType,
-      [mediaType]: { link: url },
-    }),
+    body: JSON.stringify(body),
   });
 
   const data = await res.json();
   if (!res.ok) throw new Error(JSON.stringify(data));
 
   const supabase = getSupabase();
+  const labels: Record<string, string> = { image: "📷 Imagem", audio: "🎵 Áudio", video: "🎬 Vídeo" };
   await supabase.from("messages").insert({
     conversation_id: execution.conversation_id,
     sender_type: "agent",
@@ -115,7 +126,7 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
   });
 
   await supabase.from("conversations").update({
-    last_message: mediaType === "image" ? "📷 Imagem" : "🎵 Áudio",
+    last_message: labels[mediaType] || "📎 Mídia",
     last_message_sender: "agent",
     last_message_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -192,10 +203,12 @@ export async function processFlowStep(executionId: string): Promise<{
         }
 
         case "image":
-        case "audio": {
+        case "audio":
+        case "video": {
           const url = currentNode.config?.url || "";
           if (url) {
-            const waId = await sendWhatsAppMedia(execution, url, currentNode.type as "image" | "audio");
+            const mediaType = currentNode.type === "video" ? "video" : currentNode.type as "image" | "audio";
+            const waId = await sendWhatsAppMedia(execution, url, mediaType);
             logResult.wa_message_id = waId;
           }
           nextNodeId = findNextNode(currentNode.id, edges);

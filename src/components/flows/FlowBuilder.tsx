@@ -24,6 +24,7 @@ import "reactflow/dist/style.css";
 const NODE_CONFIGS: Record<string, { label: string; color: string; defaultData: any }> = {
   message: { label: "Mensagem", color: "#3b82f6", defaultData: { text: "" } },
   image: { label: "Imagem", color: "#ec4899", defaultData: { url: "" } },
+  video: { label: "Vídeo", color: "#ef4444", defaultData: { url: "" } },
   audio: { label: "Áudio", color: "#14b8a6", defaultData: { url: "" } },
   wait: { label: "Aguardar", color: "#f59e0b", defaultData: { delay: 5 } },
   condition: { label: "Condição", color: "#8b5cf6", defaultData: { variable: "", value: "" } },
@@ -78,7 +79,8 @@ function FlowNode({ data }: any) {
   const preview = useMemo(() => {
     if (data.type === "message") return cfg.text ? `"${cfg.text.length > 28 ? cfg.text.slice(0, 28) + "..." : cfg.text}"` : "Clique para editar";
     if (data.type === "image") return cfg.url ? `📷 ${cfg.url.slice(0, 25)}...` : "URL da imagem";
-    if (data.type === "audio") return cfg.url ? `🎵 ${cfg.url.slice(0, 25)}...` : "URL do áudio";
+    if (data.type === "audio") return cfg.url ? `🎵 ${cfg.url.slice(0, 25)}...` : "URL ou upload do áudio";
+    if (data.type === "video") return cfg.url ? `▶ ${cfg.url.slice(0, 25)}...` : "URL ou upload do vídeo";
     if (data.type === "wait") return `${cfg.delay || 0} seg`;
     if (data.type === "condition") return `${cfg.variable || "?"} = ${cfg.value || "?"}`;
     return "";
@@ -96,6 +98,7 @@ function FlowNode({ data }: any) {
         {data.type === "condition" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" /></svg>}
         {data.type === "image" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
         {data.type === "audio" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>}
+        {data.type === "video" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
         {data.label}
         {!isStart && (
           <div className="ml-auto flex gap-0.5 opacity-0 group-hover:opacity-100 transition">
@@ -165,21 +168,8 @@ function FlowNode({ data }: any) {
           />
         </div>
       )}
-      {editing && (data.type === "image" || data.type === "audio") && (
-        <div className="px-2 pb-2 space-y-1.5">
-          <input
-            placeholder={data.type === "image" ? "URL da imagem (https://...)" : "URL do áudio (https://...)"}
-            defaultValue={cfg.url || ""}
-            onChange={(e) => { data.config.url = e.target.value; }}
-            onKeyDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs"
-            autoFocus
-          />
-          {cfg.url && data.type === "image" && (
-            <img src={cfg.url} alt="" className="w-full h-20 object-cover rounded border border-gray-200" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          )}
-        </div>
+      {editing && (data.type === "image" || data.type === "audio" || data.type === "video") && (
+        <MediaEditor type={data.type} config={data.config} />
       )}
 
       {/* Source handles */}
@@ -190,6 +180,49 @@ function FlowNode({ data }: any) {
         </>
       )}
       {data.type !== "condition" && <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !bg-emerald-500 !border-2 !border-white dark:!border-gray-900" />}
+    </div>
+  );
+}
+
+// ── Media editor with file upload ──
+function MediaEditor({ type, config }: { type: string; config: any }) {
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const labels: Record<string, string> = { image: "Imagem (max 5MB)", audio: "Áudio (max 16MB)", video: "Vídeo (max 16MB)" };
+  const label = labels[type] || "Arquivo";
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("type", type);
+    try {
+      const res = await fetch("/api/flows/media", { method: "POST", body: fd });
+      const data = await res.json();
+      if (res.ok) { config.url = data.url; }
+      else { alert(data.error || "Erro no upload"); }
+    } catch { alert("Erro no upload"); }
+    setUploading(false);
+  };
+
+  return (
+    <div className="px-2 pb-2 space-y-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <input
+        placeholder={`URL do ${labels[type]?.toLowerCase() || "arquivo"} (https://...)`}
+        defaultValue={config.url || ""}
+        onChange={(e) => { config.url = e.target.value; }}
+        className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs"
+      />
+      <label className={`flex items-center justify-center gap-1 px-2 py-1 rounded border border-dashed text-[10px] cursor-pointer transition ${uploading ? "opacity-50" : "hover:border-emerald-400 hover:text-emerald-500"} border-gray-300 dark:border-gray-600 text-gray-500`}>
+        {uploading ? "Enviando..." : `📁 Upload ${label}`}
+        <input ref={fileRef} type="file" accept={type === "image" ? "image/*" : type === "video" ? "video/*" : "audio/*"} onChange={handleUpload} className="hidden" disabled={uploading} />
+      </label>
+      {config.url && type === "image" && (
+        <img src={config.url} alt="" className="w-full h-20 object-cover rounded border border-gray-200" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+      )}
     </div>
   );
 }
@@ -308,7 +341,7 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
     onSave?.({ steps, edges });
   };
 
-  const types = ["message", "image", "audio", "wait", "condition"];
+  const types = ["message", "image", "video", "audio", "wait", "condition"];
 
   return (
     <div className="flex h-full w-full">
@@ -330,6 +363,7 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
               {type === "condition" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" /></svg>}
               {type === "image" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
               {type === "audio" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>}
+              {type === "video" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
               <span className="text-[11px] font-medium text-gray-900 dark:text-white">{cfg.label}</span>
             </div>
           );
