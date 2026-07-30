@@ -33,10 +33,13 @@ async function uploadToStorage(buffer: Buffer, fileName: string, contentType: st
 
 // ─── Transloadit: converte áudio para OGG Opus no upload ───
 async function convertAudioToOgg(audioUrl: string): Promise<string | null> {
-  if (!TRANSLOADIT_KEY || !TRANSLOADIT_SECRET) return null;
+  if (!TRANSLOADIT_KEY || !TRANSLOADIT_SECRET) {
+    console.log("Transloadit: sem credenciais");
+    return null;
+  }
 
-  const isOgg = audioUrl.endsWith(".ogg") || audioUrl.endsWith(".opus") || audioUrl.includes(".ogg?") || audioUrl.includes(".opus?");
-  if (isOgg) return null; // já é OGG
+  // Always convert audio - even if extension says .ogg, re-encode for voice note compatibility
+  console.log("Transloadit: convertendo", audioUrl.slice(0, 80));
 
   const assembly = {
     steps: {
@@ -61,7 +64,12 @@ async function convertAudioToOgg(audioUrl: string): Promise<string | null> {
   });
 
   const data = await res.json();
-  if (!res.ok || !data.ok) return null;
+  if (!res.ok || !data.ok) {
+    console.error("Transloadit: falha ao criar assembly", JSON.stringify(data).slice(0, 200));
+    return null;
+  }
+
+  console.log("Transloadit: assembly criado", data.assembly_id);
 
   // Poll for result
   for (let i = 0; i < 20; i++) {
@@ -104,21 +112,23 @@ export async function POST(request: Request) {
     const originalUrl = await uploadToStorage(buffer, fileName, file.type);
 
     let finalUrl = originalUrl;
+    let converted = false;
 
-    // Convert audio to OGG Opus on upload (not during flow execution)
-    if (mediaType === "audio" && TRANSLOADIT_KEY) {
+    // Convert audio to OGG Opus on upload
+    if (mediaType === "audio") {
       const oggUrl = await convertAudioToOgg(originalUrl);
       if (oggUrl) {
-        // Download OGG and re-upload to our storage
         const oggRes = await fetch(oggUrl);
         if (oggRes.ok) {
           const oggBuffer = Buffer.from(await oggRes.arrayBuffer());
           finalUrl = await uploadToStorage(oggBuffer, `flow_${Date.now()}.ogg`, "audio/ogg");
+          converted = true;
+          console.log("Audio convertido para OGG:", finalUrl.slice(0, 80));
         }
       }
     }
 
-    return NextResponse.json({ url: finalUrl, type: mediaType, name: file.name, size: file.size });
+    return NextResponse.json({ url: finalUrl, type: mediaType, name: file.name, size: file.size, converted });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
