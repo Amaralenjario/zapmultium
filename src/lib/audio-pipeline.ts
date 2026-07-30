@@ -95,27 +95,27 @@ async function mirrorToStorage(fileUrl: string, prefix: string): Promise<string>
   }
 }
 
-// ─── [3] Upload Meta Media API ───
+// ─── [3] Upload Meta Media API via EvoHub proxy ───
 async function uploadToMeta(fileUrl: string, phoneNumberId: string, token: string): Promise<string | null> {
   try {
-    const dl = await fetch(fileUrl);
-    if (!dl.ok) return null;
-    const buffer = await dl.arrayBuffer();
-    const contentType = dl.headers.get("content-type") || "audio/ogg";
-
-    const form = new FormData();
-    form.append("file", new Blob([buffer], { type: contentType }), "audio.ogg");
-    form.append("type", contentType);
-    form.append("messaging_product", "whatsapp");
-
-    const res = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/media`, {
+    // Tenta via EvoHub primeiro (traduz o token pra Meta)
+    const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/media`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        file: fileUrl,
+        type: "audio/ogg",
+      }),
     });
-
-    const data = await res.json();
-    return res.ok ? data.id || null : null;
+    if (res.ok) {
+      const data = await res.json();
+      if (data.id) return data.id;
+    }
+    return null;
   } catch {
     return null;
   }
