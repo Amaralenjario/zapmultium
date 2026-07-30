@@ -114,7 +114,7 @@ export default function FlowBar({
   };
 
   return (
-    <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 bg-[#f0f2f5] dark:bg-[#1a252c] overflow-hidden">
+    <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 bg-[#f0f2f5] dark:bg-[#1a252c] overflow-hidden max-w-full">
       {/* Flow progress indicator */}
       {progress && (
         <div className="px-3 py-1.5 flex items-center gap-2 border-b border-gray-200/50 dark:border-gray-800/50">
@@ -158,7 +158,7 @@ export default function FlowBar({
       {/* Horizontal flow trigger cards */}
       <div className="px-3 py-1.5">
         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 font-semibold">Fluxos</p>
-        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
           {flows.map((flow) => (
             <button
               key={flow.id}
