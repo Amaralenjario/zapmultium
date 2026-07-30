@@ -1,4 +1,4 @@
-// Audio Pipeline - upload via EvoHub media endpoint → media_id → audio nativo
+// Audio Pipeline - upload Meta → media_id → audio nativo
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 
@@ -17,61 +17,62 @@ export async function processAndSendMedia(
         type: mediaType === "video" ? "video" : mediaType,
         [mediaType]: { link: fileUrl },
       };
-      const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
+      const res = await fetch(`${EVOHUB_API_URL}/meta/${phoneNumberId}/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      // If HTTP failed but Meta delivered (has wamid), consider success
+      const wamid = data?.messages?.[0]?.id;
+      if (wamid) return { waMessageId: wamid };
       if (!res.ok) throw new Error(JSON.stringify(data));
-      return { waMessageId: data.messages?.[0]?.id || null };
+      return { waMessageId: wamid };
     }
 
-    // ─── Audio: upload via EvoHub → media_id → audio nativo ───
+    // ─── Audio: upload Meta → media_id → send with id ───
+    // 1) Download from storage
     const dl = await fetch(fileUrl);
     if (!dl.ok) throw new Error(`Download falhou: ${dl.status}`);
-    const buffer = await dl.arrayBuffer();
-    const contentType = dl.headers.get("content-type") || "audio/mpeg";
+    const buffer = Buffer.from(await dl.arrayBuffer());
+    const contentType = dl.headers.get("content-type") || "audio/ogg";
+    const isOgg = contentType.includes("ogg") || contentType.includes("opus");
 
-    // Upload via EvoHub media endpoint (multipart)
+    // 2) Upload direto na Meta → media_id
     const form = new FormData();
-    form.append("file", new Blob([buffer], { type: contentType }), "audio.file");
+    form.append("file", new Blob([buffer], { type: contentType }), "audio.ogg");
     form.append("type", contentType);
     form.append("messaging_product", "whatsapp");
 
-    const uploadRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/media`, {
+    const metaRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/media`, {
       method: "POST",
       headers: { Authorization: `Bearer ${channelToken}` },
       body: form,
     });
 
-    const uploadData = await uploadRes.json();
-
-    let mediaId: string | null = null;
-    if (uploadRes.ok && uploadData.id) {
-      mediaId = uploadData.id;
+    const metaData = await metaRes.json();
+    if (!metaRes.ok || !metaData.id) {
+      throw new Error(metaData?.error?.message || JSON.stringify(metaData).slice(0, 200));
     }
+    const mediaId = metaData.id;
 
-    // Send with media_id or fallback to document
-    const sendBody: any = { messaging_product: "whatsapp", to };
+    // 3) Send with media_id via EvoHub (path sem versão!)
+    const sendBody: any = {
+      type: "audio",
+      audio: { id: mediaId, voice: isOgg || undefined },
+    };
 
-    if (mediaId) {
-      sendBody.type = "audio";
-      sendBody.audio = { id: mediaId };
-    } else {
-      sendBody.type = "document";
-      sendBody.document = { link: fileUrl, filename: "audio.mp3" };
-    }
-
-    const sendRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
+    const sendRes = await fetch(`${EVOHUB_API_URL}/meta/${phoneNumberId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify(sendBody),
+      body: JSON.stringify({ messaging_product: "whatsapp", to, ...sendBody }),
     });
 
     const sendData = await sendRes.json();
+    const wamid = sendData?.messages?.[0]?.id;
+    if (wamid) return { waMessageId: wamid };
     if (!sendRes.ok) throw new Error(JSON.stringify(sendData));
-    return { waMessageId: sendData.messages?.[0]?.id || null };
+    return { waMessageId: wamid };
   } catch (err: any) {
     return { waMessageId: null, error: err.message };
   }
