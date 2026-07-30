@@ -320,12 +320,15 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
   const handleExport = async () => {
     if (!rfInstance) return;
     const flow = rfInstance.toObject();
-    const steps: FlowStep[] = flow.nodes.map((n) => ({ id: n.id, type: n.data.type, label: n.data.label, config: n.data.config }));
     const { exportFlowV1 } = await import("@/lib/flow-export");
-    const code = exportFlowV1("Fluxo", steps as any, flow.edges as any);
+    const code = exportFlowV1(
+      "Fluxo",
+      flow.nodes.map((n: any) => ({ id: n.id, type: n.data.type, label: n.data.label, config: n.data.config, position: n.position })),
+      flow.edges as any
+    );
     try {
       await navigator.clipboard.writeText(code);
-      alert("Código FLOWV1 copiado para a área de transferência!");
+      alert("Código FLOWV1 copiado!");
     } catch {
       alert("Código FLOWV1:\n\n" + code.slice(0, 500) + "...");
     }

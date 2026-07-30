@@ -107,22 +107,28 @@ function fromFlowV1Data(type: string, data: Record<string, any>): Record<string,
 
 export function exportFlowV1(
   name: string,
-  steps: FlowNode[],
+  steps: { id: string; type: string; label?: string; config?: Record<string, any>; data?: { type?: string; config?: Record<string, any>; label?: string } }[],
   edges: FlowEdge[]
 ): string {
   const exportData: FlowV1Export = {
     version: 1,
     exported_at: new Date().toISOString(),
     nome: name,
-    entry_node_id: steps.find((n) => n.type === "start" || n.data?.type === "start")?.id || steps[0]?.id || "",
-    nodes: steps.map((n) => {
+    entry_node_id: steps.find((n) => {
       const ourType = n.data?.type || n.type;
+      return ourType === "start";
+    })?.id || steps[0]?.id || "",
+    nodes: steps.map((n) => {
+      // Support both: { type, config } (from handleExport) and { data: { type, config } } (from ReactFlow)
+      const nodeData = n.data || n;
+      const ourType = nodeData.type || "";
+      const config = (n.config || nodeData.config || {}) as Record<string, any>;
       const v1Type = TO_FLOWV1[ourType] || ourType;
       return {
         id: n.id,
         type: v1Type,
-        position: n.position,
-        data: toFlowV1Data(ourType, n.data?.config || {}),
+        position: (n as any).position || { x: 100, y: 100 },
+        data: toFlowV1Data(ourType, config),
       };
     }),
     edges: edges.map((e) => ({
