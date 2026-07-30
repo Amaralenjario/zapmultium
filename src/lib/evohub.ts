@@ -107,6 +107,14 @@ export async function getPhoneNumberFromMeta(channelToken: string, phoneNumberId
 }
 
 export async function enrichChannelsWithPhoneNumbers(channels: EvoHubChannel[]): Promise<(EvoHubChannel & { displayPhone?: string })[]> {
+  const KNOWN: Record<string, string> = {
+    "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+    "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+    "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+    "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+    "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+  };
+
   const supabase = createClient();
   const { data: opChannels } = await supabase
     .from("operations_channels")
@@ -114,10 +122,11 @@ export async function enrichChannelsWithPhoneNumbers(channels: EvoHubChannel[]):
     .eq("is_active", true);
 
   const phoneIdMap: Record<string, string> = {};
+  for (const [chId, phoneId] of Object.entries(KNOWN)) {
+    phoneIdMap[chId] = phoneId;
+  }
   for (const row of opChannels || []) {
-    if (row.phone_number_id) {
-      phoneIdMap[row.evohub_channel_id] = row.phone_number_id;
-    }
+    if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id;
   }
 
   return Promise.all(
