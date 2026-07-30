@@ -57,37 +57,57 @@ export async function POST(request: Request) {
   if (!email || !password) return NextResponse.json({ error: "Email e senha obrigatórios" }, { status: 400 });
   if (password.length < 6) return NextResponse.json({ error: "A senha deve ter pelo menos 6 caracteres" }, { status: 400 });
 
-  try {
-    const supabase = getAdminClient();
+  const normalizedEmail = email.trim().toLowerCase();
+  const fullName = name?.trim() || email;
+  let userId: string | null = null;
 
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: email.trim().toLowerCase(),
+  // Try admin.createUser first (requires SUPABASE_SERVICE_ROLE_KEY)
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceKey) {
+    const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+      email: normalizedEmail,
       password,
       email_confirm: true,
-      user_metadata: { full_name: name?.trim() || email },
+      user_metadata: { full_name: fullName },
     });
+    if (!authError && authData?.user) {
+      userId = authData.user.id;
+    }
+    // If admin fails, log and fall through to signUp
+  }
 
-    if (authError || !authData?.user) {
+  // Fallback: use signUp with anon key (works without service role key)
+  if (!userId) {
+    const anonClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data: signUpData, error: signUpError } = await anonClient.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: { data: { full_name: fullName } },
+    });
+    if (signUpError || !signUpData?.user) {
       return NextResponse.json({
-        error: authError?.message || "Falha ao criar usuário. Verifique a variável SUPABASE_SERVICE_ROLE_KEY no Vercel.",
-        code: authError?.status || 500,
+        error: signUpError?.message || (serviceKey ? "Falha ao criar usuário (admin e signUp)" : "Falha ao criar usuário. Verifique SUPABASE_SERVICE_ROLE_KEY no Vercel."),
       }, { status: 400 });
     }
-
-    const userId = authData.user.id;
-
-    await supabase.from("profiles").upsert({
-      id: userId, full_name: name?.trim() || email,
-      email: email.trim().toLowerCase(), role: role || "operator", is_active: true,
-    });
-
-    if (evohub_channel_id) {
-      await supabase.from("seller_channels").delete().eq("user_id", userId);
-      await supabase.from("seller_channels").insert({ user_id: userId, evohub_channel_id });
-    }
-
-    return NextResponse.json({ id: userId, name, email, role: role || "operator" }, { status: 201 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Erro interno. Verifique SUPABASE_SERVICE_ROLE_KEY no Vercel." }, { status: 500 });
+    userId = signUpData.user.id;
   }
+
+  // Save profile + channel
+  const profileClient = serviceKey
+    ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    : createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
+
+  await profileClient.from("profiles").upsert({
+    id: userId, full_name: fullName,
+    email: normalizedEmail, role: role || "operator", is_active: true,
+  });
+
+  if (evohub_channel_id && serviceKey) {
+    const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    await adminClient.from("seller_channels").delete().eq("user_id", userId);
+    await adminClient.from("seller_channels").insert({ user_id: userId, evohub_channel_id });
+  }
+
+  return NextResponse.json({ id: userId, name: fullName, email: normalizedEmail, role: role || "operator" }, { status: 201 });
 }
