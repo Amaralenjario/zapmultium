@@ -248,11 +248,6 @@ export default function ChatWindow({
         )}
       </div>
 
-      <FlowBar
-        conversationId={conversation.id}
-        phoneNumberId={phoneNumberId}
-        customerPhone={customerPhone}
-      />
       <ChatInput
         conversationId={conversation.id}
         phoneNumberId={phoneNumberId}
@@ -260,6 +255,11 @@ export default function ChatWindow({
         onMessageSent={fetchMessages}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
+      />
+      <FlowBar
+        conversationId={conversation.id}
+        phoneNumberId={phoneNumberId}
+        customerPhone={customerPhone}
       />
     </div>
   );

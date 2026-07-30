@@ -33,6 +33,7 @@ export default function FlowBar({
   const [flows, setFlows] = useState<FlowCard[]>([]);
   const [progress, setProgress] = useState<FlowProgress | null>(null);
   const [triggering, setTriggering] = useState<string | null>(null);
+  const [confirmFlow, setConfirmFlow] = useState<FlowCard | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,6 +55,14 @@ export default function FlowBar({
   }, [conversationId]);
 
   const handleTrigger = async (flow: FlowCard) => {
+    // Show confirmation
+    setConfirmFlow(flow);
+  };
+
+  const doTrigger = async () => {
+    if (!confirmFlow) return;
+    const flow = confirmFlow;
+    setConfirmFlow(null);
     if (!phoneNumberId || !customerPhone) {
       toast.error("Canal não configurado");
       return;
@@ -156,6 +165,30 @@ export default function FlowBar({
           )}
         </div>
       </div>
+
+      {confirmFlow && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setConfirmFlow(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-5 mb-4 animate-in" onClick={(e) => e.stopPropagation()}>
+            <svg className="w-10 h-10 mx-auto mb-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            <p className="text-center text-sm text-gray-700 dark:text-gray-300 mb-1">
+              Tem certeza que deseja disparar o fluxo
+            </p>
+            <p className="text-center text-base font-bold text-gray-900 dark:text-white mb-4">
+              &ldquo;{confirmFlow.name}&rdquo;?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmFlow(null)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+                Cancelar
+              </button>
+              <button onClick={doTrigger} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500">
+                Sim, disparar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
