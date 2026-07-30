@@ -79,8 +79,8 @@ export default function MessageBubble({
           <span className="text-[11px] bg-white/90 dark:bg-gray-800/90 text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">{showDate}</span>
         </div>
       )}
-      <div className={`flex ${isAgent ? "justify-end" : "justify-start"} group ${isFirst !== false ? "mt-2" : "mt-0.5"} max-w-full overflow-hidden`}>
-        <div className={`relative max-w-[65%] text-sm leading-[1.4] ${isFirst === false ? (isAgent ? "rounded-tr-sm" : "rounded-tl-sm") : ""} ${isAgent ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-l-lg" : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-r-lg"} shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]`}>
+      <div className={`flex ${isAgent ? "justify-end" : "justify-start"} group ${isFirst !== false ? "mt-2" : "mt-0.5"} overflow-hidden`}>
+        <div className={`relative overflow-hidden text-sm leading-[1.4] ${isFirst === false ? (isAgent ? "rounded-tr-sm" : "rounded-tl-sm") : ""} ${isAgent ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-l-lg" : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-r-lg"} shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]`} style={{ maxWidth: "min(65%, 500px)" }}>
           {/* Quoted message */}
           {(context?.id || quotedContent) && (
             <div className={`mx-2 mt-2 px-2.5 py-1.5 rounded-md border-l-[3px] text-xs ${isAgent ? "bg-black/10 border-[#075e54]" : "bg-black/5 dark:bg-white/5 border-[#25d366]"}`}>
@@ -91,7 +91,7 @@ export default function MessageBubble({
           {isMedia ? (
             <MediaContent messageId={message.id} content={message.content} type={message.content_type} metadata={message.metadata} />
           ) : (
-            <p className="whitespace-pre-wrap break-words px-3.5 pt-2 pb-1.5">{message.content}</p>
+            <p className="whitespace-pre-wrap break-all px-3.5 pt-2 pb-1.5 overflow-hidden">{message.content}</p>
           )}
           <span className="inline-flex items-center gap-1 float-right mr-2 mb-1.5 text-[11px] text-[#667781] dark:text-gray-400">
             {format(new Date(message.created_at), "HH:mm")}
