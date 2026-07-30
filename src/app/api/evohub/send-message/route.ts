@@ -6,7 +6,7 @@ const KEY = process.env.EVOHUB_API_KEY;
 
 export async function POST(request: Request) {
   try {
-    const { conversationId, phoneNumberId, to, message } = await request.json();
+    const { conversationId, phoneNumberId, to, message, context } = await request.json();
 
     if (!phoneNumberId || !to || !message) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
@@ -28,19 +28,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Canal não encontrado" }, { status: 404 });
     }
 
-    // Enviar via proxy /meta/* da EvoHub
+    const msgBody: any = {
+      messaging_product: "whatsapp",
+      to,
+      type: "text",
+      text: { body: message },
+    };
+    if (context) msgBody.context = { message_id: context };
+
     const res = await fetch(`${BASE}/meta/v23.0/${phoneNumberId}/messages`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${channelToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to,
-        type: "text",
-        text: { body: message },
-      }),
+      body: JSON.stringify(msgBody),
     });
 
     const data = await res.json();

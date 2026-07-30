@@ -14,6 +14,7 @@ interface Message {
   content_type: string;
   created_at: string;
   read_at?: string | null;
+  metadata?: any;
   conversation_id: string;
 }
 
@@ -27,6 +28,7 @@ export default function ChatWindow({
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevLength = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -223,6 +225,8 @@ export default function ChatWindow({
                   message={msg}
                   isFirst={!consecutive}
                   showDate={dateLabel}
+                  quotedContent={msg.metadata?.context?.id ? messages.find(m => m.metadata?.wa_message_id === msg.metadata?.context?.id)?.content : undefined}
+                  onReply={() => setReplyTo(msg)}
                 />
               );
             })}
@@ -236,6 +240,8 @@ export default function ChatWindow({
         phoneNumberId={phoneNumberId}
         customerPhone={customerPhone}
         onMessageSent={fetchMessages}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
       />
     </div>
   );

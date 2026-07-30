@@ -204,12 +204,13 @@ async function processWhatsAppMessages(payload: any) {
           }
 
           const mediaId = msg.image?.id || msg.video?.id || msg.audio?.id || msg.document?.id || msg.sticker?.id || null;
+          const context = msg.context || null;
           await supabase.from("messages").insert({
             conversation_id: convId,
             sender_type: "customer",
             content,
             content_type: contentType,
-            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId, media_id: mediaId },
+            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId, media_id: mediaId, context },
             created_at: msg.timestamp
               ? new Date(parseInt(msg.timestamp) * 1000).toISOString()
               : new Date().toISOString(),
