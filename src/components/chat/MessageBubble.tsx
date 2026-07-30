@@ -77,7 +77,7 @@ export default function MessageBubble({
           } shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]`}
         >
           {isMedia ? (
-            <MediaContent messageId={message.id} content={message.content} />
+            <MediaContent messageId={message.id} content={message.content} type={message.content_type} />
           ) : (
             <p className="whitespace-pre-wrap break-words px-3.5 pt-2">{message.content}</p>
           )}
@@ -96,8 +96,9 @@ export default function MessageBubble({
   );
 }
 
-function MediaContent({ messageId, content }: { messageId: string; content: string }) {
+function MediaContent({ messageId, content, type }: { messageId: string; content: string; type: string }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [mime, setMime] = useState<string>("");
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -105,7 +106,7 @@ function MediaContent({ messageId, content }: { messageId: string; content: stri
     fetch(`/api/media/${messageId}`)
       .then((r) => r.json())
       .then((d) => {
-        if (d.url) setUrl(d.url);
+        if (d.url) { setUrl(d.url); setMime(d.mime_type || ""); }
         else setError(true);
       })
       .catch(() => setError(true))
@@ -114,7 +115,7 @@ function MediaContent({ messageId, content }: { messageId: string; content: stri
 
   if (loading) {
     return (
-      <div className="px-3.5 py-4 flex items-center gap-2">
+      <div className="px-3.5 py-3 flex items-center gap-2">
         <div className="animate-spin w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full" />
         <span className="text-xs text-gray-400">Carregando...</span>
       </div>
@@ -122,12 +123,47 @@ function MediaContent({ messageId, content }: { messageId: string; content: stri
   }
 
   if (error || !url) {
-    return <p className="px-3.5 py-2 text-gray-400 text-xs">{content}</p>;
+    return <p className="px-3.5 py-2 text-gray-500 dark:text-gray-400 text-xs">{content}</p>;
   }
 
-  return (
-    <div className="p-1">
-      <img src={url} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover" loading="lazy" />
-    </div>
-  );
+  if (type === "image") {
+    return (
+      <div className="p-1">
+        <img src={url} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover" loading="lazy" />
+      </div>
+    );
+  }
+
+  if (type === "video") {
+    return (
+      <div className="p-1">
+        <video controls className="rounded-lg max-w-[300px] max-h-[300px]" preload="metadata">
+          <source src={url} type={mime} />
+        </video>
+      </div>
+    );
+  }
+
+  if (type === "audio") {
+    return (
+      <div className="px-3.5 py-2">
+        <audio controls className="max-w-[260px] h-10" preload="metadata">
+          <source src={url} type={mime} />
+        </audio>
+      </div>
+    );
+  }
+
+  if (type === "document") {
+    return (
+      <div className="px-3.5 py-2">
+        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-[#027eb5] dark:text-[#71c5e8] hover:underline">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+          <span className="text-xs underline">{content}</span>
+        </a>
+      </div>
+    );
+  }
+
+  return <p className="px-3.5 py-2 text-gray-400 text-xs">{content}</p>;
 }
