@@ -22,13 +22,7 @@ interface Message {
 
 interface CrmTag { id: string; name: string; color: string; column_key: string; }
 
-export default function ChatWindow({
-  conversation,
-  onClose,
-}: {
-  conversation: Conversation;
-  onClose: () => void;
-}) {
+export default function ChatWindow({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
@@ -41,130 +35,83 @@ export default function ChatWindow({
   const containerRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
-  const customer = Array.isArray(conversation.customer)
-    ? conversation.customer[0]
-    : conversation.customer;
-
+  const customer = Array.isArray(conversation.customer) ? conversation.customer[0] : conversation.customer;
   const phoneNumberId = (conversation as any).metadata?.phone_number_id || "";
   const operation = phoneMap[phoneNumberId];
   const customerPhone = customer?.phone || "";
 
-  // 24h window calculation
   const lastCustomerMsg = useMemo(() => {
-    const customerMsgs = messages.filter(m => m.sender_type === "customer");
-    if (customerMsgs.length === 0) return null;
-    return customerMsgs.reduce((latest, m) =>
-      new Date(m.created_at) > new Date(latest.created_at) ? m : latest
-    , customerMsgs[0]);
+    const cm = messages.filter(m => m.sender_type === "customer");
+    if (!cm.length) return null;
+    return cm.reduce((l, m) => new Date(m.created_at) > new Date(l.created_at) ? m : l, cm[0]);
   }, [messages]);
 
   const window24h = useMemo(() => {
     if (!lastCustomerMsg) return null;
-    const windowEnd = new Date(lastCustomerMsg.created_at).getTime() + 24 * 60 * 60 * 1000;
-    const now = Date.now();
-    const remaining = windowEnd - now;
-    return { open: remaining > 0, remainingMs: remaining, endTime: windowEnd };
+    const end = new Date(lastCustomerMsg.created_at).getTime() + 86400000;
+    const rem = end - Date.now();
+    return { open: rem > 0, remainingMs: rem, endTime: end };
   }, [lastCustomerMsg]);
 
-  // 24h countdown - update every second if window is open
   const [countdown, setCountdown] = useState("");
   useEffect(() => {
-    if (!window24h || !window24h.open) { setCountdown(""); return; }
+    if (!window24h?.open) { setCountdown(""); return; }
     const update = () => {
-      const remaining = window24h.endTime - Date.now();
-      if (remaining <= 0) setCountdown("Janela fechada");
-      else {
-        const h = Math.floor(remaining / 3600000);
-        const m = Math.floor((remaining % 3600000) / 60000);
-        setCountdown(`${h}h ${m}m`);
-      }
+      const rem = window24h.endTime - Date.now();
+      setCountdown(rem <= 0 ? "Fechada" : `${Math.floor(rem / 3600000)}h ${Math.floor((rem % 3600000) / 60000)}m`);
     };
     update();
-    const interval = setInterval(update, 30000);
-    return () => clearInterval(interval);
+    const i = setInterval(update, 30000);
+    return () => clearInterval(i);
   }, [window24h]);
 
   const fetchMessages = async () => {
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("conversation_id", conversation.id)
-      .order("created_at", { ascending: true });
+    const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
     setMessages(data || []);
     setLoading(false);
   };
 
   useEffect(() => {
-    setMessages([]);
-    setLoading(true);
-    prevLength.current = 0;
+    setMessages([]); setLoading(true); prevLength.current = 0;
     fetchMessages();
-
-    supabase
-      .from("operations_channels")
-      .select("phone_number_id, operation:operation_id(name, color)")
-      .eq("is_active", true)
-      .not("phone_number_id", "is", null)
-      .then(({ data }) => {
-        if (data) {
-          const map: Record<string, { name: string; color: string }> = {};
-          for (const row of data) {
-            const op = Array.isArray(row.operation) ? row.operation[0] : row.operation;
-            if (row.phone_number_id && op) map[row.phone_number_id] = { name: op.name, color: op.color };
-          }
-          setPhoneMap(map);
+    supabase.from("operations_channels").select("phone_number_id, operation:operation_id(name, color)").eq("is_active", true).not("phone_number_id", "is", null).then(({ data }) => {
+      if (data) {
+        const map: Record<string, { name: string; color: string }> = {};
+        for (const row of data) {
+          const op = Array.isArray(row.operation) ? row.operation[0] : row.operation;
+          if (row.phone_number_id && op) map[row.phone_number_id] = { name: op.name, color: op.color };
         }
-      });
-
+        setPhoneMap(map);
+      }
+    });
     markAsRead();
   }, [conversation.id]);
 
   const markAsRead = async () => {
     await supabase.from("conversations").update({ unread_count: 0, last_message_read: true }).eq("id", conversation.id);
-
-    const { data: unread } = await supabase
-      .from("messages")
-      .select("id, metadata")
-      .eq("conversation_id", conversation.id)
-      .eq("sender_type", "customer")
-      .is("read_at", null);
-
+    const { data: unread } = await supabase.from("messages").select("id, metadata").eq("conversation_id", conversation.id).eq("sender_type", "customer").is("read_at", null);
     if (unread && unread.length > 0) {
       const now = new Date().toISOString();
-      await supabase
-        .from("messages")
-        .update({ read_at: now })
-        .eq("conversation_id", conversation.id)
-        .eq("sender_type", "customer")
-        .is("read_at", null);
-
+      await supabase.from("messages").update({ read_at: now }).eq("conversation_id", conversation.id).eq("sender_type", "customer").is("read_at", null);
       const lastMsg = unread[unread.length - 1];
       if (phoneNumberId && lastMsg?.metadata?.wa_message_id) {
-        fetch("/api/evohub/mark-read", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phoneNumberId, messageId: lastMsg.metadata.wa_message_id }),
-        }).catch(() => {});
+        fetch("/api/evohub/mark-read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phoneNumberId, messageId: lastMsg.metadata.wa_message_id }) }).catch(() => {});
       }
     }
   };
 
   const handleReact = async (msg: Message, emoji: string) => {
     if (!phoneNumberId || !msg.metadata?.wa_message_id) return;
-    fetch("/api/evohub/send-reaction", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phoneNumberId, messageId: msg.metadata.wa_message_id, emoji, to: customerPhone }),
-    }).catch(() => {});
+    fetch("/api/evohub/send-reaction", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phoneNumberId, messageId: msg.metadata.wa_message_id, emoji, to: customerPhone }) }).catch(() => {});
     const reactions = { ...(msg.metadata?.reactions || {}), "me": emoji };
     setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, metadata: { ...m.metadata, reactions } } : m));
   };
 
   const toggleArchive = async () => {
-    const newState = !archived;
-    await supabase.from("conversations").update({ archived: newState }).eq("id", conversation.id);
-    setArchived(newState);
-    toast.success(newState ? "Conversa arquivada" : "Conversa desarquivada");
+    const next = !archived;
+    await supabase.from("conversations").update({ archived: next }).eq("id", conversation.id);
+    setArchived(next);
+    toast.success(next ? "Conversa arquivada" : "Conversa desarquivada");
   };
 
   const handleOpenTagModal = async () => {
@@ -174,50 +121,28 @@ export default function ChatWindow({
   };
 
   const handleAddTag = async (tagId: string) => {
-    // Find the lead by customer phone
     const { data: lead } = await supabase.from("leads").select("id").eq("phone", customerPhone).maybeSingle();
-    if (!lead) { toast.error("Lead não encontrado no CRM"); return; }
-    const res = await fetch(`/api/crm/leads/${lead.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tag_id: tagId }),
-    });
+    if (!lead) { toast.error("Lead não encontrado"); return; }
+    const res = await fetch(`/api/crm/leads/${lead.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag_id: tagId }) });
     if (res.ok) { toast.success("Etiqueta aplicada!"); setShowTagModal(false); }
-    else toast.error("Erro ao aplicar etiqueta");
   };
 
   useEffect(() => {
     if (loading) return;
-    // Delay to let DOM render messages first
     requestAnimationFrame(() => {
-      if (containerRef.current) {
-        containerRef.current.scrollTop = containerRef.current.scrollHeight;
-      }
+      if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight;
     });
     prevLength.current = messages.length;
   }, [messages, loading]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversation.id)
-        .order("created_at", { ascending: true });
+      const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
       if (data && data.length > 0) {
-        setMessages((prev) => {
-          if (data.length === prev.length) {
-            let changed = false;
-            const updated = prev.map((m) => {
-              const fresh = data.find((d) => d.id === m.id);
-              if (fresh && fresh.read_at !== m.read_at) { changed = true; return fresh; }
-              return m;
-            });
-            return changed ? updated : prev;
-          }
-          const freshIds = new Set(data.map((m) => m.id));
-          const merged = [...prev.filter((m) => freshIds.has(m.id)), ...data.filter((d) => !prev.some((m) => m.id === d.id))];
-          return merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        setMessages(prev => {
+          if (data.length === prev.length) { let changed = false; const u = prev.map(m => { const f = data.find(d => d.id === m.id); if (f && f.read_at !== m.read_at) { changed = true; return f; } return m; }); return changed ? u : prev; }
+          const ids = new Set(data.map(m => m.id));
+          return [...prev.filter(m => ids.has(m.id)), ...data.filter(d => !prev.some(m => m.id === d.id))].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
         });
       }
     }, 2000);
@@ -225,27 +150,21 @@ export default function ChatWindow({
   }, [conversation.id]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel("messages-" + conversation.id)
+    const channel = supabase.channel("messages-" + conversation.id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversation.id}` }, (payload) => {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === (payload.new as Message).id)) return prev;
-          return [...prev, payload.new as Message];
-        });
-      })
-      .subscribe();
+        setMessages(prev => { if (prev.some(m => m.id === (payload.new as Message).id)) return prev; return [...prev, payload.new as Message]; });
+      }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [conversation.id]);
 
   const headerBg = operation?.color || "#075e54";
 
   return (
-    <div className="flex flex-col h-full bg-[#efeae2] dark:bg-[#0b141a]">
+    <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2.5 text-white flex-shrink-0" style={{ backgroundColor: headerBg }}>
-        <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+        <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition md:hidden">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
         <Avatar name={customer?.name} size="sm" />
         <div className="flex-1 min-w-0">
@@ -258,25 +177,17 @@ export default function ChatWindow({
         <button onClick={toggleArchive} className="p-2 hover:bg-white/10 rounded-full transition" title={archived ? "Desarquivar" : "Arquivar"}>
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={archived ? "M3 4h18M3 8l1.5 13h15L21 8M9 12v6M12 12v6M15 12v6" : "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"} /></svg>
         </button>
-        <button className="p-2 hover:bg-white/10 rounded-full transition">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-          </svg>
-        </button>
       </div>
 
-      {/* 24h window indicator */}
+      {/* 24h window */}
       {window24h && (
-        <div className={`px-4 py-1 text-[10px] font-medium text-center flex-shrink-0 ${window24h.open ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-b border-amber-200 dark:border-amber-800" : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-b border-red-200 dark:border-red-800"}`}>
-          {window24h.open ? (
-            <span>Janela 24h aberta · Fecha em {countdown || `${Math.floor(window24h.remainingMs / 3600000)}h`}</span>
-          ) : (
-            <span>Janela 24h fechada</span>
-          )}
+        <div className={`px-3 py-1 text-[10px] font-medium text-center flex-shrink-0 ${window24h.open ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-b border-amber-200 dark:border-amber-800" : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-b border-red-200 dark:border-red-800"}`}>
+          {window24h.open ? `Janela 24h · fecha em ${countdown}` : "Janela 24h fechada"}
         </div>
       )}
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden w-full" style={{ wordBreak: "break-word" }}>
+      {/* Messages */}
+      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin w-8 h-8 border-[3px] border-gray-300 border-t-[#075e54] dark:border-gray-600 dark:border-t-green-400 rounded-full" />
@@ -291,30 +202,17 @@ export default function ChatWindow({
             </div>
           </div>
         ) : (
-          <div className="px-4 py-2">
+          <div className="py-2">
             <div className="flex justify-center mb-3">
-              <span className="text-[11px] bg-white/90 dark:bg-[#182229] text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">
-                As mensagens são criptografadas de ponta a ponta
-              </span>
+              <span className="text-[11px] bg-white/90 dark:bg-[#182229] text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">As mensagens são criptografadas de ponta a ponta</span>
             </div>
             {messages.map((msg, i) => {
               const prev = i > 0 ? messages[i - 1] : null;
               const consecutive = isConsecutive(prev, msg);
-              const dateLabel = shouldShowDate(prev?.created_at || "", msg.created_at)
-                ? formatDateHeader(new Date(msg.created_at))
-                : undefined;
+              const dateLabel = shouldShowDate(prev?.created_at || "", msg.created_at) ? formatDateHeader(new Date(msg.created_at)) : undefined;
               const quotedMsg = msg.metadata?.context?.id ? messages.find(m => m.metadata?.wa_message_id === msg.metadata?.context?.id) : null;
               return (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  isFirst={!consecutive}
-                  showDate={dateLabel}
-                  quotedContent={quotedMsg?.content}
-                  quotedByAgent={quotedMsg?.sender_type === "agent"}
-                  onReply={() => setReplyTo(msg)}
-                  onReact={(emoji) => handleReact(msg, emoji)}
-                />
+                <MessageBubble key={msg.id} message={msg} isFirst={!consecutive} showDate={dateLabel} quotedContent={quotedMsg?.content} quotedByAgent={quotedMsg?.sender_type === "agent"} onReply={() => setReplyTo(msg)} onReact={(emoji) => handleReact(msg, emoji)} />
               );
             })}
             <div ref={bottomRef} />
@@ -322,22 +220,9 @@ export default function ChatWindow({
         )}
       </div>
 
-      <ChatInput
-        conversationId={conversation.id}
-        phoneNumberId={phoneNumberId}
-        customerPhone={customerPhone}
-        onMessageSent={fetchMessages}
-        replyTo={replyTo}
-        onCancelReply={() => setReplyTo(null)}
-      />
-      <FlowBar
-        key={conversation.id}
-        conversationId={conversation.id}
-        phoneNumberId={phoneNumberId}
-        customerPhone={customerPhone}
-      />
+      <ChatInput conversationId={conversation.id} phoneNumberId={phoneNumberId} customerPhone={customerPhone} onMessageSent={fetchMessages} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />
+      <FlowBar conversationId={conversation.id} phoneNumberId={phoneNumberId} customerPhone={customerPhone} />
 
-      {/* Tag modal */}
       {showTagModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowTagModal(false)}>
           <div className="w-full max-w-xs rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
@@ -349,7 +234,7 @@ export default function ChatWindow({
                   <span className="text-sm text-gray-700 dark:text-gray-300">{tag.name}</span>
                 </button>
               ))}
-              {crmTags.length === 0 && <p className="text-xs text-gray-400 text-center py-4">Nenhuma etiqueta. Crie no CRM.</p>}
+              {!crmTags.length && <p className="text-xs text-gray-400 text-center py-4">Nenhuma etiqueta. Crie no CRM.</p>}
             </div>
             <button onClick={() => setShowTagModal(false)} className="w-full mt-3 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm text-gray-600 dark:text-gray-300">Fechar</button>
           </div>
