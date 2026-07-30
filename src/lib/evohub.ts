@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 const KEY = process.env.EVOHUB_API_KEY;
+const CONNECT_BASE = "https://app.evohub.evolutionfoundation.com.br";
 
 export interface EvoHubChannel {
   id: string;
@@ -102,7 +103,7 @@ export async function createChannel(name: string, type: string = "whatsapp") {
     token: data.token,
     status: data.status,
     type: data.type,
-    connectUrl: `https://app.evohub.ai/connect/${data.token}`,
+    connectUrl: `${CONNECT_BASE}/connect/${data.token}`,
   };
 }
 

@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       token: data.token,
       status: data.status,
       type: data.type,
-      connectUrl: `https://app.evohub.ai/connect/${data.token}`,
+      connectUrl: `https://app.evohub.evolutionfoundation.com.br/connect/${data.token}`,
     });
   } catch {
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });

@@ -98,7 +98,7 @@ export default function WhatsappPageClient({
         {channels.map((ch) => {
           const statusCfg = getStatusConfig(ch.status);
             const isActive = ch.status === "active";
-            const link = `https://app.evohub.ai/connect/${ch.token}`;
+            const link = `https://app.evohub.evolutionfoundation.com.br/connect/${ch.token}`;
             const mapping = phoneMap[ch.id];
 
           return (
