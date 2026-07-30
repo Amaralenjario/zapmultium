@@ -41,6 +41,8 @@ export default function CrmKanban() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [opColors, setOpColors] = useState<Record<string, { color: string; name: string }>>({});
+  const [custPhoneMap, setCustPhoneMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [showNewCol, setShowNewCol] = useState(false);
   const [showNewTag, setShowNewTag] = useState(false);
@@ -54,12 +56,30 @@ export default function CrmKanban() {
   const supabase = createClient();
 
   const fetchAll = useCallback(async () => {
-    const [leadsRes, colsRes, tagsRes, custRes] = await Promise.all([
+    const [leadsRes, colsRes, tagsRes, custRes, opRes, convRes] = await Promise.all([
       supabase.from("leads").select("*, lead_tags(tag_id, tag:crm_tags(id, name, color))").order("created_at", { ascending: false }),
       fetch("/api/crm/columns").then((r) => r.json()),
       fetch("/api/crm/tags").then((r) => r.json()),
-      supabase.from("customers").select("name, phone, last_interaction_at").order("last_interaction_at", { ascending: false }),
+      supabase.from("customers").select("id, name, phone, last_interaction_at").order("last_interaction_at", { ascending: false }),
+      supabase.from("operations_channels").select("phone_number_id, operation:operation_id(name, color)").eq("is_active", true),
+      supabase.from("conversations").select("customer_id, metadata").not("metadata->phone_number_id", "is", null),
     ]);
+
+    // Map: customer_id → phone_number_id
+    const custPhoneMap: Record<string, string> = {};
+    for (const c of convRes.data || []) {
+      const pid = c.metadata?.phone_number_id;
+      if (pid) custPhoneMap[c.customer_id] = pid;
+    }
+
+    // Map: phone_number_id → operation color + name
+    const opColorMap: Record<string, { color: string; name: string }> = {};
+    for (const oc of opRes.data || []) {
+      const op = Array.isArray(oc.operation) ? oc.operation[0] : oc.operation;
+      if (oc.phone_number_id && op) opColorMap[oc.phone_number_id] = { color: op.color, name: op.name };
+    }
+    setOpColors(opColorMap);
+    setCustPhoneMap(custPhoneMap);
     
     const existingLeads = leadsRes.data || [];
     const existingPhones = new Set(existingLeads.map((l: any) => l.phone));
@@ -78,6 +98,7 @@ export default function CrmKanban() {
         notes: null,
         created_at: c.last_interaction_at || new Date().toISOString(),
         lead_tags: [],
+        _customer_id: c.id,
       }));
     
     setLeads([...existingLeads, ...customersAsLeads]);
@@ -203,6 +224,14 @@ export default function CrmKanban() {
     fetchAll();
   };
 
+  const getLeadOpColor = (lead: any) => {
+    const custId = (lead as any)._customer_id;
+    if (custId && custPhoneMap[custId]) {
+      return opColors[custPhoneMap[custId]]?.color || null;
+    }
+    return null;
+  };
+
   const leadsByStatus = columns.reduce((acc: Record<string, Lead[]>, col) => {
     acc[col.key] = leads.filter((l) => l.status === col.key);
     return acc;
@@ -299,7 +328,8 @@ export default function CrmKanban() {
                         draggable
                         onDragStart={(e) => handleDragStart(e, lead.id)}
                         onDragEnd={() => setDragging(null)}
-                        className={`bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:shadow-md transition border-l-4 cursor-grab active:cursor-grabbing ${priorityBorder[lead.priority] || "border-l-gray-400"} ${dragging === lead.id ? "opacity-40" : ""}`}
+                        className={`bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:shadow-md transition border-l-4 cursor-grab active:cursor-grabbing ${dragging === lead.id ? "opacity-40" : ""}`}
+                        style={{ borderLeftColor: getLeadOpColor(lead) || "#9ca3af" }}
                       >
                         <div className="flex items-center gap-2 mb-2">
                           <Avatar name={lead.name} size="sm" />
