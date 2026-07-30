@@ -53,6 +53,8 @@ export default function ConversationList({
     if (sellerPhoneIds !== null) {
       filtered = filtered.filter((conv) => {
         const phoneId = (conv as any).metadata?.phone_number_id || "";
+        // Allow conversations without phone_number_id (legacy data)
+        if (!phoneId) return true;
         return sellerPhoneIds.length > 0 ? sellerPhoneIds.includes(phoneId) : false;
       });
     }
@@ -121,7 +123,7 @@ export default function ConversationList({
         .from("conversations")
         .select("id, status, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)")
         .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(100);
+        .limit(500);
       setAllConversations(data || []);
     };
 
