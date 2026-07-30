@@ -95,13 +95,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: createError.message }, { status: 500 });
     }
 
-    // Fire and forget - process in background, respond immediately
+    // Process synchronously so errors are returned to client
     const { processFlowStep } = await import("@/lib/flow-engine");
-    processFlowStep(execution.id).catch((err) => {
-      console.error("Background flow processing failed:", err?.message || err);
-    });
-
-    return NextResponse.json({ ok: true, execution });
+    try {
+      const result = await processFlowStep(execution.id);
+      return NextResponse.json({ ok: true, execution, result });
+    } catch (err: any) {
+      console.error("processFlowStep failed:", err?.message || err);
+      return NextResponse.json({ ok: true, execution, warning: "Processamento em background falhou" });
+    }
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
