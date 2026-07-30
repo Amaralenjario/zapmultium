@@ -229,6 +229,8 @@ async function processWhatsAppMessages(payload: any) {
         .update({
           last_message: lastContent,
           last_message_at: new Date().toISOString(),
+          last_message_sender: "customer",
+          last_message_read: false,
         })
         .eq("id", convId);
     }

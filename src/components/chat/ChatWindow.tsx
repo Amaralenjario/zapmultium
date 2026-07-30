@@ -77,8 +77,8 @@ export default function ChatWindow({
   }, [conversation.id]);
 
   const markAsRead = async () => {
-    // Zerar unread_count
-    await supabase.from("conversations").update({ unread_count: 0 }).eq("id", conversation.id);
+    // Zerar unread_count e marcar como lido
+    await supabase.from("conversations").update({ unread_count: 0, last_message_read: true }).eq("id", conversation.id);
 
     // Marcar mensagens do cliente como lidas
     const { data: unread } = await supabase

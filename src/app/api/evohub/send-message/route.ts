@@ -70,6 +70,8 @@ export async function POST(request: Request) {
         .from("conversations")
         .update({
           last_message: message,
+          last_message_sender: "agent",
+          last_message_read: false,
           last_message_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           unread_count: 0,

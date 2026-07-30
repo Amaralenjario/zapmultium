@@ -16,6 +16,8 @@ export interface Conversation {
   status: string;
   last_message: string | null;
   last_message_at: string | null;
+  last_message_sender?: string | null;
+  last_message_read?: boolean | null;
   unread_count: number;
   created_at: string;
   metadata?: Record<string, any>;
@@ -37,7 +39,7 @@ export default function ConversationList({
     const fetchConversations = async () => {
       const { data } = await supabase
         .from("conversations")
-        .select("id, status, last_message, last_message_at, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)")
+        .select("id, status, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)")
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(50);
       setConversations(data || []);
@@ -147,8 +149,14 @@ export default function ConversationList({
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} />
                       )}
                       <p className="text-[13px] text-[#667781] dark:text-[#8696a0] truncate">
+                        {conv.last_message_sender === "agent" && (
+                          <span className="text-[#667781] dark:text-[#8696a0]">Você: </span>
+                        )}
                         {conv.last_message || ""}
                       </p>
+                      {conv.last_message_sender === "agent" && conv.last_message_read && (
+                        <svg className="w-3.5 h-3.5 text-[#53bdeb] flex-shrink-0" fill="currentColor" viewBox="0 0 16 11"><path d="M11.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z"/></svg>
+                      )}
                     </div>
                     {conv.unread_count > 0 ? (
                       <span className="bg-[#25d366] text-white text-[11px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ml-2 min-w-[20px] text-center leading-tight">
