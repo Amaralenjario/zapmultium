@@ -1,78 +1,45 @@
-import { createClient } from "@/lib/supabase/server";
+"use client";
 
-export default async function ChatAoVivoPage() {
-  const supabase = createClient();
+import { useState } from "react";
+import ConversationList, { type Conversation } from "@/components/chat/ConversationList";
+import ChatWindow from "@/components/chat/ChatWindow";
 
-  const { data: conversations } = await supabase
-    .from("conversations")
-    .select("id, status, last_message, last_message_at, unread_count, created_at, customer:customer_id(name, phone, avatar_url)")
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(50);
+export default function ChatPageClient() {
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Chat ao vivo</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">Atendimento em tempo real via WhatsApp</p>
+    <div className="-m-8 flex h-[calc(100vh)]">
+      <div className="w-[380px] flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <ConversationList
+          selectedId={selectedConversation?.id || null}
+          onSelect={setSelectedConversation}
+        />
       </div>
 
-      {!conversations || conversations.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-8">
-          <div className="flex items-center justify-center h-64 text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+      <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-950">
+        {selectedConversation ? (
+          <ChatWindow
+            conversation={selectedConversation}
+            onClose={() => setSelectedConversation(null)}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <p className="text-lg">Nenhum chat ativo</p>
-              <p className="text-sm mt-1">Conecte um número de WhatsApp para começar</p>
+              <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-600/20 flex items-center justify-center">
+                <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
+                Chat ao vivo
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Selecione uma conversa para começar
+              </p>
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {conversations.map((conv) => {
-            const customer = Array.isArray(conv.customer)
-              ? conv.customer[0]
-              : conv.customer;
-            return (
-              <div
-                key={conv.id}
-                className="flex items-center gap-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 hover:border-gray-300 dark:hover:border-gray-700 transition cursor-pointer"
-              >
-                <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-600/20 flex items-center justify-center text-green-600 dark:text-green-500 font-bold text-sm">
-                  {customer?.name?.charAt(0)?.toUpperCase() || "?"}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium text-gray-900 dark:text-white truncate">{customer?.name || customer?.phone || "Desconhecido"}</p>
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
-                      {conv.last_message_at
-                        ? new Date(conv.last_message_at).toLocaleDateString("pt-BR")
-                        : new Date(conv.created_at).toLocaleDateString("pt-BR")}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{conv.last_message || "Nova conversa"}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {conv.unread_count > 0 && (
-                    <span className="bg-green-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                      {conv.unread_count}
-                    </span>
-                  )}
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
-                      conv.status === "active"
-                        ? "bg-green-100 text-green-600 dark:bg-green-600/20 dark:text-green-400"
-                        : conv.status === "pending"
-                        ? "bg-yellow-100 text-yellow-600 dark:bg-yellow-600/20 dark:text-yellow-400"
-                        : "bg-gray-100 text-gray-500 dark:bg-gray-600/20 dark:text-gray-400"
-                    }`}
-                  >
-                    {conv.status}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
