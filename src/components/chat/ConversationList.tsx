@@ -301,7 +301,7 @@ export default function ConversationList({
                     ? "bg-[#f0f2f5] dark:bg-[#2a3942]"
                     : "hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]"
                 } ${conv.archived ? "opacity-60" : ""}`}
-                style={operation ? { borderLeftColor: operation.color } : { borderLeftColor: "transparent" }}
+                style={flowInfo ? { borderLeftColor: "#22c55e" } : operation ? { borderLeftColor: operation.color } : { borderLeftColor: "transparent" }}
               >
                 <Avatar name={customer?.name} size="md" />
                 <div className="flex-1 min-w-0 border-b border-gray-100 dark:border-[#222d34] pb-2.5">
@@ -314,9 +314,9 @@ export default function ConversationList({
                         {customer?.name || customer?.phone || "Desconhecido"}
                       </p>
                       {flowInfo && (
-                        <span className="flex-shrink-0 flex items-center gap-0.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-full pl-1 pr-1.5 py-px" title={`${flowInfo.count} fluxo(s): ${flowInfo.flowNames.join(", ")}`}>
-                          <svg className="w-2.5 h-2.5 text-blue-500 animate-pulse" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                          <span className="text-[9px] font-medium text-blue-600 dark:text-blue-400">{flowInfo.count > 1 ? flowInfo.count : ""}</span>
+                        <span className="flex-shrink-0 flex items-center gap-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-full pl-1.5 pr-2 py-0.5" title={`${flowInfo.count} fluxo(s): ${flowInfo.flowNames.join(", ")}`}>
+                          <svg className="w-2.5 h-2.5 text-emerald-500 animate-pulse" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                          <span className="text-[9px] font-medium text-emerald-600 dark:text-emerald-400 truncate max-w-[60px]">{flowInfo.flowNames[0] || ""}</span>
                         </span>
                       )}
                     </div>
