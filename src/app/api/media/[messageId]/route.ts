@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
+const BASE = "https://api.evohub.ai";
 const KEY = process.env.EVOHUB_API_KEY;
 
 const CHANNEL_MAP: Record<string, string> = {
@@ -13,55 +13,66 @@ const CHANNEL_MAP: Record<string, string> = {
 
 export async function GET(_: Request, { params }: { params: { messageId: string } }) {
   try {
+    if (!KEY) return new Response("API Key not configured", { status: 500 });
+
+    // Buscar metadados da mensagem
     const { createClient } = await import("@supabase/supabase-js");
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+      process.env.SUPABASE_SERVICE_ROLE_KEY || "",
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
     const { data: msg } = await supabase
       .from("messages")
-      .select("metadata, conversation_id")
+      .select("metadata")
       .eq("id", params.messageId)
       .single();
 
-    if (!msg) return NextResponse.json({ error: "Mensagem não encontrada" }, { status: 404 });
+    if (!msg?.metadata) return new Response("Not found", { status: 404 });
 
-    const meta = msg.metadata || {};
+    const meta = msg.metadata;
     const mediaId = meta.media_id;
     const phoneNumberId = meta.phone_number_id;
 
-    if (!mediaId) return NextResponse.json({ error: "Sem media_id" }, { status: 404 });
-    if (!phoneNumberId) return NextResponse.json({ error: "Sem phone_number_id" }, { status: 404 });
-    if (!KEY) return NextResponse.json({ error: "API Key não configurada" }, { status: 500 });
+    if (!mediaId || !phoneNumberId) return new Response("No media", { status: 404 });
 
-    // Buscar channelId pelo mapeamento
     const channelId = CHANNEL_MAP[phoneNumberId];
-    if (!channelId) return NextResponse.json({ error: "Canal não mapeado" }, { status: 404 });
+    if (!channelId) return new Response("Channel not mapped", { status: 404 });
 
-    // Buscar token fresco
+    // Buscar token
     const chRes = await fetch(`${BASE}/api/v1/channels/${channelId}`, {
       headers: { Authorization: `Bearer ${KEY}` },
     });
     const ch = await chRes.json();
     const channelToken = ch?.token;
-    if (!channelToken) return NextResponse.json({ error: "Token não encontrado" }, { status: 404 });
+    if (!channelToken) return new Response("No token", { status: 404 });
 
-    // Resolver mídia - a URL do Meta é temporária, vamos retornar via proxy
+    // Resolver media_id via proxy Meta
     const mediaRes = await fetch(`${BASE}/meta/v23.0/${mediaId}`, {
       headers: { Authorization: `Bearer ${channelToken}` },
     });
     const mediaData = await mediaRes.json();
 
-    if (mediaData.url) {
-      // A URL é do lookaside.fbsbx.com reescrita pelo proxy
-      return NextResponse.json({ url: mediaData.url, mime_type: mediaData.mime_type });
-    }
+    if (!mediaData.url) return new Response("No URL", { status: 404 });
 
-    // Fallback: tentar a URL direta como último recurso
-    return NextResponse.json({ url: `${BASE}/meta/v23.0/${mediaId}`, mime_type: "image/jpeg", proxy: true });
+    // Baixar o binário da mídia
+    const binaryRes = await fetch(mediaData.url, {
+      headers: { Authorization: `Bearer ${channelToken}` },
+    });
+
+    if (!binaryRes.ok) return new Response("Download failed", { status: 500 });
+
+    const buffer = await binaryRes.arrayBuffer();
+    const contentType = binaryRes.headers.get("content-type") || mediaData.mime_type || "application/octet-stream";
+
+    return new Response(buffer, {
+      headers: {
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=3600",
+      },
+    });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return new Response(e.message, { status: 500 });
   }
 }
