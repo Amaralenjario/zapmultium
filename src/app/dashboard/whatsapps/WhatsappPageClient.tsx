@@ -122,20 +122,28 @@ export default function WhatsappPageClient({ initialChannels }: { initialChannel
                     <span className="text-gray-400 dark:text-gray-500">Tipo</span>
                     <span className="font-medium text-gray-900 dark:text-white capitalize">{ch.type}</span>
                   </div>
+                  {(ch.metadata as any)?.meta_connection?.phone_number && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400 dark:text-gray-500">Número</span>
+                      <span className="font-medium text-gray-900 dark:text-white text-xs">
+                        {(ch.metadata as any).meta_connection.phone_number}
+                      </span>
+                    </div>
+                  )}
+                  {(ch.metadata as any)?.meta_connection?.waba_id && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400 dark:text-gray-500">BM (WABA)</span>
+                      <span className="font-medium text-gray-900 dark:text-white text-xs font-mono">
+                        {(ch.metadata as any).meta_connection.waba_id}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-400 dark:text-gray-500">Criado em</span>
                     <span className="font-medium text-gray-900 dark:text-white">
                       {new Date(ch.created_at).toLocaleDateString("pt-BR")}
                     </span>
                   </div>
-                  {(ch.metadata as any)?.meta_connection?.phone_number && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-400 dark:text-gray-500">Número</span>
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        {(ch.metadata as any).meta_connection.phone_number}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
 
