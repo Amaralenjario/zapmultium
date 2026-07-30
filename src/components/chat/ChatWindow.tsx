@@ -28,6 +28,7 @@ export default function ChatWindow({
   const [loading, setLoading] = useState(true);
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevLength = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
@@ -50,6 +51,9 @@ export default function ChatWindow({
   };
 
   useEffect(() => {
+    setMessages([]);
+    setLoading(true);
+    prevLength.current = 0;
     fetchMessages();
 
     supabase
@@ -109,8 +113,12 @@ export default function ChatWindow({
   };
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (loading) return;
+    // Scroll instantâneo ao abrir, smooth em novas mensagens
+    const isInitial = messages.length > 0 && prevLength.current === 0;
+    bottomRef.current?.scrollIntoView({ behavior: isInitial ? "instant" : "smooth" });
+    prevLength.current = messages.length;
+  }, [messages, loading]);
 
   // Polling para novas mensagens e atualizações (read_at, etc)
   useEffect(() => {
