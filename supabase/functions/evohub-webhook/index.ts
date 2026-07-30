@@ -149,14 +149,14 @@ async function processWhatsAppMessages(payload: any) {
           content = "🎤 Áudio";
           contentType = "audio";
         } else if (msg.type === "document") {
-          content = "📄 Documento";
+          content = msg.document?.filename || "📄 Documento";
           contentType = "document";
         } else if (msg.type === "location") {
           content = "📍 Localização";
           contentType = "location";
         } else if (msg.type === "sticker") {
           content = "🏴 Sticker";
-          contentType = "image";
+          contentType = "sticker";
         } else if (msg.type === "button") {
           content = msg.button?.text || "[Botão]";
         } else if (msg.type === "interactive") {
@@ -180,7 +180,7 @@ async function processWhatsAppMessages(payload: any) {
             if (existing && existing.length > 0) continue;
           }
 
-          const mediaId = msg.image?.id || msg.video?.id || msg.audio?.id || msg.document?.id || null;
+          const mediaId = msg.image?.id || msg.video?.id || msg.audio?.id || msg.document?.id || msg.sticker?.id || null;
           await supabase.from("messages").insert({
             conversation_id: convId,
             sender_type: "customer",

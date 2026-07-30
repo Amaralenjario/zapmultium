@@ -31,7 +31,7 @@ export function isConsecutive(prev: { sender_type: string; created_at: string } 
   if (!prev) return false;
   if (prev.sender_type !== curr.sender_type) return false;
   const diff = new Date(curr.created_at).getTime() - new Date(prev.created_at).getTime();
-  return diff < 60000 * 3;
+  return diff < 60000;
 }
 
 export default function MessageBubble({
@@ -45,7 +45,7 @@ export default function MessageBubble({
 }) {
   const isAgent = message.sender_type === "agent";
   const isSystem = message.sender_type === "system" || message.sender_type === "bot";
-  const isMedia = message.content_type === "image" || message.content_type === "video";
+  const isMedia = message.content_type === "image" || message.content_type === "video" || message.content_type === "audio" || message.content_type === "document" || message.content_type === "sticker";
 
   if (isSystem) {
     return (
@@ -66,7 +66,7 @@ export default function MessageBubble({
           </span>
         </div>
       )}
-      <div className={`flex ${isAgent ? "justify-end" : "justify-start"}`}>
+      <div className={`flex ${isAgent ? "justify-end" : "justify-start"} ${isFirst !== false ? "mt-2" : "mt-0.5"}`}>
         <div
           className={`relative max-w-[65%] text-sm leading-[1.4] ${
             isFirst === false ? (isAgent ? "rounded-tr-sm" : "rounded-tl-sm") : ""
@@ -79,7 +79,7 @@ export default function MessageBubble({
           {isMedia ? (
             <MediaContent messageId={message.id} content={message.content} type={message.content_type} />
           ) : (
-            <p className="whitespace-pre-wrap break-words px-3.5 pt-2">{message.content}</p>
+            <p className="whitespace-pre-wrap break-words px-3.5 pt-2 pb-1.5">{message.content}</p>
           )}
           <span className="inline-flex items-center gap-1 float-right mr-2 mb-1.5 text-[11px] text-[#667781] dark:text-gray-400">
             {format(new Date(message.created_at), "HH:mm")}
@@ -126,7 +126,7 @@ function MediaContent({ messageId, content, type }: { messageId: string; content
     return <p className="px-3.5 py-2 text-gray-500 dark:text-gray-400 text-xs">{content}</p>;
   }
 
-  if (type === "image") {
+  if (type === "image" || type === "sticker") {
     return (
       <div className="p-1">
         <img src={url} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover" loading="lazy" />
