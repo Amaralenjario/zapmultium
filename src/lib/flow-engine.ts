@@ -83,32 +83,13 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
   const channelToken = await getRealChannelToken(instance.channelId);
   if (!channelToken) throw new Error("Token do canal não encontrado");
 
-  const body: any = {
-    messaging_product: "whatsapp",
-    to: execution.customer_phone,
-    type: mediaType === "video" ? "video" : mediaType,
-  };
+  // Use audio pipeline for media processing
+  const { processAndSendMedia } = await import("@/lib/audio-pipeline");
+  const result = await processAndSendMedia(url, mediaType, execution.customer_phone, execution.phone_number_id, channelToken);
 
-  if (mediaType === "audio") {
-    // Send as regular audio (supported formats: mp3, ogg, aac, amr, wav)
-    body.audio = { link: url };
-  } else if (mediaType === "video") {
-    body.video = { link: url };
-  } else {
-    body.image = { link: url };
-  }
-
-  const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${execution.phone_number_id}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${channelToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(JSON.stringify(data));
+  if (result.error) throw new Error(result.error);
+  const waMsgId = result.waMessageId;
+  if (!waMsgId) throw new Error("Falha ao enviar mídia - sem message_id");
 
   const supabase = getSupabase();
   const labels: Record<string, string> = { image: "📷 Imagem", audio: "🎵 Áudio", video: "🎬 Vídeo" };
@@ -118,7 +99,7 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
     content: url,
     content_type: mediaType,
     metadata: {
-      wa_message_id: data.messages?.[0]?.id,
+      wa_message_id: waMsgId,
       phone_number_id: execution.phone_number_id,
       flow_execution_id: execution.id,
       flow_step_node_id: execution.current_node_id,
@@ -138,7 +119,7 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
     updated_at: new Date().toISOString(),
   }).eq("id", execution.conversation_id);
 
-  return data.messages?.[0]?.id;
+  return waMsgId;
 }
 
 export async function processFlowStep(executionId: string): Promise<{
