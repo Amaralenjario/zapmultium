@@ -33,6 +33,7 @@ export default function ConversationList({
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
+  const [activeFlows, setActiveFlows] = useState<Record<string, { count: number; flowNames: string[] }>>({});
   const supabase = createClient();
 
   useEffect(() => {
@@ -64,14 +65,30 @@ export default function ConversationList({
     fetchConversations();
     fetchOperations();
 
+    // Fetch active flow executions
+    const fetchActiveFlows = async () => {
+      try {
+        const res = await fetch("/api/flows/active");
+        if (!res.ok) return;
+        const data = await res.json();
+        const map: Record<string, { count: number; flowNames: string[] }> = {};
+        for (const item of data) {
+          map[item.conversation_id] = { count: item.count, flowNames: item.flowNames };
+        }
+        setActiveFlows(map);
+      } catch {}
+    };
+    fetchActiveFlows();
+
     const channel = supabase
       .channel("conversations-list")
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => fetchConversations())
       .subscribe();
 
     const interval = setInterval(fetchConversations, 3000);
+    const flowInterval = setInterval(fetchActiveFlows, 5000);
 
-    return () => { supabase.removeChannel(channel); clearInterval(interval); };
+    return () => { supabase.removeChannel(channel); clearInterval(interval); clearInterval(flowInterval); };
   }, []);
 
   const formatTime = (dateStr: string | null) => {
@@ -117,10 +134,11 @@ export default function ConversationList({
           conversations.map((conv) => {
             const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
             const isSelected = selectedId === conv.id;
-            const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
-            const operation = phoneMap[phoneNumberId];
+              const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
+              const operation = phoneMap[phoneNumberId];
+              const flowInfo = activeFlows[conv.id];
 
-            return (
+              return (
               <button
                 key={conv.id}
                 onClick={() => onSelect(conv)}
@@ -141,6 +159,14 @@ export default function ConversationList({
                       <p className="font-normal text-[16px] text-[#111b21] dark:text-[#e9edef] truncate">
                         {customer?.name || customer?.phone || "Desconhecido"}
                       </p>
+                      {flowInfo && (
+                        <span className="flex-shrink-0 flex items-center gap-0.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-full pl-1 pr-1.5 py-px" title={`${flowInfo.count} fluxo(s): ${flowInfo.flowNames.join(", ")}`}>
+                          <svg className="w-2.5 h-2.5 text-blue-500 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                          <span className="text-[9px] font-medium text-blue-600 dark:text-blue-400">{flowInfo.count > 1 ? flowInfo.count : ""}</span>
+                        </span>
+                      )}
                     </div>
                     <span className="text-[11px] text-[#667781] dark:text-[#8696a0] flex-shrink-0 ml-2">
                       {formatTime(conv.last_message_at || conv.created_at)}
