@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "./Avatar";
+import { getInstanceName } from "@/lib/instances";
 
 export interface Customer {
   name: string;
@@ -18,6 +19,7 @@ export interface Conversation {
   last_message_at: string | null;
   unread_count: number;
   created_at: string;
+  metadata?: Record<string, any>;
   customer: Customer | Customer[];
 }
 
@@ -35,7 +37,7 @@ export default function ConversationList({
     const fetchConversations = async () => {
       const { data } = await supabase
         .from("conversations")
-        .select("id, status, last_message, last_message_at, unread_count, created_at, customer:customer_id(name, phone, avatar_url)")
+        .select("id, status, last_message, last_message_at, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)")
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(50);
       setConversations(data || []);
@@ -91,6 +93,8 @@ export default function ConversationList({
           conversations.map((conv) => {
             const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
             const isSelected = selectedId === conv.id;
+            const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
+            const instanceName = getInstanceName(phoneNumberId);
 
             return (
               <button
@@ -109,6 +113,13 @@ export default function ConversationList({
                     <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2">
                       {formatTime(conv.last_message_at || conv.created_at)}
                     </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {instanceName && (
+                      <span className="text-[10px] bg-purple-100 text-purple-600 dark:bg-purple-600/20 dark:text-purple-400 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
+                        {instanceName}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center justify-between mt-0.5">
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
