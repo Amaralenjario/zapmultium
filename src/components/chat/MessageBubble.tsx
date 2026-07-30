@@ -5,6 +5,7 @@ import { ptBR } from "date-fns/locale";
 import { useState } from "react";
 import AudioPlayer from "./AudioPlayer";
 import DocumentPreview from "./DocumentPreview";
+import EmojiPicker from "./EmojiPicker";
 
 interface Message {
   id: string;
@@ -43,17 +44,22 @@ export default function MessageBubble({
   showDate,
   quotedContent,
   onReply,
+  onReact,
 }: {
   message: Message;
   isFirst?: boolean;
   showDate?: string;
   quotedContent?: string | null;
   onReply?: () => void;
+  onReact?: (emoji: string) => void;
 }) {
   const isAgent = message.sender_type === "agent";
   const isSystem = message.sender_type === "system" || message.sender_type === "bot";
   const isMedia = message.content_type === "image" || message.content_type === "video" || message.content_type === "audio" || message.content_type === "document" || message.content_type === "sticker";
   const context = message.metadata?.context;
+  const reactions = message.metadata?.reactions || {};
+  const reactionList = Object.entries(reactions) as [string, string][];
+  const [showPicker, setShowPicker] = useState(false);
 
   if (isSystem) {
     return (
@@ -94,11 +100,30 @@ export default function MessageBubble({
             )}
           </span>
           {/* Reply button on hover */}
-          {onReply && (
-            <button onClick={onReply} className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-gray-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow text-[10px]" title="Responder">↩</button>
-          )}
+          <div className={`absolute ${isAgent ? "-left-8" : "-right-8"} top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition`}>
+            {onReply && (
+              <button onClick={onReply} className="w-6 h-6 rounded-full bg-gray-400 dark:bg-gray-600 text-white flex items-center justify-center shadow text-[10px] hover:bg-gray-500" title="Responder">↩</button>
+            )}
+            {onReact && (
+              <div className="relative">
+                <button onClick={() => setShowPicker(!showPicker)} className="w-6 h-6 rounded-full bg-gray-400 dark:bg-gray-600 text-white flex items-center justify-center shadow text-[13px] hover:bg-gray-500" title="Reagir">😊</button>
+                {showPicker && <EmojiPicker onSelect={(e) => { onReact(e); setShowPicker(false); }} onClose={() => setShowPicker(false)} />}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+      {/* Reactions */}
+      {reactionList.length > 0 && (
+        <div className={`flex ${isAgent ? "justify-end" : "justify-start"} -mt-1`}>
+          <div className={`inline-flex gap-0.5 bg-white dark:bg-gray-800 rounded-full px-2 py-0.5 shadow-sm border border-gray-200 dark:border-gray-700 ${isAgent ? "mr-0" : "ml-0"}`}>
+            {reactionList.map(([user, emoji]) => (
+              <span key={user} className="text-sm leading-none" title={user}>{emoji}</span>
+            ))}
+            <span className="text-[10px] text-gray-400 ml-0.5">{reactionList.length}</span>
+          </div>
+        </div>
+      )}
     </>
   );
 }

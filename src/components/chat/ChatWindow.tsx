@@ -114,6 +114,17 @@ export default function ChatWindow({
     }
   };
 
+  const handleReact = async (msg: Message, emoji: string) => {
+    if (!phoneNumberId || !msg.metadata?.wa_message_id) return;
+    fetch("/api/evohub/send-reaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumberId, messageId: msg.metadata.wa_message_id, emoji }),
+    }).catch(() => {});
+    const reactions = { ...(msg.metadata?.reactions || {}), "me": emoji };
+    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, metadata: { ...m.metadata, reactions } } : m));
+  };
+
   useEffect(() => {
     if (loading) return;
     // Scroll instantâneo ao abrir, smooth em novas mensagens
@@ -227,6 +238,7 @@ export default function ChatWindow({
                   showDate={dateLabel}
                   quotedContent={msg.metadata?.context?.id ? messages.find(m => m.metadata?.wa_message_id === msg.metadata?.context?.id)?.content : undefined}
                   onReply={() => setReplyTo(msg)}
+                  onReact={(emoji) => handleReact(msg, emoji)}
                 />
               );
             })}

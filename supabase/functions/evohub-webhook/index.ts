@@ -180,6 +180,33 @@ async function processWhatsAppMessages(payload: any) {
         } else if (msg.type === "sticker") {
           content = "🏴 Sticker";
           contentType = "sticker";
+        } else if (msg.type === "reaction") {
+          // Processar reação - atualiza a mensagem original
+          const reactedMsgId = msg.reaction?.message_id;
+          const emoji = msg.reaction?.emoji || "";
+          if (reactedMsgId && emoji) {
+            // Buscar a mensagem original pelo wa_message_id
+            const { data: targetMsgs } = await supabase
+              .from("messages")
+              .select("id, metadata")
+              .eq("conversation_id", convId)
+              .filter("metadata->>wa_message_id", "eq", reactedMsgId)
+              .limit(1);
+            if (targetMsgs && targetMsgs.length > 0) {
+              const target = targetMsgs[0];
+              const reactions = target.metadata?.reactions || {};
+              if (emoji === "") {
+                // Remover reação
+                delete reactions[msg.from || "unknown"];
+              } else {
+                reactions[msg.from || "unknown"] = emoji;
+              }
+              await supabase.from("messages").update({
+                metadata: { ...target.metadata, reactions },
+              }).eq("id", target.id);
+            }
+          }
+          continue; // Não criar mensagem
         } else if (msg.type === "button") {
           content = msg.button?.text || "[Botão]";
         } else if (msg.type === "interactive") {
