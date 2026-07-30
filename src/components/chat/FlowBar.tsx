@@ -74,6 +74,8 @@ export default function FlowBar({
   const doTrigger = async () => {
     if (!confirmFlow) return;
     const flow = confirmFlow;
+    // Set spinner FIRST to prevent double-click
+    setTriggering(flow.id);
     setConfirmFlow(null);
     if (!phoneNumberId || !customerPhone) {
       toast.error("Canal não configurado");

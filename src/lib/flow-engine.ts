@@ -189,7 +189,7 @@ export async function processFlowStep(executionId: string): Promise<{
       .from("flow_executions")
       .update({ status: "running", updated_at: new Date().toISOString() })
       .eq("id", executionId)
-      .in("status", ["paused", "pending"])
+      .in("status", ["running", "paused", "pending"])
       .select("*")
       .single();
 
