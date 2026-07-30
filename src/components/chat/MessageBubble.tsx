@@ -7,6 +7,7 @@ interface Message {
   sender_type: "customer" | "agent" | "system" | "bot";
   content_type: string;
   created_at: string;
+  read_at?: string | null;
 }
 
 export default function MessageBubble({
@@ -54,8 +55,11 @@ export default function MessageBubble({
           <span className="inline-flex items-center gap-1 float-right ml-2 mt-1.5 -mb-1 text-[11px] text-[#667781] dark:text-gray-400">
             {format(new Date(message.created_at), "HH:mm")}
             {isAgent && (
-              <svg className="w-3.5 h-3.5 text-[#53bdeb]" fill="currentColor" viewBox="0 0 16 11">
+              <svg className={`w-3.5 h-3.5 ${message.read_at ? "text-[#53bdeb]" : "text-[#8696a0]"}`} fill="currentColor" viewBox="0 0 16 11">
                 <path d="M11.071.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 0 0-.336-.153.508.508 0 0 0-.432.246.458.458 0 0 0 .058.515l2.326 2.424a.56.56 0 0 0 .416.21.55.55 0 0 0 .427-.208l6.502-8.022a.466.466 0 0 0 .078-.493.458.458 0 0 0-.153-.136Z" />
+                {message.read_at && (
+                  <path d="M14.071.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 0 0-.336-.153.508.508 0 0 0-.432.246.458.458 0 0 0 .058.515l2.326 2.424a.56.56 0 0 0 .416.21.55.55 0 0 0 .427-.208l6.502-8.022a.466.466 0 0 0 .078-.493.458.458 0 0 0-.153-.136Z" transform="translate(3,0)" />
+                )}
               </svg>
             )}
           </span>

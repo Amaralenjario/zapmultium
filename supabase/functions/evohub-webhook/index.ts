@@ -65,9 +65,15 @@ async function processWhatsAppMessages(payload: any) {
 
       const value = change.value || {};
       const messages = value.messages || [];
+      const statuses = value.statuses || [];
       const contact = value.contacts?.[0];
       const metadata = value.metadata || {};
       const phoneNumberId = metadata.phone_number_id || entry.id;
+
+      // Processa status de leitura (lead visualizou)
+      if (statuses.length > 0) {
+        await processReadReceipts(supabase, statuses);
+      }
 
       if (messages.length === 0) continue;
 
@@ -202,5 +208,18 @@ async function processWhatsAppMessages(payload: any) {
         })
         .eq("id", convId);
     }
+  }
+}
+
+async function processReadReceipts(supabase: any, statuses: any[]) {
+  for (const status of statuses) {
+    if (status.status !== "read") continue;
+    const waMessageId = status.id;
+    if (!waMessageId) continue;
+
+    await supabase
+      .from("messages")
+      .update({ read_at: new Date(parseInt(status.timestamp) * 1000).toISOString() })
+      .filter("metadata->>wa_message_id", "eq", waMessageId);
   }
 }
