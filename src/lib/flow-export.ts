@@ -20,6 +20,11 @@ const FROM_FLOWV1: Record<string, string> = {
   send_video: "video",
   add_tag: "add_tag",
   remove_tag: "remove_tag",
+  set_tag: "add_tag",
+  unset_tag: "remove_tag",
+  apply_tag: "add_tag",
+  tag: "add_tag",
+  untag: "remove_tag",
 };
 
 export function exportFlowV1(
@@ -108,23 +113,23 @@ export function importFlowV1(code: string): {
       const ourType = FROM_FLOWV1[n.type] || n.type;
       const config: Record<string, any> = {};
 
-      switch (n.type) {
-        case "send_text":
+      switch (ourType) {
+        case "message":
           config.text = n.data?.text || "";
           break;
-        case "send_image":
+        case "image":
           config.url = n.data?.mediaUrl || "";
           break;
-        case "send_audio":
+        case "audio":
           config.url = n.data?.mediaUrl || "";
           break;
-        case "send_video":
+        case "video":
           config.url = n.data?.mediaUrl || "";
           break;
-        case "delay":
+        case "wait":
           config.delay = n.data?.seconds || 5;
           break;
-        case "trigger":
+        case "start":
           break;
         case "condition":
           config.variable = n.data?.variable || "";
