@@ -21,6 +21,52 @@ function findNextNodeByHandle(nodeId: string, edges: any[], handle: string): str
   return edge?.target || null;
 }
 
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
+
+async function ensureConversationTag(userId: string, name: string): Promise<string | null> {
+  if (!name?.trim()) return null;
+  const sb = getServiceClient();
+  const { data, error } = await sb
+    .from("conversation_tags")
+    .upsert({ user_id: userId, name: name.trim() }, { onConflict: "user_id,name" })
+    .select("id")
+    .single();
+  if (error) return null;
+  return data?.id || null;
+}
+
+async function applyTag(execution: any, action: "add" | "remove"): Promise<{ tagId: string; name: string } | null> {
+  const currentNode = execution.current_node;
+  const name = (currentNode?.config?.tagName || currentNode?.config?.name || "").trim();
+  if (!name) throw new Error("Etiqueta sem nome");
+  const sb = getServiceClient();
+  const { data: flowRow } = await sb.from("flows").select("user_id").eq("id", execution.flow_id).single();
+  const userId = flowRow?.user_id;
+  if (!userId) throw new Error("Não foi possível identificar o dono do fluxo");
+  const tagId = await ensureConversationTag(userId, name);
+  if (!tagId) throw new Error(`Falha ao resolver etiqueta "${name}"`);
+  if (action === "add") {
+    const { error } = await sb
+      .from("conversation_tag_assignments")
+      .upsert({ conversation_id: execution.conversation_id, tag_id: tagId }, { onConflict: "conversation_id,tag_id" });
+    if (error) throw new Error(`add_tag: ${error.message}`);
+  } else {
+    const { error } = await sb
+      .from("conversation_tag_assignments")
+      .delete()
+      .eq("conversation_id", execution.conversation_id)
+      .eq("tag_id", tagId);
+    if (error) throw new Error(`remove_tag: ${error.message}`);
+  }
+  return { tagId, name };
+}
+
 async function sendWhatsAppMessage(execution: any, text: string) {
   const { getInstanceByPhoneId, getRealChannelToken } = await import("@/lib/instances");
   const instance = getInstanceByPhoneId(execution.phone_number_id);
@@ -234,6 +280,15 @@ export async function processFlowStep(executionId: string): Promise<{
           logResult.variable = variable; logResult.expected = expectedValue; logResult.actual = actualValue; logResult.matches = matches;
           nextNodeId = findNextNodeByHandle(currentNode.id, edges, matches ? "true" : "false");
           if (!nextNodeId) nextNodeId = findNextNode(currentNode.id, edges);
+          break;
+        }
+
+        case "add_tag":
+        case "remove_tag": {
+          execution.current_node = currentNode;
+          const result = await applyTag(execution, currentNode.type === "add_tag" ? "add" : "remove");
+          if (result) logResult.tag = { name: result.name, action: currentNode.type };
+          nextNodeId = findNextNode(currentNode.id, edges);
           break;
         }
 

@@ -28,6 +28,8 @@ const NODE_CONFIGS: Record<string, { label: string; color: string; defaultData: 
   audio: { label: "Áudio", color: "#14b8a6", defaultData: { url: "" } },
   wait: { label: "Aguardar", color: "#f59e0b", defaultData: { delay: 5 } },
   condition: { label: "Condição", color: "#8b5cf6", defaultData: { variable: "", value: "" } },
+  add_tag: { label: "Adicionar etiqueta", color: "#a855f7", defaultData: { tagName: "" } },
+  remove_tag: { label: "Remover etiqueta", color: "#d946ef", defaultData: { tagName: "" } },
 };
 
 let idCounter = 0;
@@ -88,6 +90,8 @@ function FlowNode({ data, id }: any) {
         {data.type === "image" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
         {data.type === "audio" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>}
         {data.type === "video" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+        {data.type === "add_tag" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>}
+        {data.type === "remove_tag" && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 10l4 4m0-4l-4 4" className="opacity-70" /></svg>}
         {data.label}
         {!isStart && (
           <div className="ml-auto flex gap-0.5 opacity-0 group-hover:opacity-100 transition">
@@ -130,6 +134,17 @@ function FlowNode({ data, id }: any) {
         <div className="p-2 space-y-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           <input placeholder="Variável" defaultValue={cfg.variable || ""} onChange={(e) => { data.config.variable = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs" />
           <input placeholder="Valor esperado" defaultValue={cfg.value || ""} onChange={(e) => { data.config.value = e.target.value; }} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs" />
+        </div>
+      )}
+
+      {(data.type === "add_tag" || data.type === "remove_tag") && (
+        <div className="p-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <input
+            placeholder="Nome da etiqueta"
+            defaultValue={cfg.tagName || ""}
+            onChange={(e) => { data.config.tagName = e.target.value; }}
+            className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs"
+          />
         </div>
       )}
 
@@ -334,7 +349,7 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
     }
   };
 
-  const types = ["message", "image", "video", "audio", "wait", "condition"];
+  const types = ["message", "image", "video", "audio", "wait", "condition", "add_tag", "remove_tag"];
 
   return (
     <div className="flex h-full w-full">
@@ -357,6 +372,8 @@ export default function FlowBuilder({ onSave, initialSteps, initialEdges }: {
               {type === "image" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
               {type === "audio" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>}
               {type === "video" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+              {type === "add_tag" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>}
+              {type === "remove_tag" && <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cfg.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 10l4 4m0-4l-4 4" className="opacity-70" /></svg>}
               <span className="text-[11px] font-medium text-gray-900 dark:text-white">{cfg.label}</span>
             </div>
           );

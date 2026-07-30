@@ -7,6 +7,8 @@ const TO_FLOWV1: Record<string, string> = {
   image: "send_image",
   audio: "send_audio",
   video: "send_video",
+  add_tag: "add_tag",
+  remove_tag: "remove_tag",
 };
 
 const FROM_FLOWV1: Record<string, string> = {
@@ -16,6 +18,8 @@ const FROM_FLOWV1: Record<string, string> = {
   send_image: "image",
   send_audio: "audio",
   send_video: "video",
+  add_tag: "add_tag",
+  remove_tag: "remove_tag",
 };
 
 export function exportFlowV1(
@@ -59,6 +63,10 @@ export function exportFlowV1(
         case "condition":
           nodeData.variable = n.config?.variable || "";
           nodeData.value = n.config?.value || "";
+          break;
+        case "add_tag":
+        case "remove_tag":
+          nodeData.tagName = n.config?.tagName || n.config?.name || "";
           break;
       }
 
@@ -121,6 +129,10 @@ export function importFlowV1(code: string): {
         case "condition":
           config.variable = n.data?.variable || "";
           config.value = n.data?.value || "";
+          break;
+        case "add_tag":
+        case "remove_tag":
+          config.tagName = n.data?.tagName || n.data?.name || "";
           break;
       }
 

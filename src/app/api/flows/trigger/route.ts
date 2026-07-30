@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
     }
 
-    const startNode = (flow.config?.steps || []).find((s: any) => s.id === "start");
+    const startNode = (flow.config?.steps || []).find((s: any) => s.type === "start");
     if (!startNode) {
       return NextResponse.json({ error: "Fluxo não possui nó de início" }, { status: 400 });
     }
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         conversation_id,
         customer_phone,
         phone_number_id,
-        current_node_id: "start",
+        current_node_id: startNode.id,
         status: "running",
         context: {},
         execution_key: executionKey,
