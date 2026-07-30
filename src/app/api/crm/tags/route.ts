@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
   const { name, color, column_key } = await request.json();
-  if (!name || !column_key) return NextResponse.json({ error: "Nome e coluna obrigatórios" }, { status: 400 });
+  if (!name) return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
 
   const adminClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

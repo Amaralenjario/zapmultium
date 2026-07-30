@@ -158,11 +158,11 @@ export default function CrmKanban() {
   };
 
   const createTag = async () => {
-    if (!newTagName.trim() || !newTagColumn) return;
+    if (!newTagName.trim()) return;
     const res = await fetch("/api/crm/tags", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newTagName.trim(), color: newTagColor, column_key: newTagColumn }),
+      body: JSON.stringify({ name: newTagName.trim(), color: newTagColor, column_key: newTagColumn || null }),
     });
     if (res.ok) { toast.success("Etiqueta criada!"); setShowNewTag(false); setNewTagName(""); fetchAll(); }
     else toast.error("Erro");
@@ -173,9 +173,11 @@ export default function CrmKanban() {
     fetchAll();
   };
 
-  const addTagToLead = async (leadId: string, tagId: string, columnKey: string) => {
+  const addTagToLead = async (leadId: string, tagId: string, columnKey: string | null) => {
     await supabase.from("lead_tags").upsert({ lead_id: leadId, tag_id: tagId });
-    await supabase.from("leads").update({ status: columnKey }).eq("id", leadId);
+    if (columnKey) {
+      await supabase.from("leads").update({ status: columnKey }).eq("id", leadId);
+    }
     setTagging(null);
     fetchAll();
   };
@@ -184,6 +186,13 @@ export default function CrmKanban() {
     acc[col.key] = leads.filter((l) => l.status === col.key);
     return acc;
   }, {});
+
+  // All unmatched leads go to "Novos" (first column)
+  const allColumnKeys = new Set(columns.map((c) => c.key));
+  const unmatched = leads.filter((l) => !allColumnKeys.has(l.status));
+  if (unmatched.length > 0 && columns[0]) {
+    leadsByStatus[columns[0].key] = [...(leadsByStatus[columns[0].key] || []), ...unmatched];
+  }
 
   if (loading) {
     return (
@@ -331,6 +340,7 @@ export default function CrmKanban() {
             <div className="flex items-center gap-2 mb-3"><span className="text-xs text-gray-500">Cor:</span><input type="color" value={newTagColor} onChange={(e) => setNewTagColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" /></div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Vincular à coluna</label>
             <select value={newTagColumn} onChange={(e) => setNewTagColumn(e.target.value)} className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm mb-4 focus:border-emerald-500 focus:outline-none">
+              <option value="">Nenhuma (sem coluna)</option>
               {columns.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
             <div className="flex gap-2">
