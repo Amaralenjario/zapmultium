@@ -67,7 +67,47 @@ export default function ChatWindow({
           setPhoneMap(map);
         }
       });
+
+    // Marcar conversa como lida ao entrar
+    markAsRead();
   }, [conversation.id]);
+
+  const markAsRead = async () => {
+    // Zerar unread_count
+    await supabase.from("conversations").update({ unread_count: 0 }).eq("id", conversation.id);
+
+    // Marcar mensagens do cliente como lidas
+    const { data: unread } = await supabase
+      .from("messages")
+      .select("id, metadata")
+      .eq("conversation_id", conversation.id)
+      .eq("sender_type", "customer")
+      .is("read_at", null);
+
+    if (unread && unread.length > 0) {
+      const now = new Date().toISOString();
+      await supabase
+        .from("messages")
+        .update({ read_at: now })
+        .eq("conversation_id", conversation.id)
+        .eq("sender_type", "customer")
+        .is("read_at", null);
+
+      // Enviar read receipt pra Meta via EvoHub
+      if (phoneNumberId) {
+        const KEY = process.env.NEXT_PUBLIC_EVOHUB_API_KEY;
+        fetch("/api/evohub/mark-read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phoneNumberId,
+            channelId: conversation.id,
+            messageId: unread[unread.length - 1]?.metadata?.wa_message_id,
+          }),
+        }).catch(() => {});
+      }
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
