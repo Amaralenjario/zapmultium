@@ -1,30 +1,7 @@
-export default function WhatsappsPage() {
-  const devices = [
-    {
-      id: "1",
-      name: "Atendimento Principal",
-      number: "+55 11 99999-0001",
-      status: "connected",
-      lastActive: "Agora",
-      messages: 1248,
-    },
-    {
-      id: "2",
-      name: "Suporte Técnico",
-      number: "+55 11 99999-0002",
-      status: "connected",
-      lastActive: "5min",
-      messages: 537,
-    },
-    {
-      id: "3",
-      name: "Vendas",
-      number: "+55 11 99999-0003",
-      status: "disconnected",
-      lastActive: "2h",
-      messages: 3421,
-    },
-  ];
+import { listChannels } from "@/lib/evohub";
+
+export default async function WhatsappsPage() {
+  const channels = await listChannels();
 
   return (
     <div>
@@ -32,7 +9,7 @@ export default function WhatsappsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">WhatsApps</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Gerencie suas conexões do WhatsApp
+            {channels.length} conex{channels.length === 1 ? "ão" : "ões"} ativa{channels.length === 1 ? "" : "s"} no EvoHub
           </p>
         </div>
         <button className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500 transition flex items-center gap-2">
@@ -44,21 +21,21 @@ export default function WhatsappsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {devices.map((device) => (
+        {channels.map((ch) => (
           <div
-            key={device.id}
+            key={ch.id}
             className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden hover:shadow-md transition"
           >
             <div className="p-5">
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                    device.status === "connected"
+                    ch.status === "active"
                       ? "bg-green-100 dark:bg-green-600/20"
                       : "bg-gray-100 dark:bg-gray-800"
                   }`}>
                     <svg className={`w-6 h-6 ${
-                      device.status === "connected"
+                      ch.status === "active"
                         ? "text-green-600 dark:text-green-400"
                         : "text-gray-400 dark:text-gray-500"
                     }`} fill="currentColor" viewBox="0 0 24 24">
@@ -66,44 +43,53 @@ export default function WhatsappsPage() {
                     </svg>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{device.name}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{device.number}</p>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{ch.name}</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                      {ch.id.substring(0, 8)}...
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${
-                    device.status === "connected" ? "bg-green-500" : "bg-red-500"
-                  }`} />
-                  <span className={`text-xs font-medium ${
-                    device.status === "connected" ? "text-green-600 dark:text-green-400" : "text-red-500"
-                  }`}>
-                    {device.status === "connected" ? "Conectado" : "Desconectado"}
-                  </span>
-                </div>
+                <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                  ch.status === "active"
+                    ? "text-green-600 dark:text-green-400"
+                    : "text-gray-400 dark:text-gray-500"
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${ch.status === "active" ? "bg-green-500" : "bg-gray-400"}`} />
+                  {ch.status === "active" ? "Conectado" : ch.status}
+                </span>
               </div>
 
-              <div className="flex items-center gap-4 pt-3 border-t border-gray-100 dark:border-gray-800">
-                <div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">Mensagens</p>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">{device.messages.toLocaleString()}</p>
+              <div className="space-y-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400 dark:text-gray-500">Tipo</span>
+                  <span className="font-medium text-gray-900 dark:text-white capitalize">{ch.type}</span>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">Última atividade</p>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">{device.lastActive}</p>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400 dark:text-gray-500">Criado em</span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {new Date(ch.created_at).toLocaleDateString("pt-BR")}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400 dark:text-gray-500">Token</span>
+                  <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                    {ch.token?.substring(0, 12)}...
+                  </span>
                 </div>
               </div>
             </div>
 
             <div className="flex border-t border-gray-100 dark:border-gray-800">
-              <button className="flex-1 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-                Configurações
-              </button>
-              <button className={`flex-1 py-2.5 text-xs font-medium transition border-l border-gray-100 dark:border-gray-800 ${
-                device.status === "connected"
-                  ? "text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
-                  : "text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/30"
-              }`}>
-                {device.status === "connected" ? "Desconectar" : "Reconectar"}
+              <a
+                href={`https://app.evohub.ai/connect/${ch.token}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-2.5 text-xs font-medium text-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+              >
+                Link público
+              </a>
+              <button className="flex-1 py-2.5 text-xs font-medium text-center text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition border-l border-gray-100 dark:border-gray-800">
+                Desconectar
               </button>
             </div>
           </div>
