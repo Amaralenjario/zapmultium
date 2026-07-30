@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Avatar from "./Avatar";
 
 export interface Customer {
   name: string;
@@ -99,9 +100,7 @@ export default function ConversationList({
                   isSelected ? "bg-gray-100 dark:bg-gray-800" : ""
                 }`}
               >
-                <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-600/20 flex items-center justify-center text-green-600 dark:text-green-400 font-bold flex-shrink-0">
-                  {customer?.name?.charAt(0)?.toUpperCase() || "?"}
-                </div>
+                <Avatar name={customer?.name} size="md" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <p className="font-medium text-sm text-gray-900 dark:text-white truncate">

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
+import Avatar from "./Avatar";
 import type { Conversation } from "./ConversationList";
 
 interface Message {
@@ -71,11 +72,9 @@ export default function ChatWindow({
     };
   }, [conversation.id]);
 
-  const headerBg = conversation.status === "active" ? "bg-green-500" : "bg-gray-600 dark:bg-gray-700";
-
   return (
     <div className="flex flex-col h-full">
-      <div className={`flex items-center gap-3 px-5 py-3 ${headerBg} text-white`}>
+      <div className="flex items-center gap-3 px-5 py-3 bg-[#075e54] text-white">
         <button
           onClick={onClose}
           className="p-1 hover:bg-white/10 rounded-lg transition flex-shrink-0"
@@ -84,25 +83,21 @@ export default function ChatWindow({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-          {customer?.name?.charAt(0)?.toUpperCase() || "?"}
-        </div>
+        <Avatar name={customer?.name} size="sm" />
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm truncate">{customer?.name || customer?.phone || "Desconhecido"}</p>
-          <p className="text-xs opacity-80">{conversation.status === "active" ? "Online" : conversation.status}</p>
+          <p className="font-medium text-sm truncate">
+            {customer?.name || customer?.phone || "Desconhecido"}
+          </p>
+          <p className="text-xs text-white/70">
+            {conversation.status === "active" ? "Online" : conversation.status}
+          </p>
         </div>
       </div>
 
-      <div
-        className="flex-1 overflow-y-auto p-4"
-        style={{
-          backgroundImage: "url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgdmlld0JveD0iMCAwIDYwIDYwIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cmVjdCB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2U1ZTdlYiIgc3Ryb2tlLXdpZHRoPSIwLjUiIG9wYWNpdHk9IjAuMyIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNncmlkKSIvPjwvc3ZnPg==')",
-          backgroundSize: "60px 60px",
-        }}
-      >
+      <div className="flex-1 overflow-y-auto p-4 bg-[#e5ddd5] dark:bg-[#1a1a1a]">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="animate-spin w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full" />
+            <div className="animate-spin w-8 h-8 border-2 border-[#075e54] border-t-transparent rounded-full" />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500 text-sm">
@@ -110,6 +105,11 @@ export default function ChatWindow({
           </div>
         ) : (
           <div>
+            <div className="flex justify-center mb-4">
+              <span className="text-xs bg-white/80 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 px-3 py-1 rounded-full shadow-sm">
+                Início da conversa
+              </span>
+            </div>
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}

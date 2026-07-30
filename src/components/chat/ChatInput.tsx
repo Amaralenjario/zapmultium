@@ -58,8 +58,13 @@ export default function ChatInput({ conversationId, onMessageSent }: ChatInputPr
   };
 
   return (
-    <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-      <div className="flex items-center gap-3">
+    <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+      <div className="flex items-center gap-2">
+        <button className="p-2 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+          </svg>
+        </button>
         <input
           ref={inputRef}
           type="text"
@@ -67,12 +72,12 @@ export default function ChatInput({ conversationId, onMessageSent }: ChatInputPr
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Digite sua mensagem..."
-          className="flex-1 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-5 py-2.5 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none transition"
+          className="flex-1 rounded-full border-0 bg-white dark:bg-gray-800 px-5 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-1 focus:ring-[#075e54] focus:outline-none transition"
         />
         <button
           onClick={handleSend}
           disabled={!message.trim() || sending}
-          className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed transition flex-shrink-0"
+          className="w-10 h-10 rounded-full bg-[#075e54] text-white flex items-center justify-center hover:bg-[#064e46] disabled:opacity-40 disabled:cursor-not-allowed transition flex-shrink-0"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

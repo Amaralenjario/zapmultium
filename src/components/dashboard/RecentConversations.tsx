@@ -1,5 +1,7 @@
 "use client";
 
+import Avatar from "@/components/chat/Avatar";
+
 interface RecentItem {
   id: string;
   name: string;
@@ -26,9 +28,7 @@ export default function RecentConversations({ data }: { data: RecentItem[] }) {
         <div className="space-y-3">
           {data.map((item) => (
             <div key={item.id} className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-green-100 dark:bg-green-600/20 flex items-center justify-center text-green-600 dark:text-green-500 font-bold text-xs flex-shrink-0">
-                {item.name.charAt(0).toUpperCase()}
-              </div>
+              <Avatar name={item.name} size="sm" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.name}</p>
