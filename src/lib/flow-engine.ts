@@ -181,43 +181,40 @@ export async function processFlowStep(executionId: string): Promise<{
 }> {
   const supabase = getSupabase();
 
-  // Iterative loop — processes nodes one by one without recursion
-  // Max 200 steps to prevent infinite loops
-  for (let step = 0; step < 200; step++) {
-    // Acquire row lock
-    const { data: execution, error: lockError } = await supabase
-      .from("flow_executions")
-      .update({ status: "running", updated_at: new Date().toISOString() })
-      .eq("id", executionId)
-      .in("status", ["running", "paused", "pending"])
-      .select("*")
-      .single();
+  // Lock: only from paused/pending → running (prevents concurrent processing)
+  const { data: execution, error: lockError } = await supabase
+    .from("flow_executions")
+    .update({ status: "running", updated_at: new Date().toISOString() })
+    .eq("id", executionId)
+    .in("status", ["paused", "pending"])
+    .select("*")
+    .single();
 
-    if (lockError || !execution) {
-      if (step === 0) return { ok: false, error: "execução não encontrada ou já finalizada" };
-      return { ok: true, completed: true };
-    }
+  if (lockError || !execution) {
+    // Already being processed or completed
+    return { ok: true, completed: true };
+  }
 
-    // Get flow config
-    const { data: flow } = await supabase
-      .from("flows")
-      .select("config")
-      .eq("id", execution.flow_id)
-      .single();
+  // Get flow config once
+  const { data: flow } = await supabase
+    .from("flows")
+    .select("config")
+    .eq("id", execution.flow_id)
+    .single();
 
-    if (!flow?.config) {
-      await supabase.from("flow_executions").update({ status: "error", error: "fluxo não encontrado", updated_at: new Date().toISOString() }).eq("id", executionId);
-      return { ok: false, error: "fluxo não encontrado" };
-    }
+  if (!flow?.config) {
+    await supabase.from("flow_executions").update({ status: "error", error: "fluxo não encontrado", updated_at: new Date().toISOString() }).eq("id", executionId);
+    return { ok: false, error: "fluxo não encontrado" };
+  }
 
-    const steps: any[] = flow.config.steps || [];
-    const edges: any[] = flow.config.edges || [];
-    const currentNode = steps.find((s: any) => s.id === execution.current_node_id);
+  const steps: any[] = flow.config.steps || [];
+  const edges: any[] = flow.config.edges || [];
 
-    if (!currentNode) {
-      await supabase.from("flow_executions").update({ status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", executionId);
-      return { ok: true, completed: true };
-    }
+  // Process nodes in sequence without re-locking
+  let currentNodeId: string | null = execution.current_node_id;
+  for (let step = 0; step < 200 && currentNodeId; step++) {
+    const currentNode = steps.find((s: any) => s.id === currentNodeId);
+    if (!currentNode) break;
 
     const logResult: Record<string, any> = {};
     let nextNodeId: string | null = null;
@@ -243,7 +240,7 @@ export async function processFlowStep(executionId: string): Promise<{
         case "video": {
           const url = currentNode.config?.url || "";
           if (url) {
-            const mediaType = currentNode.type === "video" ? "video" : currentNode.type as "image" | "audio";
+            const mediaType = currentNode.type;
             const waId = await sendWhatsAppMedia(execution, url, mediaType);
             logResult.wa_message_id = waId;
           }
@@ -254,15 +251,19 @@ export async function processFlowStep(executionId: string): Promise<{
         case "wait": {
           nextNodeId = findNextNode(currentNode.id, edges);
           if (!nextNodeId) {
-            await supabase.from("flow_executions").update({ status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", executionId);
+            await supabase.from("flow_executions").update({
+              status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            }).eq("id", executionId);
             return { ok: true, completed: true };
           }
 
-          await supabase.from("flow_executions").update({ current_node_id: nextNodeId, updated_at: new Date().toISOString() }).eq("id", executionId);
-
           const delaySec = Math.min(60, Math.max(0, parseInt(currentNode.config?.delay) || 5));
           const nextStepAt = new Date(Date.now() + delaySec * 1000).toISOString();
-          await supabase.from("flow_executions").update({ status: "paused", next_step_at: nextStepAt, updated_at: new Date().toISOString() }).eq("id", executionId);
+
+          // Save progress and pause atomically
+          await supabase.from("flow_executions").update({
+            current_node_id: nextNodeId, status: "paused", next_step_at: nextStepAt, updated_at: new Date().toISOString(),
+          }).eq("id", executionId);
 
           await supabase.from("flow_execution_logs").insert({
             execution_id: executionId, node_id: currentNode.id, action: "wait_start",
@@ -277,18 +278,10 @@ export async function processFlowStep(executionId: string): Promise<{
           const expectedValue = currentNode.config?.value || "";
           const actualValue = execution.context?.[variable];
           const matches = String(actualValue) === String(expectedValue);
-          logResult.variable = variable; logResult.expected = expectedValue; logResult.actual = actualValue; logResult.matches = matches;
+          logResult.variable = variable; logResult.expected = expectedValue;
+          logResult.actual = actualValue; logResult.matches = matches;
           nextNodeId = findNextNodeByHandle(currentNode.id, edges, matches ? "true" : "false");
           if (!nextNodeId) nextNodeId = findNextNode(currentNode.id, edges);
-          break;
-        }
-
-        case "add_tag":
-        case "remove_tag": {
-          execution.current_node = currentNode;
-          const result = await applyTag(execution, currentNode.type === "add_tag" ? "add" : "remove");
-          if (result) logResult.tag = { name: result.name, action: currentNode.type };
-          nextNodeId = findNextNode(currentNode.id, edges);
           break;
         }
 
@@ -296,27 +289,38 @@ export async function processFlowStep(executionId: string): Promise<{
           nextNodeId = findNextNode(currentNode.id, edges);
       }
     } catch (err: any) {
-      await supabase.from("flow_executions").update({ status: "error", error: err.message, updated_at: new Date().toISOString() }).eq("id", executionId);
-      await supabase.from("flow_execution_logs").insert({ execution_id: executionId, node_id: currentNode.id, action: "error", result: { error: err.message } });
+      await supabase.from("flow_executions").update({
+        status: "error", error: err.message, updated_at: new Date().toISOString(),
+      }).eq("id", executionId);
+      await supabase.from("flow_execution_logs").insert({
+        execution_id: executionId, node_id: currentNode.id, action: "error", result: { error: err.message },
+      });
       return { ok: false, error: err.message };
     }
 
-    // Log the step
+    // Log and advance
     await supabase.from("flow_execution_logs").insert({
       execution_id: executionId, node_id: currentNode.id, action: currentNode.type, result: logResult,
     });
 
     if (nextNodeId) {
-      await supabase.from("flow_executions").update({ current_node_id: nextNodeId, updated_at: new Date().toISOString() }).eq("id", executionId);
-      // Continue loop — will pick up the new current_node_id in next iteration
+      // Save progress (not a lock, just update)
+      await supabase.from("flow_executions").update({
+        current_node_id: nextNodeId, updated_at: new Date().toISOString(),
+      }).eq("id", executionId);
+      currentNodeId = nextNodeId;
     } else {
-      await supabase.from("flow_executions").update({ status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", executionId);
+      await supabase.from("flow_executions").update({
+        status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq("id", executionId);
       return { ok: true, completed: true };
     }
   }
 
   // Safety: max steps reached
-  await getSupabase().from("flow_executions").update({ status: "error", error: "Limite de 200 passos atingido", updated_at: new Date().toISOString() }).eq("id", executionId);
+  await getSupabase().from("flow_executions").update({
+    status: "error", error: "Limite de 200 passos atingido", updated_at: new Date().toISOString(),
+  }).eq("id", executionId);
   return { ok: false, error: "limite de passos atingido" };
 }
 
