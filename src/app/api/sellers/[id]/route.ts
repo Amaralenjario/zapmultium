@@ -43,6 +43,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   await supabase.from("profiles").update({ is_active: false }).eq("id", params.id);
   await supabase.from("seller_channels").delete().eq("user_id", params.id);
-  await supabase.auth.admin.deleteUser(params.id);
+  try { await supabase.auth.admin.deleteUser(params.id); } catch {}
   return NextResponse.json({ ok: true });
 }

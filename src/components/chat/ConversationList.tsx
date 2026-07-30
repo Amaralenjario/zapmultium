@@ -37,9 +37,11 @@ export default function ConversationList({
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
   const [activeFlows, setActiveFlows] = useState<Record<string, { count: number; flowNames: string[] }>>({});
   const [sellerPhoneIds, setSellerPhoneIds] = useState<string[] | null>(null);
-  const [filter, setFilter] = useState<"all" | "active" | "archived">("active");
+  const [filter, setFilter] = useState<"all" | "unread" | "active" | "archived">("all");
   const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [leadTagsMap, setLeadTagsMap] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
+  const [availableTags, setAvailableTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const supabase = createClient();
 
   const applyFilters = useCallback(() => {
@@ -53,9 +55,20 @@ export default function ConversationList({
       });
     }
 
-    // Archived filter
+    // Filter tabs
     if (filter === "active") filtered = filtered.filter((c) => !c.archived);
     else if (filter === "archived") filtered = filtered.filter((c) => !!c.archived);
+    else if (filter === "unread") filtered = filtered.filter((c) => c.unread_count > 0 && !c.archived);
+
+    // Tag filter
+    if (tagFilter) {
+      filtered = filtered.filter((conv) => {
+        const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
+        const phone = customer?.phone || "";
+        const tags = leadTagsMap[phone] || [];
+        return tags.some((t) => t.id === tagFilter);
+      });
+    }
 
     // Search filter: nome, telefone, última mensagem
     if (search.trim()) {
@@ -70,9 +83,20 @@ export default function ConversationList({
     }
 
     setConversations(filtered);
-  }, [allConversations, sellerPhoneIds, filter, search]);
+  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, leadTagsMap]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
+
+  // Derive available tags from leadTagsMap
+  useEffect(() => {
+    const seen = new Map<string, { id: string; name: string; color: string }>();
+    for (const tags of Object.values(leadTagsMap)) {
+      for (const tag of tags) {
+        if (!seen.has(tag.id)) seen.set(tag.id, tag);
+      }
+    }
+    setAvailableTags(Array.from(seen.values()));
+  }, [leadTagsMap]);
 
   useEffect(() => {
     const fetchConversations = async () => {
@@ -192,7 +216,7 @@ export default function ConversationList({
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar por nome, número ou mensagem..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-[#2a3942] border-0 text-[14px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:ring-1 focus:ring-green-500 focus:outline-none transition" />
         </div>
         <div className="flex gap-1">
-          {(["all", "active", "archived"] as const).map((f) => (
+          {(["all", "unread", "active", "archived"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -202,10 +226,33 @@ export default function ConversationList({
                   : "text-gray-500 dark:text-gray-400 hover:bg-white/50 dark:hover:bg-white/5"
               }`}
             >
-              {f === "all" ? "Todas" : f === "active" ? "Ativas" : "Arquivadas"}
+              {f === "all" ? "Todas" : f === "unread" ? "Não lidas" : f === "active" ? "Ativas" : "Arquivadas"}
             </button>
           ))}
         </div>
+        {availableTags.length > 0 && (
+          <div className="flex gap-1 mt-1.5 overflow-x-auto">
+            <button
+              onClick={() => setTagFilter(null)}
+              className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition ${!tagFilter ? "bg-emerald-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
+            >
+              Todas tags
+            </button>
+            {availableTags.map((tag) => (
+              <button
+                key={tag.id}
+                onClick={() => setTagFilter(tagFilter === tag.id ? null : tag.id)}
+                className="flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition"
+                style={{
+                  backgroundColor: tagFilter === tag.id ? tag.color : tag.color + "20",
+                  color: tagFilter === tag.id ? "#fff" : tag.color,
+                }}
+              >
+                {tag.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
