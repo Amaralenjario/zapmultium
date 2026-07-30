@@ -173,10 +173,6 @@ async function sendViaEvoHub(
 
   if (mediaId) {
     body[mediaType] = { id: mediaId };
-    if (mediaType === "audio") {
-      body[mediaType].voice = true;
-      body.type = "audio";
-    }
   } else {
     body[mediaType] = { link: fallbackUrl };
   }
