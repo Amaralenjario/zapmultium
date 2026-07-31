@@ -80,7 +80,7 @@ export default function MessageBubble({
         </div>
       )}
       <div className={`flex ${isAgent ? "justify-end" : "justify-start"} group ${isFirst !== false ? "mt-2" : "mt-0.5"}`}>
-        <div className={`relative overflow-hidden text-sm leading-[1.4] ${isFirst === false ? (isAgent ? "rounded-tr-sm" : "rounded-tl-sm") : ""} ${isAgent ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-l-lg" : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-r-lg"} shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]`} style={{ maxWidth: "min(65%, 500px)" }}>
+        <div className={`relative text-sm leading-[1.4] ${isFirst === false ? (isAgent ? "rounded-tr-sm" : "rounded-tl-sm") : ""} ${isAgent ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-l-lg" : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-r-lg"} shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]`} style={{ maxWidth: "min(65%, 500px)" }}>
           {/* Quoted message */}
           {(context?.id || quotedContent) && (
             <div className={`mx-2 mt-2 px-2.5 py-1.5 rounded-md border-l-[3px] text-xs ${isAgent ? "bg-black/10 border-[#075e54]" : "bg-black/5 dark:bg-white/5 border-[#25d366]"}`}>
