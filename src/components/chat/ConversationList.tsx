@@ -327,10 +327,10 @@ export default function ConversationList({
                   <div className="flex items-center justify-between mt-0.5">
                     <div className="flex items-center gap-1 min-w-0 flex-1">
                       <p className="text-[13px] text-[#667781] dark:text-[#8696a0] truncate">
-                        {conv.last_message_sender === "agent" && <span>Você: </span>}
+                        {(conv.last_message_sender === "agent" || conv.last_message_sender === "bot") && <span>Você: </span>}
                         {conv.last_message || ""}
                       </p>
-                      {conv.last_message_sender === "agent" && (
+                      {(conv.last_message_sender === "agent" || conv.last_message_sender === "bot") && (
                         <svg className={`w-3.5 h-3.5 flex-shrink-0 ${conv.last_message_read ? "text-[#53bdeb]" : "text-[#8696a0]"}`} fill="currentColor" viewBox="0 0 16 11">
                           <path d="M11.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" />
                           <path d="M14.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" transform="translate(3,0)" />

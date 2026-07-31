@@ -114,7 +114,7 @@ async function sendWhatsAppMessage(execution: any, text: string) {
 
   await supabase.from("conversations").update({
     last_message: text,
-    last_message_sender: "bot",
+    last_message_sender: "agent",
     last_message_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }).eq("id", execution.conversation_id);
