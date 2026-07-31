@@ -38,6 +38,8 @@ export default function FlowBar({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [flowSearch, setFlowSearch] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const momentumRef = useRef(0);
+  const animRef = useRef<number>(0);
 
   const filteredFlows = flowSearch.trim()
     ? flows.filter(f => f.name.toLowerCase().includes(flowSearch.trim().toLowerCase()))
@@ -49,6 +51,34 @@ export default function FlowBar({
     setProgress(null);
     fetch("/api/flows").then((r) => r.json()).then(setFlows).catch(() => {});
   }, [conversationId]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      momentumRef.current += e.deltaY;
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+      const animate = () => {
+        const current = momentumRef.current;
+        const step = current * 0.15;
+        if (Math.abs(current) < 0.5) {
+          momentumRef.current = 0;
+          animRef.current = 0;
+          return;
+        }
+        momentumRef.current -= step;
+        el.scrollLeft += step;
+        animRef.current = requestAnimationFrame(animate);
+      };
+      animRef.current = requestAnimationFrame(animate);
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handler);
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchProgress = async () => {
@@ -202,15 +232,7 @@ export default function FlowBar({
             className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[10px] text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:outline-none"
           />
         </div>
-        <div
-          ref={scrollRef}
-          className="flex gap-2 overflow-x-auto pb-1"
-          style={{ scrollbarWidth: "thin" }}
-          onWheel={(e) => {
-            if (!scrollRef.current) return;
-            scrollRef.current.scrollLeft += e.deltaY;
-          }}
-        >
+        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
           {filteredFlows.map((flow, idx) => (
             <div
               key={flow.id}
