@@ -28,23 +28,29 @@ export default function CreateChannelModal({
     if (!name.trim()) return;
     setLoading(true);
 
-    const res = await fetch("/api/evohub/create-channel", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
-    });
+    try {
+      const res = await fetch("/api/evohub/create-channel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (!res.ok) {
-      toast.error(data.error?.message || "Erro ao criar conexão");
+      if (!res.ok) {
+        const msg = typeof data.error === "string" ? data.error : (data.error?.message || JSON.stringify(data.error) || "Erro ao criar conexão");
+        toast.error(msg);
+        setLoading(false);
+        return;
+      }
+
+      setChannel(data);
       setLoading(false);
-      return;
+      onCreated();
+    } catch {
+      toast.error("Erro de conexão com o servidor");
+      setLoading(false);
     }
-
-    setChannel(data);
-    setLoading(false);
-    onCreated();
   };
 
   const copyToClipboard = (text: string, label: string) => {

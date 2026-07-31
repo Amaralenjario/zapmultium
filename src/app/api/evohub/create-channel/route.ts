@@ -11,6 +11,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
     }
 
+    if (!KEY) {
+      return NextResponse.json({ error: "EVOHUB_API_KEY não configurada no servidor" }, { status: 500 });
+    }
+
     const res = await fetch(`${BASE}/api/v1/channels`, {
       method: "POST",
       headers: {
@@ -23,7 +27,8 @@ export async function POST(request: Request) {
     const data = await res.json();
 
     if (!res.ok) {
-      return NextResponse.json({ error: data }, { status: res.status });
+      console.error("EvoHub create channel error:", res.status, JSON.stringify(data));
+      return NextResponse.json({ error: data?.message || data?.error || JSON.stringify(data) || "Erro ao criar canal" }, { status: res.status });
     }
 
     return NextResponse.json({
@@ -34,7 +39,8 @@ export async function POST(request: Request) {
       type: data.type,
       connectUrl: `https://app.evohub.evolutionfoundation.com.br/connect/${data.token}`,
     });
-  } catch {
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+  } catch (e: any) {
+    console.error("Create channel exception:", e?.message || e);
+    return NextResponse.json({ error: e?.message || "Erro interno" }, { status: 500 });
   }
 }
