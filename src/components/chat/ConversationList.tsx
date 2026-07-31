@@ -236,11 +236,19 @@ export default function ConversationList({
         </div>
         <div className="flex gap-1">
           {(["all", "unread", "active", "archived"] as const).map((f) => {
+            const base = allConversations.filter((conv) => {
+              if (sellerPhoneIds !== null) {
+                const phoneId = (conv as any).metadata?.phone_number_id || "";
+                if (!phoneId) return true;
+                return sellerPhoneIds.length > 0 ? sellerPhoneIds.includes(phoneId) : false;
+              }
+              return true;
+            });
             const counts: Record<string, number> = {
-              all: allConversations.length,
-              unread: allConversations.filter((c) => c.unread_count > 0 && !c.archived).length,
-              active: allConversations.filter((c) => !c.archived).length,
-              archived: allConversations.filter((c) => !!c.archived).length,
+              all: base.length,
+              unread: base.filter((c) => c.unread_count > 0 && !c.archived).length,
+              active: base.filter((c) => !c.archived).length,
+              archived: base.filter((c) => !!c.archived).length,
             };
             return (
             <button
