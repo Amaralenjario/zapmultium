@@ -14,12 +14,17 @@ interface ChatInputProps {
   onCancelReply?: () => void;
 }
 
+const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
+
 export default function ChatInput({ conversationId, phoneNumberId, customerPhone, onMessageSent, replyTo, onCancelReply }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -88,6 +93,54 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
     setSending(false);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error("Arquivo muito grande. Máximo 16MB.");
+      return;
+    }
+    if (!phoneNumberId || !customerPhone) {
+      toast.error("Canal não configurado");
+      return;
+    }
+    uploadFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const uploadFile = async (file: File) => {
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("conversation_id", conversationId);
+      formData.append("phone_number_id", phoneNumberId!);
+      formData.append("customer_phone", customerPhone!);
+
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        xhr.open("POST", "/api/evohub/send-media");
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(xhr.responseText));
+        };
+        xhr.onerror = () => reject(new Error("Erro de conexão"));
+        xhr.send(formData);
+      });
+
+      onMessageSent();
+    } catch {
+      toast.error("Erro ao enviar arquivo");
+    }
+    setUploading(false);
+    setUploadProgress(0);
+  };
+
   return (
     <div className="flex-shrink-0">
       {replyTo && (
@@ -101,7 +154,15 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
           </button>
         </div>
       )}
-      <div className="px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center gap-2">
+      <div className="px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center gap-2 relative">
+        {uploading && (
+          <div className="absolute bottom-full left-0 right-0 px-4">
+            <div className="h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all duration-200 rounded-full" style={{ width: `${uploadProgress}%` }} />
+            </div>
+            <p className="text-[10px] text-gray-500 text-center mt-0.5">Enviando arquivo...</p>
+          </div>
+        )}
         <div className="relative">
           <button onClick={() => { setShowEmoji(!showEmoji); setShowStickers(false); }} className={`p-2 rounded-full hover:bg-white/50 dark:hover:bg-white/5 transition ${showEmoji ? "text-[#f59e0b] bg-white/50" : "text-[#54656f] dark:text-[#8696a0]"}`}>
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -132,9 +193,28 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Digite uma mensagem"
-            disabled={!phoneNumberId}
+            disabled={!phoneNumberId || uploading}
             className="flex-1 bg-transparent px-4 py-2.5 text-[15px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:outline-none disabled:opacity-50"
           />
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileSelect}
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!phoneNumberId || uploading}
+            title="Enviar imagem, vídeo ou documento"
+            className={`p-2 mr-1 rounded-full transition ${uploading ? "text-emerald-500" : "text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884]"} disabled:opacity-40`}
+          >
+            {uploading ? (
+              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+            )}
+          </button>
         </div>
         {message.trim() ? (
           <button
