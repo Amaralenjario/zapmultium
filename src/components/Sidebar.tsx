@@ -1,49 +1,41 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "@/components/ThemeToggle";
+import { createClient } from "@/lib/supabase/client";
 
 const menuItems = [
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: HomeIcon,
-  },
-  {
-    label: "Chat ao vivo",
-    href: "/dashboard/chat-ao-vivo",
-    icon: ChatIcon,
-  },
-  {
-    label: "CRM Leads",
-    href: "/dashboard/crm-leads",
-    icon: CrmIcon,
-  },
-  {
-    label: "Fluxos",
-    href: "/dashboard/fluxos",
-    icon: FlowIcon,
-  },
-  {
-    label: "WhatsApps",
-    href: "/dashboard/whatsapps",
-    icon: WhatsAppIcon,
-  },
-  {
-    label: "Operações",
-    href: "/dashboard/operacoes",
-    icon: OpIcon,
-  },
-  {
-    label: "Vendedores",
-    href: "/dashboard/vendedores",
-    icon: SellerIcon,
-  },
+  { label: "Dashboard", href: "/dashboard", icon: HomeIcon },
+  { label: "Chat ao vivo", href: "/dashboard/chat-ao-vivo", icon: ChatIcon },
+  { label: "CRM Leads", href: "/dashboard/crm-leads", icon: CrmIcon },
+  { label: "Fluxos", href: "/dashboard/fluxos", icon: FlowIcon },
+  { label: "WhatsApps", href: "/dashboard/whatsapps", icon: WhatsAppIcon, adminOnly: true },
+  { label: "Operações", href: "/dashboard/operacoes", icon: OpIcon, adminOnly: true },
+  { label: "Vendedores", href: "/dashboard/vendedores", icon: SellerIcon, adminOnly: true },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from("profiles").select("role").eq("id", user.id).single().then(({ data }) => {
+          setIsAdmin(data?.role === "admin" || data?.role === "supervisor");
+          setLoaded(true);
+        });
+      } else {
+        setLoaded(true);
+      }
+    });
+  }, []);
+
+  const visibleItems = loaded ? menuItems.filter(item => !item.adminOnly || isAdmin) : menuItems;
 
   return (
     <aside className="w-64 min-h-screen border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col">
@@ -55,8 +47,8 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 p-4 space-y-1">
-        {menuItems.map((item) => {
-          const isActive = pathname === item.href;
+        {visibleItems.map((item) => {
+          const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}
