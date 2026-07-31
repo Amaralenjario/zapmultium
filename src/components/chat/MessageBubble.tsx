@@ -134,7 +134,8 @@ export default function MessageBubble({
 function MediaContent({ messageId, content, type, metadata }: { messageId: string; content: string; type: string; metadata?: any }) {
   const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
-  // Flow messages have a direct public URL in content
+  const [lightbox, setLightbox] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const isFlow = metadata?.source === "flow";
   const mediaUrl = isFlow && content.startsWith("http") ? content : `/api/media/${messageId}`;
 
@@ -149,12 +150,46 @@ function MediaContent({ messageId, content, type, metadata }: { messageId: strin
     setSaving(false);
   };
 
+  const openLightbox = () => { setLightbox(true); setZoom(1); };
+  const closeLightbox = () => setLightbox(false);
+
   if (error) return <p className="px-3.5 py-2 text-gray-500 dark:text-gray-400 text-sm">{content}</p>;
 
-  if (type === "sticker") return <div className="p-1 relative group/sticker"><img src={mediaUrl} alt="" className="rounded-lg max-w-[140px] max-h-[140px] object-contain" loading="lazy" onError={() => setError(true)} /><button onClick={() => handleSaveSticker(messageId)} className="absolute top-1 right-1 opacity-0 group-hover/sticker:opacity-100 transition bg-gray-800/70 text-white text-[10px] px-1.5 py-0.5 rounded hover:bg-gray-800">{saving ? "..." : "Salvar"}</button></div>;
-  if (type === "image") return <div className="p-1"><img src={mediaUrl} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover" loading="lazy" onError={() => setError(true)} /></div>;
+  if (type === "sticker") return <div className="p-1 relative group/sticker"><img src={mediaUrl} alt="" className="rounded-lg max-w-[140px] max-h-[140px] object-contain cursor-pointer" loading="lazy" onError={() => setError(true)} onClick={openLightbox} /><button onClick={() => handleSaveSticker(messageId)} className="absolute top-1 right-1 opacity-0 group-hover/sticker:opacity-100 transition bg-gray-800/70 text-white text-[10px] px-1.5 py-0.5 rounded hover:bg-gray-800">{saving ? "..." : "Salvar"}</button></div>;
+  if (type === "image") return (
+    <>
+      <div className="p-1"><img src={mediaUrl} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover cursor-pointer hover:opacity-90 transition" loading="lazy" onError={() => setError(true)} onClick={openLightbox} /></div>
+      {lightbox && <ImageViewer src={mediaUrl} zoom={zoom} setZoom={setZoom} onClose={closeLightbox} />}
+    </>
+  );
   if (type === "video") return <div className="p-1"><video controls className="rounded-lg max-w-[300px] max-h-[300px]" preload="metadata"><source src={mediaUrl} /></video></div>;
   if (type === "audio") return <AudioPlayer src={mediaUrl} />;
   if (type === "document") return <DocumentPreview src={mediaUrl} name={content} />;
   return null;
+}
+
+function ImageViewer({ src, zoom, setZoom, onClose }: { src: string; zoom: number; setZoom: (z: number) => void; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center" onClick={onClose}>
+      <div className="absolute top-4 right-4 flex items-center gap-2 z-50">
+        <button onClick={() => setZoom(Math.min(3, zoom + 0.5))} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Aumentar zoom">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+        </button>
+        <button onClick={() => setZoom(Math.max(0.5, zoom - 0.5))} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Diminuir zoom">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
+        </button>
+        <span className="text-white text-xs">{Math.round(zoom * 100)}%</span>
+        <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Fechar">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <img
+        src={src}
+        alt=""
+        className="max-w-[95vw] max-h-[95vh] object-contain transition-transform duration-200"
+        style={{ transform: `scale(${zoom})`, cursor: zoom > 1 ? "grab" : "default" }}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
 }
