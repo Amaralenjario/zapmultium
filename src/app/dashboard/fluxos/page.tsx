@@ -25,6 +25,9 @@ export default function FluxosPage() {
   const [logsFilter, setLogsFilter] = useState("all");
   const [importModal, setImportModal] = useState(false);
   const [importCode, setImportCode] = useState("");
+  const [bulkImportModal, setBulkImportModal] = useState(false);
+  const [bulkImportText, setBulkImportText] = useState("");
+  const [bulkImporting, setBulkImporting] = useState(false);
 
   const handleCreate = async () => {
     if (!newFlowName.trim()) return;
@@ -98,6 +101,28 @@ export default function FluxosPage() {
     fetchFlows();
   };
 
+  const handleBulkImport = async () => {
+    if (!bulkImportText.trim()) return;
+    setBulkImporting(true);
+    try {
+      const res = await fetch("/api/flows/bulk-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: bulkImportText }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`${data.imported} fluxos importados!`);
+        setBulkImportModal(false);
+        setBulkImportText("");
+        fetchFlows();
+      } else {
+        toast.error(data.error || "Erro");
+      }
+    } catch { toast.error("Erro"); }
+    setBulkImporting(false);
+  };
+
   const fetchExecutions = async () => {
     const res = await fetch(`/api/flows/logs?status=${logsFilter}&limit=50`);
     if (res.ok) setExecutions(await res.json());
@@ -140,8 +165,11 @@ export default function FluxosPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleImportFlow} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
+          <button onClick={() => setBulkImportModal(true)} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+            Importar em massa
+          </button>
+          <button onClick={handleImportFlow} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
             Importar
           </button>
           <button onClick={() => setNameModal(true)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25 flex items-center gap-2">
@@ -264,6 +292,29 @@ export default function FluxosPage() {
             <div className="flex gap-3 mt-5">
               <button onClick={() => setImportModal(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
               <button onClick={doImport} disabled={!importCode.trim()} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">Importar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Importar Fluxos em Massa</h2>
+            <p className="text-xs text-gray-500 mb-3">Cole o texto com múltiplos fluxos no formato: # Nome do Fluxo + FLOWV1:...</p>
+            <textarea
+              value={bulkImportText}
+              onChange={(e) => setBulkImportText(e.target.value)}
+              placeholder={`# [ZV] Nome do Fluxo 1\nFLOWV1:eyJ2ZXJzaW9uIjo...\n\n# [ZV] Nome do Fluxo 2\nFLOWV1:eyJ2ZXJzaW9uIjo...`}
+              rows={12}
+              className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none font-mono text-xs"
+              autoFocus
+            />
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setBulkImportModal(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+              <button onClick={handleBulkImport} disabled={!bulkImportText.trim() || bulkImporting} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+                {bulkImporting ? "Importando..." : "Importar todos"}
+              </button>
             </div>
           </div>
         </div>
