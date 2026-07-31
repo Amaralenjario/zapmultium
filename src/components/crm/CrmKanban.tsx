@@ -308,14 +308,14 @@ export default function CrmKanban() {
         </div>
       </div>
 
-      <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
+      <div className="flex-1 flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x">
         {columns.map((col, idx) => {
           const colLeads = leadsByStatus[col.key] || [];
           const colTags = tags.filter((t) => t.column_key === col.key);
           return (
             <div
               key={col.id}
-              className="flex-1 min-w-[280px] max-w-[360px] rounded-xl border flex flex-col transition-colors"
+              className="snap-start flex-shrink-0 w-[85vw] lg:flex-1 lg:min-w-[280px] lg:max-w-[360px] rounded-xl border flex flex-col transition-colors"
               style={{ borderColor: dragging ? "#22c55e" : col.color + "40", backgroundColor: col.color + "08" }}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, col.key)}
