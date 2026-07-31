@@ -133,14 +133,34 @@ export default function FlowBar({
   const moveFlow = async (fromIdx: number, toIdx: number) => {
     if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
     if (fromIdx >= flows.length || toIdx >= flows.length) return;
-    const from = flows[fromIdx];
-    const to = flows[toIdx];
-    await Promise.all([
-      fetch(`/api/flows/${from.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: toIdx }) }),
-      fetch(`/api/flows/${to.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sort_order: fromIdx }) }),
-    ]);
-    const res = await fetch("/api/flows");
-    if (res.ok) setFlows(await res.json());
+
+    const fromFlow = flows[fromIdx];
+    if (!fromFlow) return;
+
+    // Optimistic local reorder
+    setFlows((prev) => {
+      const arr = [...prev];
+      arr.splice(fromIdx, 1);
+      arr.splice(toIdx, 0, fromFlow);
+      return arr;
+    });
+
+    // Persist to server
+    try {
+      const res = await fetch("/api/flows/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flow_id: fromFlow.id, target_index: toIdx }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        const revert = await fetch("/api/flows");
+        if (revert.ok) setFlows(await revert.json());
+      }
+    } catch {
+      const revert = await fetch("/api/flows");
+      if (revert.ok) setFlows(await revert.json());
+    }
   };
 
   const handleDragStart = (e: React.DragEvent, idx: number) => {
@@ -236,14 +256,16 @@ export default function FlowBar({
           {filteredFlows.map((flow, idx) => (
             <div
               key={flow.id}
-              draggable
+              draggable={!flowSearch.trim()}
               onDragStart={(e) => handleDragStart(e, idx)}
               onDragOver={(e) => handleDragOver(e, idx)}
               onDragEnd={handleDragEnd}
               onDragLeave={() => setDragOverIndex(null)}
-              className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition ${
-                dragIndex === idx ? "opacity-30 scale-95" :
-                dragOverIndex === idx ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 scale-105 shadow-md" :
+              className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-all ${
+                !flowSearch.trim() ? "cursor-grab active:cursor-grabbing" : ""
+              } ${
+                dragIndex === idx ? "opacity-30" :
+                dragOverIndex === idx ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 shadow-lg ring-1 ring-emerald-400" :
                 "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-emerald-400 hover:shadow-sm"
               }`}
             >
