@@ -79,7 +79,7 @@ export default function MessageBubble({
           <span className="text-[11px] bg-white/90 dark:bg-gray-800/90 text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">{showDate}</span>
         </div>
       )}
-      <div className={`flex ${isAgent ? "justify-end" : "justify-start"} group ${isFirst !== false ? "mt-2" : "mt-0.5"} overflow-hidden`}>
+      <div className={`flex ${isAgent ? "justify-end" : "justify-start"} group ${isFirst !== false ? "mt-2" : "mt-0.5"}`}>
         <div className={`relative overflow-hidden text-sm leading-[1.4] ${isFirst === false ? (isAgent ? "rounded-tr-sm" : "rounded-tl-sm") : ""} ${isAgent ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-l-lg" : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-r-lg"} shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]`} style={{ maxWidth: "min(65%, 500px)" }}>
           {/* Quoted message */}
           {(context?.id || quotedContent) && (
