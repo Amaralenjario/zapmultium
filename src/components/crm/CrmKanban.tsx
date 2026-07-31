@@ -56,6 +56,30 @@ export default function CrmKanban() {
   const supabase = createClient();
 
   const fetchAll = useCallback(async () => {
+    // Get seller's allowed phone_number_ids
+    let sellerPhoneIds: string[] | null = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      if (profile?.role !== "admin" && profile?.role !== "supervisor") {
+        const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
+        if (sc && sc.length > 0) {
+          const channelIds = sc.map(s => s.evohub_channel_id);
+          const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
+          const phoneIdMap: Record<string, string> = {
+            "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+            "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+            "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+            "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+            "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+          };
+          for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }
+          sellerPhoneIds = channelIds.map(cid => phoneIdMap[cid]).filter(Boolean);
+        } else {
+          sellerPhoneIds = [];
+        }
+      }
+    }
     const [leadsRes, colsRes, tagsRes, custRes, opRes, convRes] = await Promise.all([
       supabase.from("leads").select("*, lead_tags(tag_id, tag:crm_tags(id, name, color))").order("created_at", { ascending: false }),
       fetch("/api/crm/columns").then((r) => r.json()),
@@ -84,24 +108,37 @@ export default function CrmKanban() {
     const existingLeads = leadsRes.data || [];
     const existingPhones = new Set(existingLeads.map((l: any) => l.phone));
     
-    // Add WhatsApp customers as leads if they don't have a lead entry yet
-    const customersAsLeads = (custRes.data || [])
-      .filter((c: any) => c.phone && !existingPhones.has(c.phone))
-      .map((c: any) => ({
+    // Filter by seller: only show leads/customers from seller's instances
+    if (sellerPhoneIds !== null) {
+      const allowedCustIds = new Set<string>();
+      for (const [custId, phoneId] of Object.entries(custPhoneMap)) {
+        if (sellerPhoneIds.includes(phoneId)) allowedCustIds.add(custId);
+      }
+      // Filter customers as leads to only include allowed
+      const filteredCustomers = (custRes.data || []).filter((c: any) => allowedCustIds.has(c.id));
+      // Filter real leads by their phone appearing in allowed customers
+      const allowedPhones = new Set(filteredCustomers.map((c: any) => c.phone));
+      const filteredLeads = existingLeads.filter((l: any) => allowedPhones.has(l.phone));
+      setLeads([...filteredLeads, ...filteredCustomers.map((c: any) => ({
         id: `customer_${c.phone}`,
-        name: c.name || c.phone,
-        phone: c.phone,
-        email: null,
-        source: "whatsapp",
-        status: "new",
-        priority: "normal",
-        notes: null,
+        name: c.name || c.phone, phone: c.phone, email: null, source: "whatsapp",
+        status: "new", priority: "normal", notes: null,
         created_at: c.last_interaction_at || new Date().toISOString(),
-        lead_tags: [],
-        _customer_id: c.id,
-      }));
-    
-    setLeads([...existingLeads, ...customersAsLeads]);
+        lead_tags: [], _customer_id: c.id,
+      }))]);
+    } else {
+      // Admin/supervisor: show all
+      const customersAsLeads = (custRes.data || [])
+        .filter((c: any) => c.phone && !existingPhones.has(c.phone))
+        .map((c: any) => ({
+          id: `customer_${c.phone}`,
+          name: c.name || c.phone, phone: c.phone, email: null, source: "whatsapp",
+          status: "new", priority: "normal", notes: null,
+          created_at: c.last_interaction_at || new Date().toISOString(),
+          lead_tags: [], _customer_id: c.id,
+        }));
+      setLeads([...existingLeads, ...customersAsLeads]);
+    }
     if (Array.isArray(colsRes)) setColumns(colsRes);
     if (Array.isArray(tagsRes)) setTags(tagsRes);
     setLoading(false);

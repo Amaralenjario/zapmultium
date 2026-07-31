@@ -36,7 +36,12 @@ export default function FlowBar({
   const [confirmFlow, setConfirmFlow] = useState<FlowCard | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [flowSearch, setFlowSearch] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const filteredFlows = flowSearch.trim()
+    ? flows.filter(f => f.name.toLowerCase().includes(flowSearch.trim().toLowerCase()))
+    : flows;
 
   useEffect(() => {
     setTriggering(null);
@@ -187,8 +192,18 @@ export default function FlowBar({
       {/* Horizontal flow trigger cards */}
       <div className="px-3 py-1.5">
         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 font-semibold">Fluxos</p>
-        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1 max-h-10" style={{ scrollbarWidth: "thin" }}>
-          {flows.map((flow, idx) => (
+        <div className="flex items-center gap-1 mb-1.5">
+          <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <input
+            type="text"
+            value={flowSearch}
+            onChange={(e) => setFlowSearch(e.target.value)}
+            placeholder="Buscar fluxo..."
+            className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[10px] text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:outline-none"
+          />
+        </div>
+        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+          {filteredFlows.map((flow, idx) => (
             <div
               key={flow.id}
               draggable
