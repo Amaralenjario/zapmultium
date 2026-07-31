@@ -35,7 +35,7 @@ export default function FlowBar({
   const [triggering, setTriggering] = useState<string | null>(null);
   const [confirmFlow, setConfirmFlow] = useState<FlowCard | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dropZoneIndex, setDropZoneIndex] = useState<number | null>(null);
   const [flowSearch, setFlowSearch] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const momentumRef = useRef(0);
@@ -132,16 +132,19 @@ export default function FlowBar({
 
   const moveFlow = async (fromIdx: number, toIdx: number) => {
     if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
-    if (fromIdx >= flows.length || toIdx >= flows.length) return;
+    if (fromIdx >= flows.length || toIdx > flows.length) return;
 
     const fromFlow = flows[fromIdx];
     if (!fromFlow) return;
+
+    // toIdx represents insertion position (0..flows.length), adjust for removal
+    const insertAt = fromIdx < toIdx ? toIdx - 1 : toIdx;
 
     // Optimistic local reorder
     setFlows((prev) => {
       const arr = [...prev];
       arr.splice(fromIdx, 1);
-      arr.splice(toIdx, 0, fromFlow);
+      arr.splice(insertAt, 0, fromFlow);
       return arr;
     });
 
@@ -150,10 +153,9 @@ export default function FlowBar({
       const res = await fetch("/api/flows/reorder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flow_id: fromFlow.id, target_index: toIdx }),
+        body: JSON.stringify({ flow_id: fromFlow.id, target_index: insertAt }),
       });
       if (!res.ok) {
-        // Revert on failure
         const revert = await fetch("/api/flows");
         if (revert.ok) setFlows(await revert.json());
       }
@@ -169,18 +171,29 @@ export default function FlowBar({
     e.dataTransfer.setData("text/plain", String(idx));
   };
 
-  const handleDragOver = (e: React.DragEvent, idx: number) => {
+  const handleDropZoneDragOver = (e: React.DragEvent, zoneIdx: number) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    setDragOverIndex(idx);
+    setDropZoneIndex(zoneIdx);
+  };
+
+  const handleDropZoneDragLeave = () => {
+    setDropZoneIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, zoneIdx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragIndex !== null && dragIndex !== zoneIdx && dragIndex !== zoneIdx - 1) {
+      moveFlow(dragIndex, zoneIdx);
+    }
+    setDragIndex(null);
+    setDropZoneIndex(null);
   };
 
   const handleDragEnd = () => {
-    if (dragIndex !== null && dragOverIndex !== null && dragIndex !== dragOverIndex) {
-      moveFlow(dragIndex, dragOverIndex);
-    }
     setDragIndex(null);
-    setDragOverIndex(null);
+    setDropZoneIndex(null);
   };
 
   const stepLabels: Record<string, string> = {
@@ -252,43 +265,44 @@ export default function FlowBar({
             className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[10px] text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:outline-none"
           />
         </div>
-        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+        <div ref={scrollRef} className="flex gap-0 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }} onDragEnd={handleDragEnd}>
+          {filteredFlows.length > 0 && (
+            <DropZone index={0} isActive={dropZoneIndex === 0} onDragOver={(e) => handleDropZoneDragOver(e, 0)} onDragLeave={handleDropZoneDragLeave} onDrop={(e) => handleDrop(e, 0)} />
+          )}
           {filteredFlows.map((flow, idx) => (
-            <div
-              key={flow.id}
-              draggable={!flowSearch.trim()}
-              onDragStart={(e) => handleDragStart(e, idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDragEnd={handleDragEnd}
-              onDragLeave={() => setDragOverIndex(null)}
-              className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-all ${
-                !flowSearch.trim() ? "cursor-grab active:cursor-grabbing" : ""
-              } ${
-                dragIndex === idx ? "opacity-30" :
-                dragOverIndex === idx ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 shadow-lg ring-1 ring-emerald-400" :
-                "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-emerald-400 hover:shadow-sm"
-              }`}
-            >
-              {/* Drag handle - 6 dots */}
-              <span className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 flex-shrink-0" title="Arrastar para reordenar">
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                  <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
-                  <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
-                  <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
-                </svg>
-              </span>
-              <button
-                disabled={triggering === flow.id}
-                onClick={() => handleTrigger(flow)}
-                className="flex items-center gap-1.5 text-left disabled:opacity-50"
+            <div key={flow.id} className="flex items-start">
+              <div
+                draggable={!flowSearch.trim()}
+                onDragStart={(e) => handleDragStart(e, idx)}
+                className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-all ${
+                  !flowSearch.trim() ? "cursor-grab active:cursor-grabbing" : ""
+                } ${
+                  dragIndex === idx ? "opacity-30" :
+                  "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-emerald-400 hover:shadow-sm"
+                }`}
               >
-                {triggering === flow.id ? (
-                  <div className="animate-spin w-3 h-3 border-[1.5px] border-gray-300 border-t-emerald-500 rounded-full" />
-                ) : (
-                  <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                )}
-                <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{flow.name}</span>
-              </button>
+                {/* Drag handle - 6 dots */}
+                <span className="text-gray-400 hover:text-gray-600 flex-shrink-0" title="Arrastar para reordenar">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+                    <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                    <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                  </svg>
+                </span>
+                <button
+                  disabled={triggering === flow.id}
+                  onClick={() => handleTrigger(flow)}
+                  className="flex items-center gap-1.5 text-left disabled:opacity-50"
+                >
+                  {triggering === flow.id ? (
+                    <div className="animate-spin w-3 h-3 border-[1.5px] border-gray-300 border-t-emerald-500 rounded-full" />
+                  ) : (
+                    <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                  )}
+                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{flow.name}</span>
+                </button>
+              </div>
+              <DropZone index={idx + 1} isActive={dropZoneIndex === idx + 1} onDragOver={(e) => handleDropZoneDragOver(e, idx + 1)} onDragLeave={handleDropZoneDragLeave} onDrop={(e) => handleDrop(e, idx + 1)} />
             </div>
           ))}
           {flows.length === 0 && (
@@ -324,5 +338,31 @@ export default function FlowBar({
         </div>
       )}
     </div>
+  );
+}
+
+function DropZone({
+  index,
+  isActive,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: {
+  index: number;
+  isActive: boolean;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+}) {
+  return (
+    <div
+      className={`flex-shrink-0 transition-all duration-150 rounded ${
+        isActive ? "w-6 bg-emerald-200 dark:bg-emerald-800" : "w-1 bg-transparent hover:bg-gray-200 dark:hover:bg-gray-700"
+      }`}
+      style={{ minHeight: "28px" }}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    />
   );
 }
