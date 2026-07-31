@@ -202,7 +202,15 @@ export default function FlowBar({
             className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[10px] text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:outline-none"
           />
         </div>
-        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+        <div
+          ref={scrollRef}
+          className="flex gap-2 overflow-x-auto pb-1"
+          style={{ scrollbarWidth: "thin" }}
+          onWheel={(e) => {
+            if (!scrollRef.current) return;
+            scrollRef.current.scrollLeft += e.deltaY;
+          }}
+        >
           {filteredFlows.map((flow, idx) => (
             <div
               key={flow.id}
