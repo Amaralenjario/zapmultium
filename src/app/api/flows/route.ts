@@ -9,15 +9,21 @@ export async function POST(request: Request) {
   const { name, config } = await request.json();
   if (!name) return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
 
-  // Use service role for DB write to bypass RLS
   const { createClient: createAdmin } = await import("@supabase/supabase-js");
   const adminUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   const dbClient = createAdmin(adminUrl, adminKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
+  // Check for duplicate name
+  let finalName = name.trim();
+  const { data: existing } = await dbClient.from("flows").select("name").eq("name", finalName).limit(1);
+  if (existing && existing.length > 0) {
+    return NextResponse.json({ error: `Já existe um fluxo com o nome "${finalName}"` }, { status: 409 });
+  }
+
   const { data, error } = await dbClient
     .from("flows")
-    .insert({ name, config, trigger_type: "manual", status: "draft", user_id: user.id })
+    .insert({ name: finalName, config, trigger_type: "manual", status: "draft", user_id: user.id })
     .select("*")
     .single();
 

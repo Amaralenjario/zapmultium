@@ -37,10 +37,20 @@ export async function POST(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Check for duplicate name and generate unique name
+    let finalName = flowName;
+    let copyNum = 1;
+    while (true) {
+      const { data: existing } = await adminClient.from("flows").select("id").eq("name", finalName).limit(1);
+      if (!existing || existing.length === 0) break;
+      copyNum++;
+      finalName = `${flowName} (cópia ${copyNum})`;
+    }
+
     const { data, error } = await adminClient
       .from("flows")
       .insert({
-        name: flowName,
+        name: finalName,
         config: { steps: result.steps, edges: result.edges },
         trigger_type: "manual",
         status: "draft",
@@ -52,7 +62,7 @@ export async function POST(request: Request) {
     if (error) {
       results.push({ name: flowName, error: error.message });
     } else {
-      results.push({ name: flowName, id: data.id, steps: result.steps.length });
+      results.push({ name: finalName, id: data.id, steps: result.steps.length });
     }
   }
 
