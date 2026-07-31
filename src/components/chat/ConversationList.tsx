@@ -235,7 +235,14 @@ export default function ConversationList({
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar por nome, número ou mensagem..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-[#2a3942] border-0 text-[14px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:ring-1 focus:ring-green-500 focus:outline-none transition" />
         </div>
         <div className="flex gap-1">
-          {(["all", "unread", "active", "archived"] as const).map((f) => (
+          {(["all", "unread", "active", "archived"] as const).map((f) => {
+            const counts: Record<string, number> = {
+              all: allConversations.length,
+              unread: allConversations.filter((c) => c.unread_count > 0 && !c.archived).length,
+              active: allConversations.filter((c) => !c.archived).length,
+              archived: allConversations.filter((c) => !!c.archived).length,
+            };
+            return (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -246,8 +253,10 @@ export default function ConversationList({
               }`}
             >
               {f === "all" ? "Todas" : f === "unread" ? "Não lidas" : f === "active" ? "Ativas" : "Arquivadas"}
+              <span className={`ml-1 text-[10px] ${filter === f ? "text-white/80" : "text-gray-400"}`}>({counts[f]})</span>
             </button>
-          ))}
+            );
+          })}
         </div>
         {availableTags.length > 0 && (
           <div className="flex gap-1 mt-1.5 overflow-x-auto">
