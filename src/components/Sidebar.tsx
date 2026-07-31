@@ -38,7 +38,7 @@ export default function Sidebar({ open, onClose }: { open?: boolean; onClose?: (
   const visibleItems = loaded ? menuItems.filter(item => !item.adminOnly || isAdmin) : menuItems;
 
   return (
-    <aside className={`w-64 min-h-screen border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col flex-shrink-0 ${open !== undefined ? (open ? "block fixed inset-y-0 left-0 z-50" : "hidden") : "hidden lg:flex"}`}>
+    <aside className={`w-64 min-h-screen border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col flex-shrink-0 lg:flex ${open !== undefined ? (open ? "fixed inset-y-0 left-0 z-50 flex" : "hidden lg:flex") : "hidden lg:flex"}`}>
       <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
         <Link href="/dashboard" className="text-xl font-bold text-green-600 dark:text-green-500" onClick={onClose}>
           ZapMultium
