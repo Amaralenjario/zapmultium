@@ -8,7 +8,7 @@ export default function ChatPageClient() {
   const [selected, setSelected] = useState<Conversation | null>(null);
 
   return (
-    <div className="h-full flex overflow-hidden -mt-4 -mx-4 -mb-4 lg:-mt-8 lg:-mx-8 lg:-mb-8">
+    <div className="absolute inset-0 flex overflow-hidden">
       <div className={`${selected ? "hidden lg:block" : "w-full"} lg:w-[340px] flex-shrink-0 border-r border-gray-200 dark:border-[#222d34]`}>
         <ConversationList selectedId={selected?.id || null} onSelect={setSelected} />
       </div>

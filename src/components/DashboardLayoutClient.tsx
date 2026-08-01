@@ -20,7 +20,7 @@ export default function DashboardLayoutClient({ children }: { children: React.Re
           </button>
           <span className="text-lg font-bold text-green-600 dark:text-green-500">ZapMultium</span>
         </div>
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative">{children}</main>
       </div>
       <FlowScheduler />
     </div>
