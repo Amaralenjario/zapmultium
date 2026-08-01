@@ -26,7 +26,7 @@ function MenuItem({ item, isActive, onClose }: { item: typeof menuItems[number];
       className={`group relative flex items-center gap-3 px-4 py-[0.65rem] rounded-xl text-[14px] font-medium transition-all duration-150 ease-out ${
         isActive
           ? "bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400 font-semibold"
-          : "text-emerald-900/30 dark:text-emerald-200/30 hover:bg-emerald-500/[0.06] dark:hover:bg-emerald-500/[0.06] hover:text-emerald-700/60 dark:hover:text-emerald-300/60"
+          : "text-emerald-800/60 dark:text-emerald-300/65 hover:bg-emerald-500/[0.06] dark:hover:bg-emerald-500/[0.06] hover:text-emerald-700 dark:hover:text-emerald-300"
       }`}
     >
       {isActive && (
@@ -109,7 +109,7 @@ export default function Sidebar({ open, onClose }: { open?: boolean; onClose?: (
 
         {adminItems.length > 0 && (
           <div className="pt-6 pb-1">
-            <p className="px-4 mb-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-400 dark:text-gray-500">
+            <p className="px-4 mb-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-400 dark:text-emerald-500/60">
               Administração
             </p>
             <div className="space-y-1">
@@ -124,7 +124,7 @@ export default function Sidebar({ open, onClose }: { open?: boolean; onClose?: (
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-gray-200 dark:border-emerald-950/30">
-        <span className="text-[11px] text-gray-400 dark:text-gray-600">ZapMultium v1.0</span>
+        <span className="text-[11px] text-gray-400 dark:text-gray-500">ZapMultium v1.0</span>
       </div>
     </aside>
   );
