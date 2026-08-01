@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useTheme } from "@/components/ThemeProvider";
 
 interface ConversationData {
@@ -15,7 +15,7 @@ export default function ConversationsChart({ data }: { data: ConversationData[] 
 
   if (data.every((d) => d.total === 0 && d.active === 0)) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-6 shadow-sm">
+      <div className="rounded-2xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-6 shadow-sm">
         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Conversas nos últimos 7 dias</h3>
         <div className="h-48 flex flex-col items-center justify-center text-center">
           <svg className="w-10 h-10 text-gray-300 dark:text-gray-700 mb-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -28,40 +28,56 @@ export default function ConversationsChart({ data }: { data: ConversationData[] 
     );
   }
 
+  const maxVal = Math.max(...data.map(d => d.total), 1);
+
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-6 shadow-sm">
-      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Conversas nos últimos 7 dias</h3>
-      <div className="flex items-center gap-4 mb-4">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30 dark:bg-emerald-500/40" />
-          <span className="text-[11px] text-gray-400 dark:text-gray-500">Total</span>
+    <div className="rounded-2xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Conversas nos últimos 7 dias</h3>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
-          <span className="text-[11px] text-gray-400 dark:text-gray-500">Ativas</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400/40" />
+            <span className="text-[11px] text-gray-400 dark:text-gray-500">Total</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-[11px] text-gray-400 dark:text-gray-500">Ativas</span>
+          </div>
         </div>
       </div>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} barGap={3} barCategoryGap="30%">
+          <AreaChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <defs>
+              <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={isDark ? "#10b981" : "#10b981"} stopOpacity={0.12} />
+                <stop offset="95%" stopColor={isDark ? "#10b981" : "#10b981"} stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={isDark ? "#34d399" : "#059669"} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={isDark ? "#34d399" : "#059669"} stopOpacity={0} />
+              </linearGradient>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#1f2937" : "#f3f4f6"} vertical={false} />
             <XAxis dataKey="date" tick={{ fill: isDark ? "#6b7280" : "#9ca3af", fontSize: 11 }} axisLine={false} tickLine={false} dy={8} />
-            <YAxis tick={{ fill: isDark ? "#6b7280" : "#9ca3af", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+            <YAxis tick={{ fill: isDark ? "#6b7280" : "#9ca3af", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
             <Tooltip
-              cursor={{ fill: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)" }}
+              cursor={{ stroke: isDark ? "#374151" : "#d1d5db", strokeWidth: 1, strokeDasharray: "4 4" }}
               contentStyle={{
                 background: isDark ? "#111827" : "#ffffff",
                 border: `1px solid ${isDark ? "#374151" : "#e5e7eb"}`,
-                borderRadius: "10px",
+                borderRadius: "12px",
                 fontSize: "12px",
                 padding: "8px 12px",
                 color: isDark ? "#f3f4f6" : "#111827",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
               }}
             />
-            <Bar dataKey="total" fill="rgba(16,185,129,0.3)" radius={[4, 4, 0, 0]} name="Total" />
-            <Bar dataKey="active" fill="rgba(16,185,129,0.95)" radius={[4, 4, 0, 0]} name="Ativas" />
-          </BarChart>
+            <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={1.5} fillOpacity={1} fill="url(#colorTotal)" name="Total" dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: "#10b981" }} />
+            <Area type="monotone" dataKey="active" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorActive)" name="Ativas" dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: "#059669" }} />
+          </AreaChart>
         </ResponsiveContainer>
       </div>
     </div>

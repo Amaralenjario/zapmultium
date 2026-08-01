@@ -50,7 +50,9 @@ export default async function DashboardPage({
 }: {
   searchParams: { range?: string; start?: string; end?: string };
 }) {
-  const { range, start, end } = await searchParams;
+  const range = searchParams.range;
+  const start = searchParams.start;
+  const end = searchParams.end;
   const activeRange = range || "7d";
   const { startISO, endISO } = getDateRange(activeRange, start, end);
 

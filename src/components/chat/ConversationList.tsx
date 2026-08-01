@@ -314,7 +314,7 @@ export default function ConversationList({
               <button
                 key={conv.id}
                 onClick={() => onSelect(conv)}
-                className={`w-full flex items-start gap-3 px-3 py-3.5 transition text-left border-l-[3px] group relative overflow-hidden ${
+                className={`w-full flex items-start gap-3 px-3 py-3.5 transition text-left border-l-[3px] group relative overflow-hidden border-b border-gray-100 dark:border-[#222d34] ${
                   isSelected
                     ? "bg-[#d9fdd3]/40 dark:bg-[#005c4b]/30 border-l-emerald-500 dark:border-l-emerald-400"
                     : "border-l-transparent hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/80"
