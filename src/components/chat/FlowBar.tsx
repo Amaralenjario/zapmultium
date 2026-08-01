@@ -126,6 +126,7 @@ export default function FlowBar({
       });
       const result = await res.json();
       if (!result.ok && result.error) toast.error(result.error);
+      else window.dispatchEvent(new CustomEvent("flow-triggered"));
     } catch { toast.error("Erro"); }
     setTriggering(null);
   };

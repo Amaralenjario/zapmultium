@@ -46,25 +46,20 @@ export default function ConversationList({
   const supabase = createClient();
 
   const applyFilters = useCallback(() => {
-    // Use server search results when searching
     let filtered = searchResults !== null ? searchResults : allConversations;
 
-    // Seller channel filter
     if (sellerPhoneIds !== null) {
       filtered = filtered.filter((conv) => {
         const phoneId = (conv as any).metadata?.phone_number_id || "";
-        // Allow conversations without phone_number_id (legacy data)
         if (!phoneId) return true;
         return sellerPhoneIds.length > 0 ? sellerPhoneIds.includes(phoneId) : false;
       });
     }
 
-    // Filter tabs
     if (filter === "active") filtered = filtered.filter((c) => !c.archived);
     else if (filter === "archived") filtered = filtered.filter((c) => !!c.archived);
     else if (filter === "unread") filtered = filtered.filter((c) => c.unread_count > 0 && !c.archived);
 
-    // Tag filter
     if (tagFilter) {
       filtered = filtered.filter((conv) => {
         const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
@@ -74,7 +69,6 @@ export default function ConversationList({
       });
     }
 
-    // Search client-side only as fallback when server results are loaded
     if (search.trim() && searchResults === null) {
       const q = search.trim().toLowerCase();
       filtered = filtered.filter((conv) => {
@@ -91,7 +85,6 @@ export default function ConversationList({
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
 
-  // Server-side search
   useEffect(() => {
     if (!search.trim() || search.trim().length < 2) {
       setSearchResults(null);
@@ -106,7 +99,6 @@ export default function ConversationList({
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Derive available tags from leadTagsMap
   useEffect(() => {
     const seen = new Map<string, { id: string; name: string; color: string }>();
     for (const tags of Object.values(leadTagsMap)) {
@@ -138,7 +130,6 @@ export default function ConversationList({
       const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
       if (!sc || sc.length === 0) { setSellerPhoneIds([]); return; }
       const channelIds = sc.map((s) => s.evohub_channel_id);
-      const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
       const phoneIdMap: Record<string, string> = {
         "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
         "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
@@ -146,6 +137,7 @@ export default function ConversationList({
         "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
         "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
       };
+      const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
       for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }
       setSellerPhoneIds(channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean));
     };
@@ -203,9 +195,17 @@ export default function ConversationList({
       .subscribe();
 
     const interval = setInterval(fetchConversations, 3000);
-    const flowInterval = setInterval(fetchActiveFlows, 5000);
+    const flowInterval = setInterval(fetchActiveFlows, 4000);
 
-    return () => { supabase.removeChannel(channel); clearInterval(interval); clearInterval(flowInterval); };
+    const onFlowTriggered = () => fetchActiveFlows();
+    window.addEventListener("flow-triggered", onFlowTriggered);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+      clearInterval(flowInterval);
+      window.removeEventListener("flow-triggered", onFlowTriggered);
+    };
   }, []);
 
   const toggleArchive = async (convId: string, current: boolean, e: React.MouseEvent) => {
@@ -221,7 +221,7 @@ export default function ConversationList({
     if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const diff = now.getTime() - d.getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    if (days < 7) { const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]; return dias[d.getDay()]; }
+    if (days < 7) { const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"]; return dias[d.getDay()]; }
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   };
 
@@ -232,7 +232,7 @@ export default function ConversationList({
           <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#54656f] dark:text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar por nome, número ou mensagem..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-[#2a3942] border-0 text-[14px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:ring-1 focus:ring-green-500 focus:outline-none transition" />
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar conversas..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-[#2a3942] border-0 text-[14px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:ring-1 focus:ring-emerald-500 focus:outline-none transition" />
         </div>
         <div className="flex gap-1">
           {(["all", "unread", "active", "archived"] as const).map((f) => {
@@ -303,31 +303,34 @@ export default function ConversationList({
           conversations.map((conv) => {
             const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
             const isSelected = selectedId === conv.id;
-              const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
-              const operation = phoneMap[phoneNumberId];
-              const flowInfo = activeFlows[conv.id];
-              const customerPhone = customer?.phone || "";
-              const tags = leadTagsMap[customerPhone] || [];
+            const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
+            const operation = phoneMap[phoneNumberId];
+            const flowInfo = activeFlows[conv.id];
+            const customerPhone = customer?.phone || "";
+            const tags = leadTagsMap[customerPhone] || [];
+            const isFromMe = conv.last_message_sender === "agent" || conv.last_message_sender === "bot";
 
             return (
               <button
                 key={conv.id}
                 onClick={() => onSelect(conv)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 transition text-left border-l-[3px] group ${
+                className={`w-full flex items-start gap-3 px-3 py-3.5 transition text-left border-l-[3px] group relative overflow-hidden ${
                   isSelected
-                    ? "bg-[#f0f2f5] dark:bg-[#2a3942]"
-                    : "hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]"
-                } ${conv.archived ? "opacity-60" : ""}`}
-                style={flowInfo ? { borderLeftColor: "#22c55e" } : operation ? { borderLeftColor: operation.color } : { borderLeftColor: "transparent" }}
+                    ? "bg-[#d9fdd3]/40 dark:bg-[#005c4b]/30 border-l-emerald-500 dark:border-l-emerald-400"
+                    : "border-l-transparent hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/80"
+                } ${conv.archived ? "opacity-55" : ""}`}
+                style={flowInfo && !isSelected ? { borderLeftColor: "#22c55e" } : operation && !isSelected ? { borderLeftColor: operation.color } : {}}
               >
-                <Avatar name={customer?.name} size="md" />
-                <div className="flex-1 min-w-0 border-b border-gray-100 dark:border-[#222d34] pb-2.5">
-                  <div className="flex items-center justify-between">
+                <div className="flex-shrink-0 mt-0.5">
+                  <Avatar name={customer?.name} size="md" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       {operation && (
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} title={operation.name} />
                       )}
-                      <p className="font-normal text-[16px] text-[#111b21] dark:text-[#e9edef] truncate">
+                      <p className="font-medium text-[15px] text-[#111b21] dark:text-[#e9edef] truncate">
                         {customer?.name || customer?.phone || "Desconhecido"}
                       </p>
                       {flowInfo && (
@@ -337,17 +340,17 @@ export default function ConversationList({
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-[#667781] dark:text-[#8696a0] flex-shrink-0 ml-2">
+                    <span className="text-[11px] text-[#667781] dark:text-[#8696a0] flex-shrink-0">
                       {formatTime(conv.last_message_at || conv.created_at)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between mt-0.5">
+                  <div className="flex items-center justify-between mt-0.5 gap-2">
                     <div className="flex items-center gap-1 min-w-0 flex-1">
                       <p className="text-[13px] text-[#667781] dark:text-[#8696a0] truncate">
-                        {(conv.last_message_sender === "agent" || conv.last_message_sender === "bot") && <span>Você: </span>}
+                        {isFromMe && <span className="text-emerald-600/70 dark:text-emerald-400/70">Você: </span>}
                         {conv.last_message || ""}
                       </p>
-                      {(conv.last_message_sender === "agent" || conv.last_message_sender === "bot") && (
+                      {isFromMe && (
                         <svg className={`w-3.5 h-3.5 flex-shrink-0 ${conv.last_message_read ? "text-[#53bdeb]" : "text-[#8696a0]"}`} fill="currentColor" viewBox="0 0 16 11">
                           <path d="M11.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" />
                           <path d="M14.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" transform="translate(3,0)" />
@@ -355,22 +358,22 @@ export default function ConversationList({
                       )}
                     </div>
                     {tags.length > 0 && (
-                      <div className="flex gap-0.5 flex-wrap mt-1">
-                        {tags.slice(0, 3).map((tag) => (
+                      <div className="flex gap-0.5 flex-wrap flex-shrink-0">
+                        {tags.slice(0, 2).map((tag) => (
                           <span key={tag.id} className="text-[9px] px-1 py-0 rounded-full font-medium" style={{ backgroundColor: tag.color + "20", color: tag.color }}>{tag.name}</span>
                         ))}
-                        {tags.length > 3 && <span className="text-[9px] text-gray-400">+{tags.length - 3}</span>}
+                        {tags.length > 2 && <span className="text-[9px] text-gray-400">+{tags.length - 2}</span>}
                       </div>
                     )}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
                       <button onClick={(e) => toggleArchive(conv.id, !!conv.archived, e)} className="opacity-0 group-hover:opacity-100 transition p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" title={conv.archived ? "Desarquivar" : "Arquivar"}>
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={conv.archived ? "M3 4h18M3 8l1.5 13h15L21 8M9 12v6M12 12v6M15 12v6" : "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"} />
                         </svg>
                       </button>
                       {conv.unread_count > 0 ? (
-                        <span className="bg-[#25d366] text-white text-[11px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center leading-tight">{conv.unread_count}</span>
-                      ) : <span />}
+                        <span className="bg-[#25d366] text-white text-[11px] font-semibold px-1.5 py-0 rounded-full flex-shrink-0 min-w-[20px] h-[20px] flex items-center justify-center">{conv.unread_count}</span>
+                      ) : null}
                     </div>
                   </div>
                 </div>

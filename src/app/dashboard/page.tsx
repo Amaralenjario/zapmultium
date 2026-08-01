@@ -114,9 +114,7 @@ export default async function DashboardPage({
     { data: recentLeads },
     { data: leadsByStatus },
     { data: conversationsByDay },
-    { data: sellerMessageStats },
-    { data: sellerSentMessages },
-    { data: sellerReceivedMessages },
+    { data: allMessages },
   ] = await Promise.all([
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })).eq("status", "active"),
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })),
@@ -127,9 +125,7 @@ export default async function DashboardPage({
     leadBase(supabase.from("leads").select("id, name, phone, status, priority, created_at").order("created_at", { ascending: false }).limit(5)),
     leadBase(supabase.from("leads").select("status")),
     convBase(supabase.from("conversations").select("created_at, status")),
-    supabase.from("messages").select("metadata->>phone_number_id, sender_type").gte("created_at", startISO).lte("created_at", endISO),
-    supabase.from("messages").select("metadata->>phone_number_id, sender_type").gte("created_at", startISO).lte("created_at", endISO).eq("sender_type", "agent"),
-    supabase.from("messages").select("metadata->>phone_number_id, sender_type").gte("created_at", startISO).lte("created_at", endISO).eq("sender_type", "customer"),
+    supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
   ]);
 
   // Seller message stats
@@ -137,13 +133,12 @@ export default async function DashboardPage({
   for (const phoneId of Object.keys(PHONE_NAMES)) {
     sellerStats[phoneId] = { sent: 0, received: 0, name: PHONE_NAMES[phoneId] || phoneId };
   }
-  for (const m of (sellerSentMessages || [])) {
-    const pid = (m as any)["?column?"] || "";
-    if (sellerStats[pid]) sellerStats[pid].sent++;
-  }
-  for (const m of (sellerReceivedMessages || [])) {
-    const pid = (m as any)["?column?"] || "";
-    if (sellerStats[pid]) sellerStats[pid].received++;
+  for (const m of (allMessages || [])) {
+    const pid = (m.metadata as any)?.phone_number_id || "";
+    if (sellerStats[pid]) {
+      if (m.sender_type === "agent") sellerStats[pid].sent++;
+      else if (m.sender_type === "customer") sellerStats[pid].received++;
+    }
   }
 
   // If seller-filtered, only show their channels

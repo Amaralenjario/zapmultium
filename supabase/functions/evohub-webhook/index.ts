@@ -256,10 +256,21 @@ async function processWhatsAppMessages(payload: any) {
 
       // Atualizar last_message
       const lastMsg = messages[messages.length - 1];
+      const mediaLabels: Record<string, string> = {
+        audio: "🎵 Áudio",
+        image: "📷 Imagem",
+        video: "🎬 Vídeo",
+        document: "📄 Documento",
+        sticker: "🌟 Figurinha",
+        location: "📍 Localização",
+        contacts: "👤 Contato",
+        reaction: "❤️ Reação",
+        interactive: "💬 Interativo",
+      };
       let lastContent = "";
       if (lastMsg.type === "text") lastContent = lastMsg.text?.body || "";
       else if (lastMsg.type === "button") lastContent = lastMsg.button?.text || "";
-      else lastContent = `[${lastMsg.type}]`;
+      else lastContent = mediaLabels[lastMsg.type] || `[${lastMsg.type}]`;
 
       await supabase
         .from("conversations")
