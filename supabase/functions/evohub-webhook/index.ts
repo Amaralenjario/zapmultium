@@ -95,12 +95,13 @@ async function processWhatsAppMessages(payload: any) {
 
       if (!cust) continue;
 
-      // Buscar ou criar conversa
+      // Buscar ou criar conversa (filtra pelo número também pra isolar por canal)
       const { data: existing } = await supabase
         .from("conversations")
         .select("id, unread_count")
         .eq("customer_id", cust.id)
         .eq("status", "active")
+        .filter("metadata->>phone_number_id", "eq", phoneNumberId)
         .limit(1);
 
       let convId: string;

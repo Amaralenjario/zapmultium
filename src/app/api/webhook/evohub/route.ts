@@ -82,6 +82,7 @@ async function processMessages(payload: any) {
         .select("id, unread_count")
         .eq("customer_id", cust.id)
         .eq("status", "active")
+        .filter("metadata->>phone_number_id", "eq", phoneNumberId)
         .limit(1);
 
       let convId: string;
