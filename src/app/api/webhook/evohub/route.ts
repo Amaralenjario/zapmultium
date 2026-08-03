@@ -118,12 +118,28 @@ async function processMessages(payload: any) {
         else { content = `[${msg.type}]`; }
 
         if (content) {
+          const context = msg.context || null;
+
+          // If this message is a reply, look up the quoted message content
+          if (context?.id) {
+            const { data: quoted } = await supabase
+              .from("messages")
+              .select("content, content_type, sender_type")
+              .filter("metadata->>wa_message_id", "eq", context.id)
+              .limit(1);
+            if (quoted && quoted.length > 0) {
+              context.quoted_content = quoted[0].content;
+              context.quoted_content_type = quoted[0].content_type;
+              context.quoted_sender_type = quoted[0].sender_type;
+            }
+          }
+
           await supabase.from("messages").insert({
             conversation_id: convId,
             sender_type: "customer",
             content,
             content_type: contentType,
-            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId },
+            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId, context },
             created_at: msg.timestamp ? new Date(parseInt(msg.timestamp) * 1000).toISOString() : new Date().toISOString(),
           } as any);
         }

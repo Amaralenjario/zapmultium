@@ -211,8 +211,11 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
               const consecutive = isConsecutive(prev, msg);
               const dateLabel = shouldShowDate(prev?.created_at || "", msg.created_at) ? formatDateHeader(new Date(msg.created_at)) : undefined;
               const quotedMsg = msg.metadata?.context?.id ? messages.find(m => m.metadata?.wa_message_id === msg.metadata?.context?.id) : null;
+              // Use enriched context content from webhook if available
+              const quotedContent = quotedMsg?.content || msg.metadata?.context?.quoted_content || null;
+              const quotedByAgent = quotedMsg?.sender_type === "agent" || msg.metadata?.context?.quoted_sender_type === "agent";
               return (
-                <MessageBubble key={msg.id} message={msg} isFirst={!consecutive} showDate={dateLabel} quotedContent={quotedMsg?.content} quotedByAgent={quotedMsg?.sender_type === "agent"} onReply={() => setReplyTo(msg)} onReact={(emoji) => handleReact(msg, emoji)} />
+                <MessageBubble key={msg.id} message={msg} isFirst={!consecutive} showDate={dateLabel} quotedContent={quotedContent} quotedByAgent={quotedByAgent} onReply={() => setReplyTo(msg)} onReact={(emoji) => handleReact(msg, emoji)} />
               );
             })}
             <div ref={bottomRef} />
