@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import toast from "react-hot-toast";
 import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
 import StickersPanel from "./StickersPanel";
+import QuickMessagesPanel from "./QuickMessagesPanel";
 
 interface ChatInputProps {
   conversationId: string;
@@ -23,6 +24,7 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
+  const [showQuickMessages, setShowQuickMessages] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,6 +110,48 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleQuickMessage = async (msg: { content_type: string; content: string; media_url: string; caption: string }) => {
+    setShowQuickMessages(false);
+    if (msg.content_type === "text") {
+      setMessage(msg.content);
+      inputRef.current?.focus();
+      return;
+    }
+    if (!phoneNumberId || !customerPhone) {
+      toast.error("Canal não configurado");
+      return;
+    }
+    // Send media via the send-message API
+    if (msg.content_type === "image") {
+      sendMediaMessage(msg.media_url, "image", msg.caption || undefined);
+    } else if (msg.content_type === "video") {
+      sendMediaMessage(msg.media_url, "video");
+    } else if (msg.content_type === "image_caption") {
+      sendMediaMessage(msg.media_url, "image", msg.caption);
+    }
+  };
+
+  const sendMediaMessage = async (url: string, type: "image" | "video", caption?: string) => {
+    setSending(true);
+    try {
+      const res = await fetch("/api/evohub/send-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId,
+          phoneNumberId,
+          to: customerPhone,
+          message: url,
+          type,
+          caption,
+        }),
+      });
+      if (res.ok) onMessageSent();
+      else toast.error("Erro ao enviar");
+    } catch { toast.error("Erro"); }
+    setSending(false);
+  };
+
   const uploadFile = async (file: File) => {
     setUploading(true);
     setUploadProgress(0);
@@ -183,6 +227,17 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
             </svg>
           </button>
           {showStickers && <StickersPanel onSelect={handleStickerSelect} onClose={() => setShowStickers(false)} />}
+        </div>
+
+        <div className="relative">
+          <button onClick={() => { setShowQuickMessages(!showQuickMessages); setShowEmoji(false); setShowStickers(false); }} className={`p-2 rounded-full transition ${showQuickMessages ? "text-amber-500 bg-white/50" : "text-[#54656f] dark:text-[#8696a0] hover:bg-white/50 dark:hover:bg-white/5"}`} title="Mensagens rápidas">
+            <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+            </svg>
+          </button>
+          {showQuickMessages && (
+            <QuickMessagesPanel onSelect={handleQuickMessage} onClose={() => setShowQuickMessages(false)} />
+          )}
         </div>
 
         <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-lg">

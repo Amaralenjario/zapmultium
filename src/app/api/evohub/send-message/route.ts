@@ -6,7 +6,7 @@ const KEY = process.env.EVOHUB_API_KEY;
 
 export async function POST(request: Request) {
   try {
-    const { conversationId, phoneNumberId, to, message, context, type } = await request.json();
+    const { conversationId, phoneNumberId, to, message, context, type, caption } = await request.json();
 
     if (!phoneNumberId || !to || !message) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
@@ -31,14 +31,13 @@ export async function POST(request: Request) {
     const msgType = type || "text";
     let msgBody: any;
 
-    if (msgType === "sticker" || msgType === "image") {
-      const imageType = msgType === "sticker" ? "sticker" : "image";
-      msgBody = {
-        messaging_product: "whatsapp",
-        to,
-        type: imageType,
-        [imageType]: { link: message },
-      };
+    if (msgType === "sticker") {
+      msgBody = { messaging_product: "whatsapp", to, type: "sticker", sticker: { link: message } };
+    } else if (msgType === "image") {
+      msgBody = { messaging_product: "whatsapp", to, type: "image", image: { link: message } };
+      if (caption) msgBody.image.caption = caption;
+    } else if (msgType === "video") {
+      msgBody = { messaging_product: "whatsapp", to, type: "video", video: { link: message } };
     } else {
       msgBody = {
         messaging_product: "whatsapp",
