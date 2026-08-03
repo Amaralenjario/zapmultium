@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import MessageBubble, { formatDateHeader, shouldShowDate, isConsecutive } from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import FlowBar from "./FlowBar";
+import QuickLinksBar from "./QuickLinksBar";
 import Avatar from "./Avatar";
 import type { Conversation } from "./ConversationList";
 import toast from "react-hot-toast";
@@ -181,10 +182,12 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
 
       {/* 24h window */}
       {window24h && (
-        <div className={`px-3 py-1 text-[10px] font-medium text-center flex-shrink-0 ${window24h.open ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-b border-amber-200 dark:border-amber-800" : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-b border-red-200 dark:border-red-800"}`}>
+        <div className={`px-3 py-1.5 text-[10px] font-medium text-center flex-shrink-0 ${window24h.open ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-b border-amber-200 dark:border-amber-800" : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-b border-red-200 dark:border-red-800"}`}>
           {window24h.open ? `Janela 24h · fecha em ${countdown}` : "Janela 24h fechada"}
         </div>
       )}
+
+      <QuickLinksBar phoneNumberId={phoneNumberId} customerPhone={customerPhone} conversationId={conversation.id} />
 
       {/* Messages */}
       <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col">
