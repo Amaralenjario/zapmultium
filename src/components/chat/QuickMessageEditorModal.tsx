@@ -57,7 +57,7 @@ export default function QuickMessageEditorModal({ editing, onClose, onSaved }: P
   const types = [
     { key: "text", label: "Texto", icon: "📝", desc: "Apenas texto" },
     { key: "image", label: "Imagem", icon: "🖼️", desc: "URL ou upload" },
-    { key: "video", label: "Vídeo", icon: "🎬", desc: "URL do vídeo" },
+    { key: "video", label: "Vídeo", icon: "🎬", desc: "URL ou upload" },
     { key: "image_caption", label: "Imagem + Legenda", icon: "✏️", desc: "Imagem com texto" },
   ] as const;
 
@@ -160,7 +160,7 @@ export default function QuickMessageEditorModal({ editing, onClose, onSaved }: P
               </div>
 
               {contentType === "image_caption" && (
-                <div>
+                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">Legenda da imagem</label>
                   <textarea
                     value={caption}

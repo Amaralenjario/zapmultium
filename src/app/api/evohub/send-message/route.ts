@@ -71,19 +71,25 @@ export async function POST(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    const mediaLabels: Record<string, string> = {
+      image: "📷 Imagem",
+      video: "🎬 Vídeo",
+      text: message,
+    };
+
     if (conversationId) {
       await supabase.from("messages").insert({
         conversation_id: conversationId,
         sender_type: "agent",
         content: message,
-        content_type: msgType === "sticker" ? "sticker" : "text",
+        content_type: msgType === "sticker" ? "sticker" : (msgType === "text" ? "text" : (msgType === "video" ? "video" : "image")),
         metadata: { wa_message_id: data.messages?.[0]?.id, phone_number_id: phoneNumberId, context: context ? { id: context } : undefined },
       });
 
       await supabase
         .from("conversations")
         .update({
-          last_message: message,
+          last_message: mediaLabels[msgType] || message,
           last_message_sender: "agent",
           last_message_read: false,
           last_message_at: new Date().toISOString(),
