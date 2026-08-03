@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
+import QuickMessageEditorModal from "./QuickMessageEditorModal";
 
 interface QuickMessage {
   id: string;
@@ -126,184 +127,12 @@ export default function QuickMessagesPanel({ onSelect, onClose }: Props) {
       </div>
 
       {showEditor && (
-        <QuickMessageEditor
+        <QuickMessageEditorModal
           editing={editing}
           onClose={() => { setShowEditor(false); setEditing(null); }}
           onSaved={() => { fetchMessages(); setShowEditor(false); setEditing(null); }}
         />
       )}
-    </div>
-  );
-}
-
-function QuickMessageEditor({
-  editing,
-  onClose,
-  onSaved,
-}: {
-  editing: QuickMessage | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [title, setTitle] = useState(editing?.title || "");
-  const [contentType, setContentType] = useState(editing?.content_type || "text");
-  const [content, setContent] = useState(editing?.content || "");
-  const [mediaUrl, setMediaUrl] = useState(editing?.media_url || "");
-  const [caption, setCaption] = useState(editing?.caption || "");
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const handleSave = async () => {
-    if (!title.trim()) return;
-    setSaving(true);
-    const body: any = { title: title.trim(), content_type: contentType, content, media_url: mediaUrl, caption };
-    const method = editing ? "PUT" : "POST";
-    if (editing) body.id = editing.id;
-    const res = await fetch("/api/quick-messages", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) { const err = await res.json(); toast.error(err.error || "Erro"); }
-    else { toast.success(editing ? "Atualizada!" : "Criada!"); onSaved(); }
-    setSaving(false);
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/flows/media", { method: "POST", body: formData });
-      if (res.ok) { const { url } = await res.json(); setMediaUrl(url); toast.success("Upload ok!"); }
-      else toast.error("Erro no upload");
-    } catch { toast.error("Erro"); }
-    setUploading(false);
-  };
-
-  const types = [
-    { key: "text", label: "Texto", icon: "📝" },
-    { key: "image", label: "Imagem", icon: "🖼️" },
-    { key: "video", label: "Vídeo", icon: "🎬" },
-    { key: "image_caption", label: "Img + Leg", icon: "✏️" },
-  ] as const;
-
-  return (
-    <div className="absolute inset-0 z-10 bg-black/50 backdrop-blur-sm flex items-start justify-center" onClick={onClose}>
-      <div className="mt-6 w-[calc(100%-2rem)] max-w-sm bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col max-h-[90%] overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
-          <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200">{editing ? "Editar" : "Nova"} mensagem rápida</h4>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          <div>
-            <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Título</label>
-            <input
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Ex: Boas vindas"
-              autoFocus
-              className="w-full text-xs rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3.5 py-2 text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/20 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1.5">Tipo</label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {types.map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => setContentType(t.key)}
-                  className={`text-[11px] font-medium py-2 px-1 rounded-xl border transition text-center ${
-                    contentType === t.key
-                      ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                      : "border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  <div className="text-sm mb-0.5">{t.icon}</div>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {contentType === "text" && (
-            <div>
-              <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Mensagem</label>
-              <textarea
-                value={content}
-                onChange={e => setContent(e.target.value)}
-                placeholder="Digite a mensagem..."
-                rows={4}
-                className="w-full text-xs rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3.5 py-2 text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/20 focus:outline-none resize-none"
-              />
-            </div>
-          )}
-
-          {(contentType === "image" || contentType === "video" || contentType === "image_caption") && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">
-                  {contentType === "video" ? "URL do vídeo" : "URL da imagem"}
-                </label>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text"
-                    value={mediaUrl}
-                    onChange={e => setMediaUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="flex-1 text-xs rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3.5 py-2 text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/20 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    disabled={uploading}
-                    className="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition text-[11px] font-medium flex-shrink-0 disabled:opacity-50"
-                  >
-                    {uploading ? "..." : "Upload"}
-                  </button>
-                  <input ref={fileRef} type="file" accept="image/*,video/*" onChange={handleFileUpload} className="hidden" />
-                </div>
-              </div>
-
-              {contentType === "image_caption" && (
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Legenda</label>
-                  <textarea
-                    value={caption}
-                    onChange={e => setCaption(e.target.value)}
-                    placeholder="Legenda da imagem..."
-                    rows={2}
-                    className="w-full text-xs rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3.5 py-2 text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/20 focus:outline-none resize-none"
-                  />
-                </div>
-              )}
-
-              {mediaUrl && (
-                <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
-                  {contentType === "video" ? (
-                    <video src={mediaUrl} controls className="w-full max-h-32 object-cover" />
-                  ) : (
-                    <img src={mediaUrl} alt="" className="w-full max-h-32 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex gap-2">
-          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!title.trim() || saving}
-            className="flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-40 transition"
-          >
-            {saving ? "Salvando..." : editing ? "Atualizar" : "Criar"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
