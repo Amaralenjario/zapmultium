@@ -187,7 +187,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
         </div>
       )}
 
-      <QuickLinksBar phoneNumberId={phoneNumberId} customerPhone={customerPhone} conversationId={conversation.id} />
+      <QuickLinksBar phoneNumberId={phoneNumberId} customerPhone={customerPhone} conversationId={conversation.id} customerName={customer?.name || customer?.phone || "Desconhecido"} />
 
       {/* Messages */}
       <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col">
