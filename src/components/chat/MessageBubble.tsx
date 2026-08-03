@@ -20,8 +20,10 @@ interface Message {
 
 export function formatDateHeader(date: Date) {
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffMs = todayDate.getTime() - msgDate.getTime();
+  const days = Math.round(diffMs / (1000 * 60 * 60 * 24));
   if (days === 0) return "Hoje";
   if (days === 1) return "Ontem";
   return format(date, "dd/MM/yyyy", { locale: ptBR });
