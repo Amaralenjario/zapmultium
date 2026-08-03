@@ -139,7 +139,8 @@ function MediaContent({ messageId, content, type, metadata }: { messageId: strin
   const [lightbox, setLightbox] = useState(false);
   const [zoom, setZoom] = useState(1);
   const isFlow = metadata?.source === "flow";
-  const mediaUrl = isFlow && content.startsWith("http") ? content : `/api/media/${messageId}`;
+  const isDirectUrl = content.startsWith("http");
+  const mediaUrl = isFlow && isDirectUrl ? content : (isDirectUrl && !isFlow ? content : `/api/media/${messageId}`);
 
   const handleSaveSticker = async (msgId: string) => {
     if (saving) return;
