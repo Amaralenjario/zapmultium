@@ -273,8 +273,7 @@ export default async function DashboardPage({
     ...op,
     phrases: Object.entries(op.phrases)
       .map(([text, count]) => ({ text, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8), // top 8 frases por operação
+      .sort((a, b) => b.count - a.count),
   })).filter(op => op.phrases.length > 0);
 
   const leadsByStatusCounts = (leadsByStatus || []).reduce(
@@ -427,7 +426,7 @@ export default async function DashboardPage({
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: op.opColor }} />
                   <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{op.opName}</p>
                 </div>
-                <div className="divide-y divide-gray-50 dark:divide-gray-800/50">
+                <div className="divide-y divide-gray-50 dark:divide-gray-800/50 max-h-[400px] overflow-y-auto">
                   {op.phrases.map((p, i) => (
                     <div key={i} className="px-4 py-2.5 flex items-start gap-2">
                       <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex-shrink-0 mt-0.5">{p.count}</span>
