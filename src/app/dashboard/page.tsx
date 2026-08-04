@@ -241,45 +241,41 @@ export default async function DashboardPage({
     .map(s => ({ name: sellerNames[s.userId] || s.userId, count: s.count }))
     .sort((a, b) => b.count - a.count);
 
-  // Leads por frase-chave - primeira mensagem do cliente em conversas do período
+  // Leads por frase-chave - primeira mensagem por operação
   const convIdsInPeriod = new Set((newConversations || []).map((c: any) => c.id));
+  // Mapa: conversation_id → { content, phone_number_id }
+  const convMeta: Record<string, { phoneId: string }> = {};
+  for (const c of (newConversations || [])) {
+    convMeta[(c as any).id] = { phoneId: (c as any).metadata?.phone_number_id || "" };
+  }
   const firstMsgByConv: Record<string, string> = {};
   for (const msg of (firstMessages || [])) {
     const cid = (msg as any).conversation_id;
     if (!convIdsInPeriod.has(cid)) continue;
-    if (firstMsgByConv[cid]) continue; // já pegou a primeira
+    if (firstMsgByConv[cid]) continue;
     firstMsgByConv[cid] = (msg as any).content || "";
   }
 
-  const keywords = [
-    { key: "quiz", label: "Quiz", match: ["quiz", "resposta", "resultado", "pergunta"] },
-    { key: "preco", label: "Preço", match: ["preço", "preco", "valor", "quanto", "custa", "tabela"] },
-    { key: "comprar", label: "Compra", match: ["comprar", "quero", "pedido", "comprar", "pagar", "pagamento"] },
-    { key: "ajuda", label: "Ajuda/Suporte", match: ["ajuda", "duvida", "dúvida", "suporte", "atendimento", "conversar"] },
-    { key: "trafego", label: "Tráfego", match: ["anúncio", "anuncio", "anunciei", "propaganda", "instagram", "facebook", "ads", "trafego"] },
-    { key: "indicacao", label: "Indicação", match: ["indicação", "indicacao", "indicou", "recomendou", "fulano", "passou"] },
-    { key: "site", label: "Site/Link", match: ["site", "link", "página", "pagina", "bio", "grupo"] },
-  ];
-
-  const keywordCounts: Record<string, { label: string; count: number }> = {};
-  for (const kw of keywords) {
-    keywordCounts[kw.key] = { label: kw.label, count: 0 };
+  // Agrupa por operação → frase → count
+  const opPhrases: Record<string, { opName: string; opColor: string; phrases: Record<string, number> }> = {};
+  for (const [convId, content] of Object.entries(firstMsgByConv)) {
+    if (!content.trim()) continue;
+    const pid = convMeta[convId]?.phoneId || "";
+    const op = phoneToOp[pid];
+    if (!op) continue;
+    if (!opPhrases[op.opName]) opPhrases[op.opName] = { opName: op.opName, opColor: op.opColor, phrases: {} };
+    const normalized = content.trim().slice(0, 150); // trunca pra evitar frases gigantes
+    opPhrases[op.opName].phrases[normalized] = (opPhrases[op.opName].phrases[normalized] || 0) + 1;
   }
 
-  for (const content of Object.values(firstMsgByConv)) {
-    const lower = content.toLowerCase();
-    for (const kw of keywords) {
-      if (kw.match.some((w) => lower.includes(w))) {
-        keywordCounts[kw.key].count++;
-        break; // conta só uma vez por conversa
-      }
-    }
-  }
-
-  const keywordsArray = Object.entries(keywordCounts)
-    .map(([key, val]) => ({ key, ...val }))
-    .filter(k => k.count > 0)
-    .sort((a, b) => b.count - a.count);
+  // Converte pra array ordenado, top 5 por operação
+  const leadsByPhrasePerOp = Object.values(opPhrases).map(op => ({
+    ...op,
+    phrases: Object.entries(op.phrases)
+      .map(([text, count]) => ({ text, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8), // top 8 frases por operação
+  })).filter(op => op.phrases.length > 0);
 
   const leadsByStatusCounts = (leadsByStatus || []).reduce(
     (acc: Record<string, number>, lead: { status: string }) => { acc[lead.status] = (acc[lead.status] || 0) + 1; return acc; }, {}
@@ -421,17 +417,24 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {keywordsArray.length > 0 && (
+      {leadsByPhrasePerOp.length > 0 && (
         <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Leads por frase-chave</h3>
-          <div className="flex flex-wrap gap-2">
-            {keywordsArray.map((kw) => (
-              <div
-                key={kw.key}
-                className="rounded-xl px-4 py-2.5 bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-200/40 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-300 text-sm font-medium flex items-center gap-1.5"
-              >
-                <span>{kw.label}</span>
-                <span className="inline-flex items-center justify-center min-w-[22px] h-[22px] rounded-full bg-emerald-500 text-white text-[10px] font-bold px-1.5">{kw.count}</span>
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Primeira mensagem por operação</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {leadsByPhrasePerOp.map((op) => (
+              <div key={op.opName} className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-800" style={{ borderLeftColor: op.opColor, borderLeftWidth: "3px" }}>
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: op.opColor }} />
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{op.opName}</p>
+                </div>
+                <div className="divide-y divide-gray-50 dark:divide-gray-800/50">
+                  {op.phrases.map((p, i) => (
+                    <div key={i} className="px-4 py-2.5 flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex-shrink-0 mt-0.5">{p.count}</span>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">{p.text}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
