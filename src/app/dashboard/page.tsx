@@ -178,6 +178,7 @@ export default async function DashboardPage({
     { data: allMessages },
     { data: newConversations },
     { data: firstMessages },
+    { data: activeConversationsInPeriod },
   ] = await Promise.all([
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })).eq("status", "active"),
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })),
@@ -187,8 +188,9 @@ export default async function DashboardPage({
     leadBase(supabase.from("leads").select("status")),
     convBase(supabase.from("conversations").select("created_at, status")),
     supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
-    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("last_message_at", startISO).lte("last_message_at", endISO).limit(10000)),
+    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000)),
     supabase.from("messages").select("conversation_id, content, sender_type, created_at").eq("sender_type", "customer").order("created_at", { ascending: true }).limit(10000),
+    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("last_message_at", startISO).lte("last_message_at", endISO).limit(10000)),
   ]);
 
   // Seller message stats
@@ -216,7 +218,7 @@ export default async function DashboardPage({
     .filter(([, v]) => v.sent > 0 || v.received > 0)
     .sort((a, b) => (b[1].sent + b[1].received) - (a[1].sent + a[1].received));
 
-  // Leads por operação - conta conversas novas no período agrupadas por phone_number_id
+  // Leads por operação - conta conversas com ATIVIDADE no período (leads totais)
   const opsMap: Record<string, { opName: string; opColor: string; count: number }> = {};
   const phoneToOp: Record<string, { opName: string; opColor: string }> = {};
   for (const ch of opChannels || []) {
@@ -225,7 +227,7 @@ export default async function DashboardPage({
       phoneToOp[ch.phone_number_id] = { opName: op.name, opColor: op.color };
     }
   }
-  for (const conv of (newConversations || [])) {
+  for (const conv of (activeConversationsInPeriod || [])) {
     const pid = (conv as any).metadata?.phone_number_id || "";
     const op = phoneToOp[pid];
     if (!op) continue;
@@ -233,7 +235,10 @@ export default async function DashboardPage({
     opsMap[op.opName].count++;
   }
   const leadsByOperation = Object.values(opsMap).sort((a, b) => b.count - a.count);
-  const totalNewLeads = leadsByOperation.reduce((a, b) => a + b.count, 0);
+  const totalLeadsAtivos = leadsByOperation.reduce((a, b) => a + b.count, 0);
+
+  // Leads NOVOS - conversas CRIADAS no período
+  const totalLeadsNovos = (newConversations || []).length;
 
   // Leads por vendedor (admin only)
   const sellerLeadMap: Record<string, { userId: string; count: number }> = {};
@@ -241,7 +246,7 @@ export default async function DashboardPage({
   for (const sc of sellerChannels) {
     phoneToSeller[sc.phone_number_id] = sc.user_id;
   }
-  for (const conv of (newConversations || [])) {
+  for (const conv of (activeConversationsInPeriod || [])) {
     const pid = (conv as any).metadata?.phone_number_id || "";
     const userId = phoneToSeller[pid];
     if (!userId) continue;
@@ -343,7 +348,7 @@ export default async function DashboardPage({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
         <MetricCard title="Conversas ativas" value={activeConversations ?? 0} subtitle="no momento" icon={<ChatIcon />} />
         <MetricCard title="Total conversas" value={totalConversations ?? 0} subtitle="desde o início" icon={<AllChatIcon />} />
-        <MetricCard title="Leads no período" value={totalNewLeads ?? 0} subtitle="com atividade" icon={<LeadIcon />} />
+        <MetricCard title="Leads novos" value={totalLeadsNovos ?? 0} subtitle="primeira msg no período" icon={<LeadIcon />} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
@@ -390,7 +395,7 @@ export default async function DashboardPage({
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Leads por operação</h3>
-            <span className="text-[11px] text-gray-400">{totalNewLeads} no período</span>
+            <span className="text-[11px] text-gray-400">{totalLeadsAtivos} ativos no período</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {leadsByOperation.map((op) => {
