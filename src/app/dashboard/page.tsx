@@ -153,6 +153,7 @@ export default async function DashboardPage({
     { data: conversationsByDay },
     { data: allMessages },
     { data: newConversations },
+    { data: firstMessages },
   ] = await Promise.all([
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })).eq("status", "active"),
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })),
@@ -164,6 +165,7 @@ export default async function DashboardPage({
     convBase(supabase.from("conversations").select("created_at, status")),
     supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
     addPhoneFilter(supabase.from("conversations").select("metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000)),
+    supabase.from("messages").select("conversation_id, content, sender_type, created_at").eq("sender_type", "customer").order("created_at", { ascending: true }).limit(10000),
   ]);
 
   // Seller message stats
@@ -239,6 +241,46 @@ export default async function DashboardPage({
   }
   const leadsBySeller = Object.values(sellerLeadMap)
     .map(s => ({ name: sellerNames[s.userId] || s.userId, count: s.count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Leads por frase-chave - primeira mensagem do cliente em conversas do período
+  const convIdsInPeriod = new Set((newConversations || []).map((c: any) => c.id));
+  const firstMsgByConv: Record<string, string> = {};
+  for (const msg of (firstMessages || [])) {
+    const cid = (msg as any).conversation_id;
+    if (!convIdsInPeriod.has(cid)) continue;
+    if (firstMsgByConv[cid]) continue; // já pegou a primeira
+    firstMsgByConv[cid] = (msg as any).content || "";
+  }
+
+  const keywords = [
+    { key: "quiz", label: "Quiz", match: ["quiz", "resposta", "resultado", "pergunta"] },
+    { key: "preco", label: "Preço", match: ["preço", "preco", "valor", "quanto", "custa", "tabela"] },
+    { key: "comprar", label: "Compra", match: ["comprar", "quero", "pedido", "comprar", "pagar", "pagamento"] },
+    { key: "ajuda", label: "Ajuda/Suporte", match: ["ajuda", "duvida", "dúvida", "suporte", "atendimento", "conversar"] },
+    { key: "trafego", label: "Tráfego", match: ["anúncio", "anuncio", "anunciei", "propaganda", "instagram", "facebook", "ads", "trafego"] },
+    { key: "indicacao", label: "Indicação", match: ["indicação", "indicacao", "indicou", "recomendou", "fulano", "passou"] },
+    { key: "site", label: "Site/Link", match: ["site", "link", "página", "pagina", "bio", "grupo"] },
+  ];
+
+  const keywordCounts: Record<string, { label: string; count: number }> = {};
+  for (const kw of keywords) {
+    keywordCounts[kw.key] = { label: kw.label, count: 0 };
+  }
+
+  for (const content of Object.values(firstMsgByConv)) {
+    const lower = content.toLowerCase();
+    for (const kw of keywords) {
+      if (kw.match.some((w) => lower.includes(w))) {
+        keywordCounts[kw.key].count++;
+        break; // conta só uma vez por conversa
+      }
+    }
+  }
+
+  const keywordsArray = Object.entries(keywordCounts)
+    .map(([key, val]) => ({ key, ...val }))
+    .filter(k => k.count > 0)
     .sort((a, b) => b.count - a.count);
 
   const leadsByStatusCounts = (leadsByStatus || []).reduce(
@@ -377,6 +419,23 @@ export default async function DashboardPage({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {keywordsArray.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Leads por frase-chave</h3>
+          <div className="flex flex-wrap gap-2">
+            {keywordsArray.map((kw) => (
+              <div
+                key={kw.key}
+                className="rounded-xl px-4 py-2.5 bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-200/40 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-300 text-sm font-medium flex items-center gap-1.5"
+              >
+                <span>{kw.label}</span>
+                <span className="inline-flex items-center justify-center min-w-[22px] h-[22px] rounded-full bg-emerald-500 text-white text-[10px] font-bold px-1.5">{kw.count}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
