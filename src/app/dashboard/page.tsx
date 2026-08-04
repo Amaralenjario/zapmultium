@@ -145,7 +145,6 @@ export default async function DashboardPage({
   const [
     { count: activeConversations },
     { count: totalConversations },
-    { count: monthlyLeads },
     { count: flowsTriggered },
     { data: recentConversations },
     { data: recentLeads },
@@ -157,8 +156,7 @@ export default async function DashboardPage({
   ] = await Promise.all([
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })).eq("status", "active"),
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })),
-    leadBase(supabase.from("leads").select("*", { count: "exact", head: true })),
-    supabase.from("flow_executions").select("*", { count: "exact", head: true }).gte("created_at", startISO).lte("created_at", endISO),
+    supabase.from("flow_executions").select("*", { count: "exact", head: true }).gte("started_at", startISO).lte("started_at", endISO),
     addPhoneFilter(supabase.from("conversations").select("id, status, last_message, customer:customer_id(name, phone), updated_at").order("updated_at", { ascending: false }).limit(5)),
     leadBase(supabase.from("leads").select("id, name, phone, status, priority, created_at").order("created_at", { ascending: false }).limit(5)),
     leadBase(supabase.from("leads").select("status")),
@@ -325,7 +323,7 @@ export default async function DashboardPage({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
         <MetricCard title="Conversas ativas" value={activeConversations ?? 0} subtitle="no momento" icon={<ChatIcon />} />
         <MetricCard title="Total conversas" value={totalConversations ?? 0} subtitle="desde o início" icon={<AllChatIcon />} />
-        <MetricCard title="Leads no período" value={monthlyLeads ?? 0} subtitle="capturados" icon={<LeadIcon />} />
+        <MetricCard title="Leads no período" value={totalNewLeads ?? 0} subtitle="capturados" icon={<LeadIcon />} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
