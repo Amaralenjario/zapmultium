@@ -104,30 +104,36 @@ export default async function DashboardPage({
   const convBase = (q: any) => addPhoneFilter(q).gte("created_at", startISO).lte("created_at", endISO);
   const leadBase = (q: any) => addLeadFilter(q).gte("created_at", startISO).lte("created_at", endISO);
   const allTimeConv = (q: any) => addPhoneFilter(q);
-  const allTimeLead = (q: any) => addLeadFilter(q);
+
+  // Fetch operations_channels for leads-by-operation mapping
+  const { data: opChannels } = await supabase
+    .from("operations_channels")
+    .select("phone_number_id, operation:operation_id(name, color)")
+    .eq("is_active", true)
+    .not("phone_number_id", "is", null);
 
   const [
     { count: activeConversations },
     { count: totalConversations },
     { count: monthlyLeads },
-    { count: totalLeads },
     { count: flowsTriggered },
     { data: recentConversations },
     { data: recentLeads },
     { data: leadsByStatus },
     { data: conversationsByDay },
     { data: allMessages },
+    { data: newConversations },
   ] = await Promise.all([
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })).eq("status", "active"),
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })),
     leadBase(supabase.from("leads").select("*", { count: "exact", head: true })),
-    allTimeLead(supabase.from("leads").select("*", { count: "exact", head: true })),
     supabase.from("flow_executions").select("*", { count: "exact", head: true }).gte("created_at", startISO).lte("created_at", endISO),
     addPhoneFilter(supabase.from("conversations").select("id, status, last_message, customer:customer_id(name, phone), updated_at").order("updated_at", { ascending: false }).limit(5)),
     leadBase(supabase.from("leads").select("id, name, phone, status, priority, created_at").order("created_at", { ascending: false }).limit(5)),
     leadBase(supabase.from("leads").select("status")),
     convBase(supabase.from("conversations").select("created_at, status")),
     supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
+    supabase.from("conversations").select("metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
   ]);
 
   // Seller message stats
@@ -154,6 +160,25 @@ export default async function DashboardPage({
   const sellerStatsArray = Object.entries(sellerStats)
     .filter(([, v]) => v.sent > 0 || v.received > 0)
     .sort((a, b) => (b[1].sent + b[1].received) - (a[1].sent + a[1].received));
+
+  // Leads por operação - conta conversas novas no período agrupadas por phone_number_id
+  const opsMap: Record<string, { opName: string; opColor: string; count: number }> = {};
+  const phoneToOp: Record<string, { opName: string; opColor: string }> = {};
+  for (const ch of opChannels || []) {
+    const op = Array.isArray(ch.operation) ? (ch.operation[0] as any) : (ch.operation as any);
+    if (ch.phone_number_id && op) {
+      phoneToOp[ch.phone_number_id] = { opName: op.name, opColor: op.color };
+    }
+  }
+  for (const conv of (newConversations || [])) {
+    const pid = (conv as any).metadata?.phone_number_id || "";
+    const op = phoneToOp[pid];
+    if (!op) continue;
+    if (!opsMap[op.opName]) opsMap[op.opName] = { opName: op.opName, opColor: op.opColor, count: 0 };
+    opsMap[op.opName].count++;
+  }
+  const leadsByOperation = Object.values(opsMap).sort((a, b) => b.count - a.count);
+  const totalNewLeads = leadsByOperation.reduce((a, b) => a + b.count, 0);
 
   const leadsByStatusCounts = (leadsByStatus || []).reduce(
     (acc: Record<string, number>, lead: { status: string }) => { acc[lead.status] = (acc[lead.status] || 0) + 1; return acc; }, {}
@@ -194,11 +219,10 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
         <MetricCard title="Conversas ativas" value={activeConversations ?? 0} subtitle="no momento" icon={<ChatIcon />} />
         <MetricCard title="Total conversas" value={totalConversations ?? 0} subtitle="desde o início" icon={<AllChatIcon />} />
         <MetricCard title="Leads no período" value={monthlyLeads ?? 0} subtitle="capturados" icon={<LeadIcon />} />
-        <MetricCard title="Total leads" value={totalLeads ?? 0} subtitle="na base" icon={<UsersIcon />} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
@@ -233,6 +257,33 @@ export default async function DashboardPage({
                       <span className="text-gray-500 dark:text-gray-400">Recebidas</span>
                       <span className="font-semibold text-gray-800 dark:text-gray-200">{stats.received}</span>
                     </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {leadsByOperation.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Leads por operação</h3>
+            <span className="text-[11px] text-gray-400">{totalNewLeads} no período</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {leadsByOperation.map((op) => {
+              const maxLeads = leadsByOperation[0]?.count || 1;
+              const barW = Math.max((op.count / maxLeads) * 100, 8);
+              return (
+                <div key={op.opName} className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: op.opColor }} />
+                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">{op.opName}</p>
+                    <span className="text-xs font-bold text-gray-800 dark:text-white ml-auto">{op.count}</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${barW}%`, backgroundColor: op.opColor }} />
                   </div>
                 </div>
               );
