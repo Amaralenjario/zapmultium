@@ -41,6 +41,7 @@ export default function ConversationList({
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [operationFilter, setOperationFilter] = useState<string | null>(null);
   const [leadTagsMap, setLeadTagsMap] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
   const [availableTags, setAvailableTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const supabase = createClient();
@@ -69,6 +70,14 @@ export default function ConversationList({
       });
     }
 
+    if (operationFilter) {
+      filtered = filtered.filter((conv) => {
+        const pid = (conv as any).metadata?.phone_number_id || "";
+        const op = phoneMap[pid];
+        return op ? op.name === operationFilter : false;
+      });
+    }
+
     if (search.trim() && searchResults === null) {
       const q = search.trim().toLowerCase();
       filtered = filtered.filter((conv) => {
@@ -81,7 +90,7 @@ export default function ConversationList({
     }
 
     setConversations(filtered);
-  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, leadTagsMap, searchResults]);
+  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
 
@@ -266,6 +275,35 @@ export default function ConversationList({
             );
           })}
         </div>
+        {Object.keys(phoneMap).length > 0 && (
+          <div className="flex gap-1 mt-1.5 overflow-x-auto">
+            <button
+              onClick={() => setOperationFilter(null)}
+              className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition ${!operationFilter ? "bg-emerald-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
+            >
+              Todas ops
+            </button>
+            {Object.entries(
+              Object.values(phoneMap).reduce((acc, op) => {
+                if (!acc[op.name]) acc[op.name] = op;
+                return acc;
+              }, {} as Record<string, { name: string; color: string }>)
+            ).map(([name, op]) => (
+              <button
+                key={name}
+                onClick={() => setOperationFilter(operationFilter === name ? null : name)}
+                className="flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition flex items-center gap-1"
+                style={{
+                  backgroundColor: operationFilter === name ? op.color : op.color + "20",
+                  color: operationFilter === name ? "#fff" : op.color,
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: op.color }} />
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
         {availableTags.length > 0 && (
           <div className="flex gap-1 mt-1.5 overflow-x-auto">
             <button

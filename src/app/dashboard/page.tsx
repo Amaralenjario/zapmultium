@@ -70,11 +70,12 @@ function getDateRange(range: string, start?: string, end?: string) {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: { range?: string; start?: string; end?: string };
+  searchParams: { range?: string; start?: string; end?: string; op?: string };
 }) {
   const range = searchParams.range;
   const start = searchParams.start;
   const end = searchParams.end;
+  const opFilter = searchParams.op; // operação específica
   const activeRange = range || "7d";
   const { startISO, endISO } = getDateRange(activeRange, start, end);
 
@@ -103,9 +104,16 @@ export default async function DashboardPage({
   }
 
   const addPhoneFilter = (query: any) => {
-    if (sellerPhoneIds && sellerPhoneIds.length > 0) {
-      if (sellerPhoneIds.length === 1) return query.eq("metadata->>phone_number_id", sellerPhoneIds[0]);
-      return query.or(sellerPhoneIds.map((id) => `metadata->>phone_number_id.eq.${id}`).join(","));
+    // Se tem filtro de operação, aplica junto
+    const phoneIds = sellerPhoneIds && sellerPhoneIds.length > 0 
+      ? (opPhoneIds && opPhoneIds.length > 0 
+          ? sellerPhoneIds.filter(id => opPhoneIds.includes(id))
+          : sellerPhoneIds)
+      : (opPhoneIds && opPhoneIds.length > 0 ? opPhoneIds : null);
+
+    if (phoneIds && phoneIds.length > 0) {
+      if (phoneIds.length === 1) return query.eq("metadata->>phone_number_id", phoneIds[0]);
+      return query.or(phoneIds.map(id => `metadata->>phone_number_id.eq.${id}`).join(","));
     }
     return query;
   };
@@ -133,6 +141,14 @@ export default async function DashboardPage({
     .select("phone_number_id, operation:operation_id(name, color)")
     .eq("is_active", true)
     .not("phone_number_id", "is", null);
+
+  // Mapear operação → phone_number_ids para filtro
+  const opPhoneIds = opFilter 
+    ? (opChannels || []).filter(ch => {
+        const op = Array.isArray(ch.operation) ? (ch.operation[0] as any) : (ch.operation as any);
+        return op?.name === opFilter;
+      }).map(ch => ch.phone_number_id).filter(Boolean) as string[]
+    : null;
 
   // Fetch seller_channels for leads-by-seller mapping (admin only)
   const isAdminOrSupervisor = profile?.role === "admin" || profile?.role === "supervisor";
