@@ -25,49 +25,46 @@ const PHONE_NAMES: Record<string, string> = {
   "1234821229708132": "NC - CAIO",
 };
 
-function getDateRange(range: string, start?: string, end?: string, tz?: string) {
-  const tzOffset = tz || "-03:00"; // padrão Brasil
+function getDateRange(range: string, start?: string, end?: string) {
+  const TZ = "-03:00"; // Brasil
 
   if (range === "custom" && start && end) {
     return {
-      startISO: new Date(start + "T00:00:00" + tzOffset).toISOString(),
-      endISO: new Date(end + "T23:59:59.999" + tzOffset).toISOString(),
+      startISO: new Date(start + "T00:00:00" + TZ).toISOString(),
+      endISO: new Date(end + "T23:59:59.999" + TZ).toISOString(),
     };
   }
 
-  const days: Record<string, number> = { hoje: 0, ontem: 1, "7d": 6, "15d": 14, "30d": 29 };
-  const daysBack = days[range] || 6;
-
-  // Data de hoje no timezone do usuário
+  // Data de hoje no timezone do Brasil
   const now = new Date();
-  const localNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-  const localToday = localNow.toISOString().split("T")[0]; // "2026-08-04"
+  const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const brToday = brNow.toISOString().split("T")[0]; // "2026-08-04"
 
-  // Início e fim no timezone local, convertidos pra UTC
-  const startISO = new Date(localToday + "T00:00:00" + tzOffset).toISOString();
+  const todayEnd = new Date(brToday + "T23:59:59.999" + TZ); // hoje 23:59 BRT → UTC
+
+  if (range === "hoje") {
+    const todayStart = new Date(brToday + "T00:00:00" + TZ);
+    return { startISO: todayStart.toISOString(), endISO: todayEnd.toISOString() };
+  }
 
   if (range === "ontem") {
-    // Ontem: dia anterior no timezone local
-    const yesterday = new Date(localToday + "T00:00:00" + tzOffset);
-    yesterday.setDate(yesterday.getDate() - 1);
+    // Ontem no timezone BR
+    const yesterday = new Date(brToday + "T00:00:00" + TZ);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
     const yesterdayEnd = new Date(yesterday);
-    yesterdayEnd.setDate(yesterdayEnd.getDate() + 1);
-    yesterdayEnd.setMilliseconds(-1);
+    yesterdayEnd.setUTCHours(26, 59, 59, 999); // 23:59:59 BRT do dia seguinte = 02:59:59 UTC
     return { startISO: yesterday.toISOString(), endISO: yesterdayEnd.toISOString() };
   }
 
-  const endDate = new Date(localToday + "T00:00:00" + tzOffset);
-  endDate.setDate(endDate.getDate() - daysBack);
-  const endISO = new Date(localToday + "T23:59:59.999" + tzOffset).toISOString();
+  // 7d, 15d, 30d
+  const days: Record<string, number> = { "7d": 6, "15d": 14, "30d": 29 };
+  const daysBack = days[range] || 6;
 
-  // Pra "Hoje", start = hoje 00:00 local → UTC. Pros outros, começa daysBack atrás.
-  if (range === "hoje") {
-    return { startISO, endISO };
-  }
+  // Calcula a data de início: today - daysBack no timezone BR
+  const rangeStart = new Date(brToday + "T00:00:00" + TZ);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - daysBack);
 
-  const rangeStart = new Date(localToday + "T00:00:00" + tzOffset);
-  rangeStart.setDate(rangeStart.getDate() - daysBack);
-  return { startISO: rangeStart.toISOString(), endISO };
+  return { startISO: rangeStart.toISOString(), endISO: todayEnd.toISOString() };
 }
 
 export default async function DashboardPage({
