@@ -112,6 +112,36 @@ export default async function DashboardPage({
     .eq("is_active", true)
     .not("phone_number_id", "is", null);
 
+  // Fetch seller_channels for leads-by-seller mapping (admin only)
+  const isAdminOrSupervisor = profile?.role === "admin" || profile?.role === "supervisor";
+  let sellerChannels: { user_id: string; phone_number_id: string }[] = [];
+  if (isAdminOrSupervisor) {
+    const { data: sc } = await supabase
+      .from("seller_channels")
+      .select("user_id, evohub_channel_id");
+    if (sc) {
+      const phoneIdMap: Record<string, string> = {};
+      for (const ch of opChannels || []) {
+        if (ch.phone_number_id) phoneIdMap[ch.phone_number_id] = ch.phone_number_id;
+      }
+      // Also use known phone IDs
+      const knownPhones: Record<string, string> = {
+        "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+        "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+        "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+        "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+        "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+      };
+      for (const [chId, phoneId] of Object.entries(knownPhones)) {
+        phoneIdMap[chId] = phoneId;
+      }
+      sellerChannels = sc.map(s => ({
+        user_id: s.user_id,
+        phone_number_id: phoneIdMap[s.evohub_channel_id] || "",
+      })).filter(s => s.phone_number_id);
+    }
+  }
+
   const [
     { count: activeConversations },
     { count: totalConversations },
@@ -133,7 +163,7 @@ export default async function DashboardPage({
     leadBase(supabase.from("leads").select("status")),
     convBase(supabase.from("conversations").select("created_at, status")),
     supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
-    supabase.from("conversations").select("metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
+    addPhoneFilter(supabase.from("conversations").select("metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000)),
   ]);
 
   // Seller message stats
@@ -179,6 +209,37 @@ export default async function DashboardPage({
   }
   const leadsByOperation = Object.values(opsMap).sort((a, b) => b.count - a.count);
   const totalNewLeads = leadsByOperation.reduce((a, b) => a + b.count, 0);
+
+  // Leads por vendedor (admin only)
+  const sellerLeadMap: Record<string, { userId: string; count: number }> = {};
+  const phoneToSeller: Record<string, string> = {};
+  for (const sc of sellerChannels) {
+    phoneToSeller[sc.phone_number_id] = sc.user_id;
+  }
+  for (const conv of (newConversations || [])) {
+    const pid = (conv as any).metadata?.phone_number_id || "";
+    const userId = phoneToSeller[pid];
+    if (!userId) continue;
+    if (!sellerLeadMap[userId]) sellerLeadMap[userId] = { userId, count: 0 };
+    sellerLeadMap[userId].count++;
+  }
+
+  // Get seller names from profiles
+  const sellerNames: Record<string, string> = {};
+  if (isAdminOrSupervisor && Object.keys(sellerLeadMap).length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, email, full_name")
+      .in("id", Object.keys(sellerLeadMap));
+    if (profiles) {
+      for (const p of profiles) {
+        sellerNames[p.id] = (p as any).full_name || (p as any).email || p.id;
+      }
+    }
+  }
+  const leadsBySeller = Object.values(sellerLeadMap)
+    .map(s => ({ name: sellerNames[s.userId] || s.userId, count: s.count }))
+    .sort((a, b) => b.count - a.count);
 
   const leadsByStatusCounts = (leadsByStatus || []).reduce(
     (acc: Record<string, number>, lead: { status: string }) => { acc[lead.status] = (acc[lead.status] || 0) + 1; return acc; }, {}
@@ -284,6 +345,34 @@ export default async function DashboardPage({
                   </div>
                   <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                     <div className="h-full rounded-full transition-all" style={{ width: `${barW}%`, backgroundColor: op.opColor }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {isAdminOrSupervisor && leadsBySeller.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Leads por vendedor</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {leadsBySeller.map((s) => {
+              const maxLeads = leadsBySeller[0]?.count || 1;
+              const barW = Math.max((s.count / maxLeads) * 100, 8);
+              return (
+                <div key={s.name} className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                        {s.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">{s.name}</p>
+                    <span className="text-xs font-bold text-gray-800 dark:text-white ml-auto">{s.count}</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${barW}%` }} />
                   </div>
                 </div>
               );
