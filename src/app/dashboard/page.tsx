@@ -37,8 +37,15 @@ function getDateRange(range: string, start?: string, end?: string) {
 
   // Data de hoje no timezone do Brasil
   const now = new Date();
-  const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-  const brToday = brNow.toISOString().split("T")[0]; // "2026-08-04"
+  let brToday: string;
+  try {
+    const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    brToday = brNow.toISOString().split("T")[0]; // "2026-08-04"
+  } catch {
+    // Fallback: usar UTC-3 manual
+    const localNow = new Date(now.getTime() - 3 * 3600000);
+    brToday = localNow.toISOString().split("T")[0];
+  }
 
   const todayEnd = new Date(brToday + "T23:59:59.999" + TZ); // hoje 23:59 BRT → UTC
 
