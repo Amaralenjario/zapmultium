@@ -143,16 +143,46 @@ async function processWhatsAppMessages(payload: any) {
           if (fallback && fallback.length > 0) {
             convId = fallback[0].id;
             unread = (fallback[0].unread_count || 0) + 1;
-            await supabase.from("conversations").update({
-              last_message_at: new Date().toISOString(),
-              unread_count: unread,
-              updated_at: new Date().toISOString(),
-            }).eq("id", convId);
-          } else {
-            continue;
           }
-        } else {
-          convId = newConv!.id;
+        } else if (newConv) {
+          convId = newConv.id;
+
+          // Verificar se o lead já foi atendido por outro número antes
+          const { data: prevConvs } = await supabase
+            .from("conversations")
+            .select("id, metadata")
+            .eq("customer_id", cust.id)
+            .neq("id", convId)
+            .not("metadata->>phone_number_id", "is", null)
+            .order("created_at", { ascending: false })
+            .limit(5);
+
+          if (prevConvs && prevConvs.length > 0) {
+            // Mapear phone_number_id → nome do vendedor
+            const sellerNames: Record<string, string> = {
+              "897878513398151": "VH - 1692",
+              "892228177298374": "GUSTAVO",
+              "1034222499765101": "AMANDA",
+              "976034132269824": "GABI",
+              "1234821229708132": "NC - CAIO",
+            };
+            const seenSellers = new Set<string>();
+            for (const pc of prevConvs) {
+              const pid = (pc as any).metadata?.phone_number_id || "";
+              const name = sellerNames[pid];
+              if (name && !seenSellers.has(name)) seenSellers.add(name);
+            }
+            if (seenSellers.size > 0) {
+              const sellersList = Array.from(seenSellers).join(", ");
+              await supabase.from("messages").insert({
+                conversation_id: convId,
+                sender_type: "system",
+                content: `📋 Este lead já foi atendido por: ${sellersList}`,
+                content_type: "text",
+                metadata: { type: "transfer_note" },
+              });
+            }
+          }
         }
       }
 
