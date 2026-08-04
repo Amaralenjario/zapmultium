@@ -187,7 +187,7 @@ export default async function DashboardPage({
     leadBase(supabase.from("leads").select("status")),
     convBase(supabase.from("conversations").select("created_at, status")),
     supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
-    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000)),
+    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("last_message_at", startISO).lte("last_message_at", endISO).limit(10000)),
     supabase.from("messages").select("conversation_id, content, sender_type, created_at").eq("sender_type", "customer").order("created_at", { ascending: true }).limit(10000),
   ]);
 
@@ -343,7 +343,7 @@ export default async function DashboardPage({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
         <MetricCard title="Conversas ativas" value={activeConversations ?? 0} subtitle="no momento" icon={<ChatIcon />} />
         <MetricCard title="Total conversas" value={totalConversations ?? 0} subtitle="desde o início" icon={<AllChatIcon />} />
-        <MetricCard title="Leads no período" value={totalNewLeads ?? 0} subtitle="capturados" icon={<LeadIcon />} />
+        <MetricCard title="Leads no período" value={totalNewLeads ?? 0} subtitle="com atividade" icon={<LeadIcon />} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
