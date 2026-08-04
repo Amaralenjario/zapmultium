@@ -26,23 +26,35 @@ const PHONE_NAMES: Record<string, string> = {
 };
 
 function getDateRange(range: string, start?: string, end?: string) {
-  const endDate = end ? new Date(end) : new Date();
-  endDate.setHours(23, 59, 59, 999);
-  const endISO = endDate.toISOString();
+  let endDate: Date;
+  let startDate: Date;
 
-  let startISO: string;
-  if (range === "custom" && start) {
-    const s = new Date(start);
-    s.setHours(0, 0, 0, 0);
-    startISO = s.toISOString();
+  if (range === "custom" && start && end) {
+    startDate = new Date(start);
+    startDate.setHours(0, 0, 0, 0);
+    endDate = new Date(end);
+    endDate.setHours(23, 59, 59, 999);
   } else {
     const days: Record<string, number> = { hoje: 0, ontem: 1, "7d": 6, "15d": 14, "30d": 29 };
-    const d = new Date();
-    d.setDate(d.getDate() - (days[range] || 6));
-    d.setHours(0, 0, 0, 0);
-    startISO = d.toISOString();
+    const daysBack = days[range] || 6;
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    
+    startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - daysBack);
+    startDate.setHours(0, 0, 0, 0);
+
+    if (range === "ontem") {
+      // Ontem: termina ontem às 23:59, não hoje
+      endDate = new Date(today);
+      endDate.setDate(endDate.getDate() - 1);
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      endDate = today;
+    }
   }
-  return { startISO, endISO };
+
+  return { startISO: startDate.toISOString(), endISO: endDate.toISOString() };
 }
 
 export default async function DashboardPage({
