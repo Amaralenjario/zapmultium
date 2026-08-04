@@ -164,7 +164,7 @@ export default async function DashboardPage({
     leadBase(supabase.from("leads").select("status")),
     convBase(supabase.from("conversations").select("created_at, status")),
     supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
-    addPhoneFilter(supabase.from("conversations").select("metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000)),
+    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000)),
     supabase.from("messages").select("conversation_id, content, sender_type, created_at").eq("sender_type", "customer").order("created_at", { ascending: true }).limit(10000),
   ]);
 
