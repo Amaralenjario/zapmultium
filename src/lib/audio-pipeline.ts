@@ -15,11 +15,14 @@ export async function processAndSendMedia(
   mediaType: "image" | "audio" | "video",
   to: string,
   phoneNumberId: string,
-  channelToken: string
+  channelToken: string,
+  caption?: string
 ): Promise<{ waMessageId: string | null; error?: string }> {
   try {
     if (mediaType !== "audio") {
-      const body: any = { messaging_product: "whatsapp", to, type: mediaType === "video" ? "video" : mediaType, [mediaType]: { link: fileUrl } };
+      const mediaObj: any = { link: fileUrl };
+      if (caption) mediaObj.caption = caption;
+      const body: any = { messaging_product: "whatsapp", to, type: mediaType === "video" ? "video" : mediaType, [mediaType]: mediaObj };
       const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
         method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
       });

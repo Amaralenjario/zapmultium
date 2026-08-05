@@ -200,10 +200,28 @@ function MediaEditor({ type, config }: { type: string; config: any }) {
         <input ref={fileRef} type="file" accept={type === "image" ? "image/*" : type === "video" ? "video/*" : "audio/*"} onChange={handleUpload} className="hidden" disabled={uploading} />
       </label>
       {config.url && type === "image" && (
-        <img src={config.url} alt="" className="w-full h-24 object-cover rounded border border-gray-200" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        <>
+          <img src={config.url} alt="" className="w-full h-24 object-cover rounded border border-gray-200" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          <textarea
+            placeholder="Legenda (opcional)"
+            defaultValue={config.caption || ""}
+            onChange={(e) => { config.caption = e.target.value; }}
+            rows={2}
+            className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs resize-none"
+          />
+        </>
       )}
       {config.url && type === "video" && (
-        <video src={config.url} controls className="w-full h-24 rounded border border-gray-200" preload="metadata" />
+        <>
+          <video src={config.url} controls className="w-full h-24 rounded border border-gray-200" preload="metadata" />
+          <textarea
+            placeholder="Legenda (opcional)"
+            defaultValue={config.caption || ""}
+            onChange={(e) => { config.caption = e.target.value; }}
+            rows={2}
+            className="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs resize-none"
+          />
+        </>
       )}
       {config.url && type === "audio" && (
         <audio src={config.url} controls className="w-full h-8" />

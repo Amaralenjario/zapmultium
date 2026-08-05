@@ -122,7 +122,7 @@ async function sendWhatsAppMessage(execution: any, text: string) {
   return data.messages?.[0]?.id;
 }
 
-async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image" | "audio" | "video") {
+async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image" | "audio" | "video", caption?: string) {
   const { getInstanceByPhoneId, getRealChannelToken } = await import("@/lib/instances");
   const instance = getInstanceByPhoneId(execution.phone_number_id);
   if (!instance?.channelId) throw new Error("Canal não encontrado");
@@ -131,7 +131,7 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
 
   // Use audio pipeline for media processing
   const { processAndSendMedia } = await import("@/lib/audio-pipeline");
-  const result = await processAndSendMedia(url, mediaType, execution.customer_phone, execution.phone_number_id, channelToken);
+  const result = await processAndSendMedia(url, mediaType, execution.customer_phone, execution.phone_number_id, channelToken, caption);
 
   if (result.error) {
     console.error("Flow media pipeline error:", result.error);
@@ -236,12 +236,21 @@ export async function processFlowStep(executionId: string): Promise<{
         }
 
         case "image":
-        case "audio":
         case "video": {
           const url = currentNode.config?.url || "";
           if (url) {
+            const caption = currentNode.config?.caption || "";
             const mediaType = currentNode.type;
-            const waId = await sendWhatsAppMedia(execution, url, mediaType);
+            const waId = await sendWhatsAppMedia(execution, url, mediaType, caption || undefined);
+            logResult.wa_message_id = waId;
+          }
+          nextNodeId = findNextNode(currentNode.id, edges);
+          break;
+        }
+        case "audio": {
+          const url = currentNode.config?.url || "";
+          if (url) {
+            const waId = await sendWhatsAppMedia(execution, url, "audio");
             logResult.wa_message_id = waId;
           }
           nextNodeId = findNextNode(currentNode.id, edges);

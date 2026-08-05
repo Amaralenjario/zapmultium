@@ -53,7 +53,7 @@ export function exportFlowV1(
           break;
         case "image":
           nodeData.mediaUrl = n.config?.url || "";
-          nodeData.caption = "";
+          nodeData.caption = n.config?.caption || "";
           nodeData.filename = (n.config?.url || "").split("/").pop() || "image.png";
           break;
         case "audio":
@@ -119,12 +119,14 @@ export function importFlowV1(code: string): {
           break;
         case "image":
           config.url = n.data?.mediaUrl || "";
+          config.caption = n.data?.caption || "";
           break;
         case "audio":
           config.url = n.data?.mediaUrl || "";
           break;
         case "video":
           config.url = n.data?.mediaUrl || "";
+          config.caption = n.data?.caption || "";
           break;
         case "wait":
           config.delay = n.data?.seconds || 5;
