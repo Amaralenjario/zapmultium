@@ -146,6 +146,14 @@ export default function CrmKanban() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // Polling and event listener
+  useEffect(() => {
+    const interval = setInterval(fetchAll, 5000);
+    const onTagged = () => fetchAll();
+    window.addEventListener("lead-tagged", onTagged);
+    return () => { clearInterval(interval); window.removeEventListener("lead-tagged", onTagged); };
+  }, [fetchAll]);
+
   const moveLead = async (leadId: string, targetColumn: string) => {
     // Update lead status
     await supabase.from("leads").update({ status: targetColumn }).eq("id", leadId);

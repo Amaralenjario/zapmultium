@@ -207,13 +207,16 @@ export default function ConversationList({
     const flowInterval = setInterval(fetchActiveFlows, 4000);
 
     const onFlowTriggered = () => fetchActiveFlows();
+    const onLeadTagged = () => fetchLeadTags();
     window.addEventListener("flow-triggered", onFlowTriggered);
+    window.addEventListener("lead-tagged", onLeadTagged);
 
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
       clearInterval(flowInterval);
       window.removeEventListener("flow-triggered", onFlowTriggered);
+      window.removeEventListener("lead-tagged", onLeadTagged);
     };
   }, []);
 

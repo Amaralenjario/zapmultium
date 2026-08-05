@@ -152,7 +152,11 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
     }
 
     const res = await fetch(`/api/crm/leads/${lead.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag_id: tagId }) });
-    if (res.ok) { toast.success("Etiqueta aplicada!"); setShowTagModal(false); }
+    if (res.ok) {
+      toast.success("Etiqueta aplicada!");
+      setShowTagModal(false);
+      window.dispatchEvent(new CustomEvent("lead-tagged"));
+    }
     else { const err = await res.json(); toast.error(err.error || "Erro ao etiquetar"); }
   };
 
