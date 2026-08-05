@@ -125,21 +125,7 @@ export default async function DashboardPage({
     return query;
   };
 
-  let leadPhones: string[] = [];
-  if (sellerPhoneIds && sellerPhoneIds.length > 0) {
-    const { data: convs } = await addPhoneFilter(supabase.from("conversations").select("customer:customer_id(phone)"));
-    leadPhones = [...new Set((convs || []).map((c: any) => Array.isArray(c.customer) ? c.customer[0]?.phone : c.customer?.phone).filter(Boolean))] as string[];
-  }
-
-  const addLeadFilter = (query: any) => {
-    if (sellerPhoneIds === null) return query;
-    if (leadPhones.length === 0) return query.eq("phone", "__none__");
-    if (leadPhones.length === 1) return query.eq("phone", leadPhones[0]);
-    return query.in("phone", leadPhones.slice(0, 50));
-  };
-
   const convBase = (q: any) => addPhoneFilter(q).gte("created_at", startISO).lte("created_at", endISO);
-  const leadBase = (q: any) => addLeadFilter(q).gte("created_at", startISO).lte("created_at", endISO);
   const allTimeConv = (q: any) => addPhoneFilter(q);
 
   // Fetch operations_channels for leads-by-operation mapping
@@ -192,8 +178,6 @@ export default async function DashboardPage({
     { count: totalConversations },
     { count: flowsTriggered },
     { data: recentConversations },
-    { data: recentLeads },
-    { data: leadsByStatus },
     { data: conversationsByDay },
     { data: allMessages },
     { data: newConversations },
@@ -204,13 +188,11 @@ export default async function DashboardPage({
     allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })),
     supabase.from("flow_executions").select("*", { count: "exact", head: true }).gte("started_at", startISO).lte("started_at", endISO),
     addPhoneFilter(supabase.from("conversations").select("id, status, last_message, customer:customer_id(name, phone), updated_at").order("updated_at", { ascending: false }).limit(5)),
-    leadBase(supabase.from("leads").select("id, name, phone, status, priority, created_at").order("created_at", { ascending: false }).limit(5)),
-    leadBase(supabase.from("leads").select("status")),
     convBase(supabase.from("conversations").select("created_at, status")),
-    supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(10000),
-    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(10000)),
-    supabase.from("messages").select("conversation_id, content, sender_type, created_at").eq("sender_type", "customer").order("created_at", { ascending: true }).limit(10000),
-    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("last_message_at", startISO).lte("last_message_at", endISO).limit(10000)),
+    supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(5000),
+    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(5000)),
+    supabase.from("messages").select("conversation_id, content, sender_type, created_at").eq("sender_type", "customer").order("created_at", { ascending: true }).limit(5000),
+    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("last_message_at", startISO).lte("last_message_at", endISO).limit(5000)),
   ]);
 
   // Seller message stats
@@ -326,10 +308,8 @@ export default async function DashboardPage({
       .sort((a, b) => b.count - a.count),
   })).filter(op => op.phrases.length > 0);
 
-  const leadsByStatusCounts = (leadsByStatus || []).reduce(
-    (acc: Record<string, number>, lead: { status: string }) => { acc[lead.status] = (acc[lead.status] || 0) + 1; return acc; }, {}
-  );
-  const leadsByStatusChart = ["new", "contacted", "qualified", "converted", "lost"].map((status) => ({ status, count: leadsByStatusCounts[status] || 0 }));
+  const leadsByStatusCounts: Record<string, number> = {};
+  const leadsByStatusChart = ["new", "contacted", "qualified", "converted", "lost"].map((status) => ({ status, count: 0 }));
 
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -348,7 +328,7 @@ export default async function DashboardPage({
     return { id: c.id, name: customer?.name || customer?.phone || "Desconhecido", phone: customer?.phone || "", status: c.status, message: c.last_message || undefined, time: timeAgo(new Date(c.updated_at)) };
   });
 
-  const recentLeadItems = (recentLeads || []).map((l: any) => ({ id: l.id, name: l.name, phone: l.phone, status: l.status, priority: l.priority, time: timeAgo(new Date(l.created_at)) }));
+  const recentLeadItems: any[] = [];
 
   return (
     <div>
