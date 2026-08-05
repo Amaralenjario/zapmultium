@@ -122,10 +122,21 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   };
 
   const handleAddTag = async (tagId: string) => {
-    const { data: lead } = await supabase.from("leads").select("id").eq("phone", customerPhone).maybeSingle();
-    if (!lead) { toast.error("Lead não encontrado"); return; }
+    // Buscar ou criar lead
+    let { data: lead } = await supabase.from("leads").select("id").eq("phone", customerPhone).maybeSingle();
+    if (!lead) {
+      const { data: newLead, error: createErr } = await supabase
+        .from("leads")
+        .insert({ name: customer?.name || customerPhone, phone: customerPhone, status: "new" })
+        .select("id")
+        .single();
+      if (createErr) { toast.error("Erro ao criar lead"); return; }
+      lead = newLead;
+    }
+
     const res = await fetch(`/api/crm/leads/${lead.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag_id: tagId }) });
     if (res.ok) { toast.success("Etiqueta aplicada!"); setShowTagModal(false); }
+    else { const err = await res.json(); toast.error(err.error || "Erro ao etiquetar"); }
   };
 
   useEffect(() => {

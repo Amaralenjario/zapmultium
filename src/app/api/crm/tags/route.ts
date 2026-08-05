@@ -13,7 +13,7 @@ export async function GET() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  const { data } = await adminClient.from("crm_tags").select("*").eq("user_id", user.id).order("created_at");
+  const { data } = await adminClient.from("crm_tags").select("*").order("created_at");
   return NextResponse.json(data || []);
 }
 
