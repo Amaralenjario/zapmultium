@@ -122,16 +122,33 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   };
 
   const handleAddTag = async (tagId: string) => {
+    const customerId = Array.isArray(conversation.customer) ? (conversation.customer[0] as any)?.id : (conversation.customer as any)?.id;
+
     // Buscar ou criar lead
     let { data: lead } = await supabase.from("leads").select("id").eq("phone", customerPhone).maybeSingle();
     if (!lead) {
       const { data: newLead, error: createErr } = await supabase
         .from("leads")
-        .insert({ name: customer?.name || customerPhone, phone: customerPhone, status: "new" })
+        .insert({
+          name: customer?.name || customerPhone,
+          phone: customerPhone,
+          status: "new",
+          source: "whatsapp",
+          customer_id: customerId || null,
+          conversation_id: conversation.id,
+          metadata: { phone_number_id: phoneNumberId },
+        })
         .select("id")
         .single();
-      if (createErr) { toast.error("Erro ao criar lead"); return; }
+      if (createErr) { toast.error("Erro ao criar lead: " + createErr.message); return; }
       lead = newLead;
+    } else {
+      // Atualiza o lead com a conversa atual
+      await supabase.from("leads").update({
+        customer_id: customerId || null,
+        conversation_id: conversation.id,
+        updated_at: new Date().toISOString(),
+      }).eq("id", lead.id);
     }
 
     const res = await fetch(`/api/crm/leads/${lead.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag_id: tagId }) });
