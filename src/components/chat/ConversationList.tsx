@@ -44,6 +44,7 @@ export default function ConversationList({
   const [operationFilter, setOperationFilter] = useState<string | null>(null);
   const [leadTagsMap, setLeadTagsMap] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
   const [availableTags, setAvailableTags] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [clickLocked, setClickLocked] = useState(false);
   const supabase = createClient();
 
   const applyFilters = useCallback(() => {
@@ -126,6 +127,9 @@ export default function ConversationList({
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(500);
       setAllConversations(data || []);
+      // Lock clicks for 150ms after update to avoid misclicks
+      setClickLocked(true);
+      setTimeout(() => setClickLocked(false), 150);
     };
 
     const fetchSellerChannels = async () => {
@@ -354,7 +358,7 @@ export default function ConversationList({
             return (
               <button
                 key={conv.id}
-                onClick={() => onSelect(conv)}
+                onClick={() => { if (!clickLocked) onSelect(conv); }}
                 className={`w-full flex items-start gap-3 px-3 py-3.5 transition text-left border-l-[3px] group relative overflow-hidden border-b border-gray-100 dark:border-[#222d34] ${
                   isSelected
                     ? "bg-[#d9fdd3]/40 dark:bg-[#005c4b]/30 border-l-emerald-500 dark:border-l-emerald-400"
