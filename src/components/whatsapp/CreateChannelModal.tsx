@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 
 interface CreatedChannel {
@@ -20,9 +20,18 @@ export default function CreateChannelModal({
   onCreated: () => void;
 }) {
   const [name, setName] = useState("");
+  const [evoAccountId, setEvoAccountId] = useState("");
+  const [evoAccounts, setEvoAccounts] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [channel, setChannel] = useState<CreatedChannel | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/evo-accounts").then(r => r.json()).then(d => {
+      setEvoAccounts(d || []);
+      if (d && d.length > 0) setEvoAccountId(d[0].id);
+    }).catch(() => {});
+  }, []);
 
   const handleCreate = async () => {
     if (!name.trim()) return;
@@ -32,7 +41,7 @@ export default function CreateChannelModal({
       const res = await fetch("/api/evohub/create-channel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ name: name.trim(), evo_account_id: evoAccountId }),
       });
 
       const data = await res.json();
@@ -133,6 +142,21 @@ export default function CreateChannelModal({
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Crie um canal para conectar um número de WhatsApp Business. Após criar, compartilhe o link com o cliente para ele autorizar a conexão.
             </p>
+
+            {evoAccounts.length > 0 && (
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">Conta EvoHub</label>
+                <select
+                  value={evoAccountId}
+                  onChange={(e) => setEvoAccountId(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-gray-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none transition"
+                >
+                  {evoAccounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">
               Nome da conexão

@@ -1,24 +1,39 @@
 import { NextResponse } from "next/server";
-
-const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
-const KEY = process.env.EVOHUB_API_KEY;
+import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: Request) {
   try {
-    const { name } = await request.json();
+    const { name, evo_account_id } = await request.json();
 
     if (!name) {
       return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
     }
 
-    if (!KEY) {
-      return NextResponse.json({ error: "EVOHUB_API_KEY não configurada no servidor" }, { status: 500 });
+    // Buscar a API key da conta EvoHub selecionada
+    let apiKey = process.env.EVOHUB_API_KEY;
+    let apiUrl = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
+
+    if (evo_account_id) {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      );
+      const { data: account } = await supabase.from("evo_accounts").select("api_key, api_url").eq("id", evo_account_id).single();
+      if (account) {
+        apiKey = account.api_key;
+        apiUrl = account.api_url || apiUrl;
+      }
     }
 
-    const res = await fetch(`${BASE}/api/v1/channels`, {
+    if (!apiKey) {
+      return NextResponse.json({ error: "API Key não configurada" }, { status: 500 });
+    }
+
+    const res = await fetch(`${apiUrl}/api/v1/channels`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ name, type: "whatsapp" }),
