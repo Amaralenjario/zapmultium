@@ -6,25 +6,32 @@ const KEY = process.env.EVOHUB_API_KEY;
 
 export async function POST(request: Request) {
   try {
-    const { conversationId, phoneNumberId, to, message, context, type, caption } = await request.json();
+    const body = await request.json();
+    const { conversationId, phoneNumberId, to, message, context, type, caption } = body;
+    console.log("[send-message] Request:", { phoneNumberId, to, message: message?.substring(0, 50), type });
 
     if (!phoneNumberId || !to || !message) {
+      console.log("[send-message] Dados incompletos:", { phoneNumberId: !!phoneNumberId, to: !!to, message: !!message });
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
     }
 
     // Buscar channel token real da EvoHub
     let channelToken = "";
+    console.log("[send-message] Buscando channel para phone:", phoneNumberId);
 
     // Primeiro tenta pegar via mapeamento de instâncias
     const { getInstanceByPhoneId } = await import("@/lib/instances");
     const instance = getInstanceByPhoneId(phoneNumberId);
+    console.log("[send-message] Instance:", instance?.name, instance?.channelId);
 
     if (instance?.channelId) {
       const realToken = await getRealChannelToken(instance.channelId);
       channelToken = realToken || "";
+      console.log("[send-message] Token obtido:", channelToken ? "sim" : "nao");
     }
 
     if (!channelToken) {
+      console.log("[send-message] Canal não encontrado");
       return NextResponse.json({ error: "Canal não encontrado" }, { status: 404 });
     }
 
