@@ -52,8 +52,10 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId, phoneNumberId, to: customerPhone, message: trimmed, context: (replyTo as any)?.metadata?.wa_message_id || undefined }),
       });
-      if (!res.ok) toast.error("Erro ao enviar");
-      else onMessageSent();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.detail ? `Erro: campos faltando (phoneId:${data.detail.hasPhoneId}, to:${data.detail.hasTo}, msg:${data.detail.hasMessage})` : data.error || "Erro ao enviar");
+      } else onMessageSent();
     } catch { toast.error("Erro de conexão"); }
     setSending(false);
   };
