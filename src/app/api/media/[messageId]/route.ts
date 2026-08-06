@@ -10,6 +10,7 @@ const CHANNEL_MAP: Record<string, string> = {
   "1034222499765101": "346e4eef-bc78-41ec-a7ae-ec7ec75bf177",
   "1234821229708132": "b1c6879b-e962-4f50-95f7-14f1a04601a5",
   "1077309398802921": "0bce92b7-b6a9-4859-ac87-bc2ed01719e1",
+  "1050317928161978": "004d0718-04ae-4af5-b55b-aaa5136d1138",
 };
 
 export async function GET(_: Request, { params }: { params: { messageId: string } }) {

@@ -5,6 +5,7 @@ const instanceMap: Record<string, { name: string; channelId: string; channelToke
   "976034132269824": { name: "GABI - 8176", channelId: "effa72d1-47f6-445b-acbc-7693ef21ee24", channelToken: "573ce80fda8e16ab0d1e2f3a4b5c6d7e8" },
   "1234821229708132": { name: "NC - CAIO", channelId: "b1c6879b-e962-4f50-95f7-14f1a04601a5", channelToken: "031d4b9bed27fdce0f1e2a3b4c5d6e7f8" },
   "1077309398802921": { name: "GUILHERME - CAIO", channelId: "0bce92b7-b6a9-4859-ac87-bc2ed01719e1", channelToken: "396e9d12c45b0462e1951a6abdbbc1c6dc2a2cf9a021124762ef60ee87064b76" },
+  "1050317928161978": { name: "DANI", channelId: "004d0718-04ae-4af5-b55b-aaa5136d1138", channelToken: "963aa979413f414c4d88acb2f417bbe8b9a62abbddaf2eef6d87ec4336209c48" },
 };
 
 export function getInstanceByPhoneId(phoneNumberId: string) {
@@ -17,10 +18,33 @@ export function getInstanceName(phoneNumberId: string): string | null {
 
 export async function getRealChannelToken(channelId: string): Promise<string | null> {
   try {
-    const KEY = process.env.EVOHUB_API_KEY;
-    const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
-    const res = await fetch(`${BASE}/api/v1/channels/${channelId}`, {
-      headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
+    // Buscar qual conta EvoHub esse canal pertence
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    let apiKey = process.env.EVOHUB_API_KEY;
+    let apiUrl = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
+
+    const { data: opCh } = await supabase
+      .from("operations_channels")
+      .select("evo_account_id, evo_account:evo_account_id(api_key, api_url)")
+      .eq("evohub_channel_id", channelId)
+      .maybeSingle();
+
+    if (opCh) {
+      const acc = opCh as any;
+      if (acc.evo_account?.api_key) apiKey = acc.evo_account.api_key;
+      if (acc.evo_account?.api_url) apiUrl = acc.evo_account.api_url;
+    }
+
+    if (!apiKey) return null;
+
+    const res = await fetch(`${apiUrl}/api/v1/channels/${channelId}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     });
     const data = await res.json();
     return data?.token || null;
