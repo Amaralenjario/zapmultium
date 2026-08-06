@@ -18,7 +18,7 @@ export function getInstanceName(phoneNumberId: string): string | null {
 
 export async function getRealChannelToken(channelId: string): Promise<string | null> {
   try {
-    // Buscar qual conta EvoHub esse canal pertence
+    // Tenta pegar token real via API da EvoHub
     const { createClient } = await import("@supabase/supabase-js");
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,6 +26,7 @@ export async function getRealChannelToken(channelId: string): Promise<string | n
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Buscar conta EvoHub do canal
     let apiKey = process.env.EVOHUB_API_KEY;
     let apiUrl = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 
@@ -49,6 +50,8 @@ export async function getRealChannelToken(channelId: string): Promise<string | n
     const data = await res.json();
     return data?.token || null;
   } catch {
-    return null;
+    // Fallback: usa o token do instanceMap
+    const entry = Object.values(instanceMap).find(i => i.channelId === channelId);
+    return entry?.channelToken || null;
   }
 }
