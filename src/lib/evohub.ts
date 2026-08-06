@@ -24,13 +24,37 @@ export interface EvoHubChannel {
 }
 
 export async function listAllChannels(): Promise<EvoHubChannel[]> {
-  if (!KEY) return [];
-  const res = await fetch(`${BASE}/api/v1/channels`, {
-    headers: { Authorization: `Bearer ${KEY}` },
-    next: { revalidate: 30 },
-  });
-  const data = await res.json();
-  return data.channels || [];
+  const supabase = createClient();
+
+  // Buscar todas as contas EvoHub do banco + fallback do env
+  const { data: accounts } = await supabase.from("evo_accounts").select("id, name, api_key, api_url");
+
+  const keys: { apiKey: string; apiUrl: string }[] = [];
+
+  if (accounts && accounts.length > 0) {
+    for (const acc of accounts) {
+      keys.push({ apiKey: acc.api_key, apiUrl: acc.api_url || BASE });
+    }
+  }
+
+  // Fallback: usa env se não tiver contas no banco
+  if (keys.length === 0 && KEY) {
+    keys.push({ apiKey: KEY, apiUrl: BASE });
+  }
+
+  const allChannels: EvoHubChannel[] = [];
+  for (const k of keys) {
+    try {
+      const res = await fetch(`${k.apiUrl}/api/v1/channels`, {
+        headers: { Authorization: `Bearer ${k.apiKey}` },
+        next: { revalidate: 30 },
+      });
+      const data = await res.json();
+      if (data.channels) allChannels.push(...data.channels);
+    } catch { /* skip */ }
+  }
+
+  return allChannels;
 }
 
 export async function listChannelsForUser(): Promise<EvoHubChannel[]> {
