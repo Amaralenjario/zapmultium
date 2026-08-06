@@ -149,6 +149,7 @@ export default function ConversationList({
         "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
         "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
         "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+        "0bce92b7-b6a9-4859-ac87-bc2ed01719e1": "1077309398802921",
       };
       const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
       for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }

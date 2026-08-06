@@ -4,6 +4,7 @@ const instanceMap: Record<string, { name: string; channelId: string; channelToke
   "1034222499765101": { name: "AMANDA - JÉ", channelId: "346e4eef-bc78-41ec-a7ae-ec7ec75bf177", channelToken: "a4a499ac2e7791df0e1f2a3b4c5d6e7f" },
   "976034132269824": { name: "GABI - 8176", channelId: "effa72d1-47f6-445b-acbc-7693ef21ee24", channelToken: "573ce80fda8e16ab0d1e2f3a4b5c6d7e8" },
   "1234821229708132": { name: "NC - CAIO", channelId: "b1c6879b-e962-4f50-95f7-14f1a04601a5", channelToken: "031d4b9bed27fdce0f1e2a3b4c5d6e7f8" },
+  "1077309398802921": { name: "GUILHERME - CAIO", channelId: "0bce92b7-b6a9-4859-ac87-bc2ed01719e1", channelToken: "396e9d12c45b0462e1951a6abdbbc1c6dc2a2cf9a021124762ef60ee87064b76" },
 };
 
 export function getInstanceByPhoneId(phoneNumberId: string) {
