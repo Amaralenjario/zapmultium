@@ -41,6 +41,34 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   const operation = phoneMap[phoneNumberId];
   const customerPhone = customer?.phone || "";
 
+  // Se a conversa não tem phone_number_id, tenta corrigir com o mapeamento do vendedor
+  useEffect(() => {
+    if (!phoneNumberId && conversation.id) {
+      const fixPhoneId = async () => {
+        // Pega o phone_number_id do vendedor logado
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id).limit(1);
+        if (sc && sc.length > 0) {
+          const phoneIdMap: Record<string, string> = {
+            "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+            "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+            "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+            "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+            "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+            "0bce92b7-b6a9-4859-ac87-bc2ed01719e1": "1077309398802921",
+            "004d0718-04ae-4af5-b55b-aaa5136d1138": "1050317928161978",
+          };
+          const pid = phoneIdMap[sc[0].evohub_channel_id];
+          if (pid) {
+            await supabase.from("conversations").update({ metadata: { phone_number_id: pid } }).eq("id", conversation.id);
+          }
+        }
+      };
+      fixPhoneId();
+    }
+  }, [phoneNumberId, conversation.id]);
+
   const lastCustomerMsg = useMemo(() => {
     const cm = messages.filter(m => m.sender_type === "customer");
     if (!cm.length) return null;
