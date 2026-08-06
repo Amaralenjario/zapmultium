@@ -107,26 +107,17 @@ export default function FluxosPage() {
     setZvImporting(true);
 
     try {
-      // Upload direto pro Supabase Storage (burla limite 4.5MB do Vercel)
-      const supabase = createClient();
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `temp-imports/${Date.now()}_${safeName}`;
-      const { error: uploadErr } = await supabase.storage.from("flow-media").upload(path, file, { upsert: true });
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/flows/import-zv", { method: "POST", body: formData });
 
-      if (uploadErr) {
-        toast.error("Erro no upload: " + uploadErr.message);
+      if (res.status === 413) {
+        toast.error("Arquivo muito grande (limite 4.5MB). Tente dividir em partes menores.");
         setZvImporting(false);
         return;
       }
 
-      // Envia path para API processar
-      const res = await fetch("/api/flows/import-zv", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
-      });
       const result = await res.json();
-
       if (result.ok) {
         toast.success(`${result.imported.length} fluxo(s) importado(s) do ZapVoice!`);
         fetchFlows();
