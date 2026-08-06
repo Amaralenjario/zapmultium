@@ -249,8 +249,10 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
               // Use enriched context content from webhook if available
               const quotedContent = quotedMsg?.content || msg.metadata?.context?.quoted_content || null;
               const quotedByAgent = quotedMsg?.sender_type === "agent" || msg.metadata?.context?.quoted_sender_type === "agent";
+              const quotedContentType = quotedMsg?.content_type || msg.metadata?.context?.quoted_content_type || "text";
+              const isQuotedMedia = quotedContentType === "image" || quotedContentType === "video" || quotedContentType === "sticker";
               return (
-                <MessageBubble key={msg.id} message={msg} isFirst={!consecutive} showDate={dateLabel} quotedContent={quotedContent} quotedByAgent={quotedByAgent} onReply={() => setReplyTo(msg)} onReact={(emoji) => handleReact(msg, emoji)} />
+                <MessageBubble key={msg.id} message={msg} isFirst={!consecutive} showDate={dateLabel} quotedContent={quotedContent} quotedByAgent={quotedByAgent} quotedContentType={quotedContentType} onReply={() => setReplyTo(msg)} onReact={(emoji) => handleReact(msg, emoji)} />
               );
             })}
             <div ref={bottomRef} />

@@ -49,12 +49,14 @@ export default function MessageBubble({
   quotedByAgent,
   onReply,
   onReact,
+  quotedContentType,
 }: {
   message: Message;
   isFirst?: boolean;
   showDate?: string;
   quotedContent?: string | null;
   quotedByAgent?: boolean;
+  quotedContentType?: string;
   onReply?: () => void;
   onReact?: (emoji: string) => void;
 }) {
@@ -87,7 +89,16 @@ export default function MessageBubble({
           {(context?.id || quotedContent) && (
             <div className={`mx-2 mt-2 px-2.5 py-1.5 rounded-md border-l-[3px] text-xs ${isAgent ? "bg-black/10 border-[#075e54]" : "bg-black/5 dark:bg-white/5 border-[#25d366]"}`}>
               <p className="text-[11px] opacity-60 mb-0.5 truncate">{quotedByAgent ? "Você" : (context?.from || "Cliente")}</p>
-              <p className="truncate opacity-80">{quotedContent || "Mensagem"}</p>
+              {quotedContentType === "image" || quotedContentType === "sticker" ? (
+                <div className="flex items-center gap-1.5">
+                  <img src={quotedContent!} alt="" className="w-8 h-8 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  <span className="opacity-80">📷 Imagem</span>
+                </div>
+              ) : quotedContentType === "video" ? (
+                <span className="opacity-80">🎬 Vídeo</span>
+              ) : (
+                <p className="truncate opacity-80">{quotedContent || "Mensagem"}</p>
+              )}
             </div>
           )}
           {isMedia ? (
@@ -162,10 +173,16 @@ function MediaContent({ messageId, content, type, metadata }: { messageId: strin
   if (type === "image") return (
     <>
       <div className="p-1"><img src={mediaUrl} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover cursor-pointer hover:opacity-90 transition" loading="lazy" onError={() => setError(true)} onClick={openLightbox} /></div>
+      {metadata?.caption && <p className="px-3.5 pb-2 text-[13px] text-[#667781] dark:text-gray-400">{metadata.caption}</p>}
       {lightbox && <ImageViewer src={mediaUrl} zoom={zoom} setZoom={setZoom} onClose={closeLightbox} />}
     </>
   );
-  if (type === "video") return <div className="p-1"><video controls className="rounded-lg max-w-[300px] max-h-[300px]" preload="metadata"><source src={mediaUrl} /></video></div>;
+  if (type === "video") return (
+    <div className="p-1">
+      <video controls className="rounded-lg max-w-[300px] max-h-[300px]" preload="metadata"><source src={mediaUrl} /></video>
+      {metadata?.caption && <p className="px-3.5 pb-2 text-[13px] text-[#667781] dark:text-gray-400">{metadata.caption}</p>}
+    </div>
+  );
   if (type === "audio") return <AudioPlayer src={mediaUrl} />;
   if (type === "document") return <DocumentPreview src={mediaUrl} name={content} />;
   return null;

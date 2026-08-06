@@ -194,10 +194,10 @@ async function processWhatsAppMessages(payload: any) {
         if (msg.type === "text") {
           content = msg.text?.body || "";
         } else if (msg.type === "image") {
-          content = "🖼 Imagem";
+          content = msg.image?.caption || "🖼 Imagem";
           contentType = "image";
         } else if (msg.type === "video") {
-          content = "🎬 Vídeo";
+          content = msg.video?.caption || "🎬 Vídeo";
           contentType = "video";
         } else if (msg.type === "audio") {
           content = "🎤 Áudio";
@@ -271,6 +271,7 @@ async function processWhatsAppMessages(payload: any) {
           }
 
           const mediaId = msg.image?.id || msg.video?.id || msg.audio?.id || msg.document?.id || msg.sticker?.id || null;
+          const caption = msg.image?.caption || msg.video?.caption || null;
           const context = msg.context || null;
 
           // If this message is a reply, look up the quoted message content
@@ -292,7 +293,7 @@ async function processWhatsAppMessages(payload: any) {
             sender_type: "customer",
             content,
             content_type: contentType,
-            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId, media_id: mediaId, context },
+            metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId, media_id: mediaId, caption, context },
             created_at: msg.timestamp
               ? new Date(parseInt(msg.timestamp) * 1000).toISOString()
               : new Date().toISOString(),
