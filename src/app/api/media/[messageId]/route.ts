@@ -9,6 +9,7 @@ const CHANNEL_MAP: Record<string, string> = {
   "892228177298374": "c5505ddf-f9ef-4837-9337-45ed3de40d6a",
   "1034222499765101": "346e4eef-bc78-41ec-a7ae-ec7ec75bf177",
   "1234821229708132": "b1c6879b-e962-4f50-95f7-14f1a04601a5",
+  "1077309398802921": "0bce92b7-b6a9-4859-ac87-bc2ed01719e1",
 };
 
 export async function GET(_: Request, { params }: { params: { messageId: string } }) {
@@ -40,16 +41,31 @@ export async function GET(_: Request, { params }: { params: { messageId: string 
     const channelId = CHANNEL_MAP[phoneNumberId];
     if (!channelId) return new Response("Channel not mapped", { status: 404 });
 
+    // Buscar qual conta EvoHub esse canal pertence
+    let apiKey = KEY;
+    let apiUrl = BASE;
+    const { data: opCh } = await supabase
+      .from("operations_channels")
+      .select("evo_account_id, evo_account:evo_account_id(api_key, api_url)")
+      .eq("evohub_channel_id", channelId)
+      .maybeSingle();
+
+    if (opCh) {
+      const acc = opCh as any;
+      if (acc.evo_account?.api_key) apiKey = acc.evo_account.api_key;
+      if (acc.evo_account?.api_url) apiUrl = acc.evo_account.api_url;
+    }
+
     // Buscar token
-    const chRes = await fetch(`${BASE}/api/v1/channels/${channelId}`, {
-      headers: { Authorization: `Bearer ${KEY}` },
+    const chRes = await fetch(`${apiUrl}/api/v1/channels/${channelId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
     const ch = await chRes.json();
     const channelToken = ch?.token;
     if (!channelToken) return new Response("No token", { status: 404 });
 
     // Resolver media_id via proxy Meta
-    const mediaRes = await fetch(`${BASE}/meta/v23.0/${mediaId}`, {
+    const mediaRes = await fetch(`${apiUrl}/meta/v23.0/${mediaId}`, {
       headers: { Authorization: `Bearer ${channelToken}` },
     });
     const mediaData = await mediaRes.json();
