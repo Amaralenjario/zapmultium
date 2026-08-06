@@ -125,7 +125,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
     const customerId = Array.isArray(conversation.customer) ? (conversation.customer[0] as any)?.id : (conversation.customer as any)?.id;
 
     // Buscar ou criar lead
-    let { data: lead } = await supabase.from("leads").select("id").eq("phone", customerPhone).maybeSingle();
+    let { data: lead } = await supabase.from("leads").select("id, lead_tags(tag_id)").eq("phone", customerPhone).maybeSingle();
     if (!lead) {
       const { data: newLead, error: createErr } = await supabase
         .from("leads")
@@ -141,9 +141,8 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
         .select("id")
         .single();
       if (createErr) { toast.error("Erro ao criar lead: " + createErr.message); return; }
-      lead = newLead;
+      lead = { ...newLead, lead_tags: [] };
     } else {
-      // Atualiza o lead com a conversa atual
       await supabase.from("leads").update({
         customer_id: customerId || null,
         conversation_id: conversation.id,
@@ -151,13 +150,21 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
       }).eq("id", lead.id);
     }
 
-    const res = await fetch(`/api/crm/leads/${lead.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag_id: tagId }) });
-    if (res.ok) {
-      toast.success("Etiqueta aplicada!");
-      setShowTagModal(false);
-      window.dispatchEvent(new CustomEvent("lead-tagged"));
+    // Toggle: se já tem a tag, remove; senão, adiciona
+    const existingTags = (lead as any).lead_tags || [];
+    const hasTag = existingTags.some((lt: any) => lt.tag_id === tagId);
+
+    if (hasTag) {
+      await supabase.from("lead_tags").delete().eq("lead_id", lead.id).eq("tag_id", tagId);
+      toast.success("Etiqueta removida!");
+    } else {
+      const res = await fetch(`/api/crm/leads/${lead.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag_id: tagId }) });
+      if (res.ok) { toast.success("Etiqueta aplicada!"); }
+      else { const err = await res.json(); toast.error(err.error || "Erro ao etiquetar"); return; }
     }
-    else { const err = await res.json(); toast.error(err.error || "Erro ao etiquetar"); }
+
+    setShowTagModal(false);
+    window.dispatchEvent(new CustomEvent("lead-tagged"));
   };
 
   useEffect(() => {

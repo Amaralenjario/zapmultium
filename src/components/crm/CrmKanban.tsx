@@ -261,12 +261,27 @@ export default function CrmKanban() {
   };
 
   const addTagToLead = async (leadId: string, tagId: string, columnKey: string | null) => {
-    await supabase.from("lead_tags").upsert({ lead_id: leadId, tag_id: tagId });
-    if (columnKey) {
-      await supabase.from("leads").update({ status: columnKey }).eq("id", leadId);
+    // Toggle: se já existe, remove; caso contrário, adiciona
+    const lead = leads.find(l => l.id === leadId);
+    const existingTag = lead?.lead_tags?.find(lt => lt.tag_id === tagId);
+    if (existingTag) {
+      await supabase.from("lead_tags").delete().eq("lead_id", leadId).eq("tag_id", tagId);
+      toast.success("Etiqueta removida");
+    } else {
+      await supabase.from("lead_tags").upsert({ lead_id: leadId, tag_id: tagId });
+      if (columnKey) {
+        await supabase.from("leads").update({ status: columnKey }).eq("id", leadId);
+      }
+      toast.success("Etiqueta aplicada");
     }
     setTagging(null);
     fetchAll();
+  };
+
+  const removeTagFromLead = async (leadId: string, tagId: string) => {
+    await supabase.from("lead_tags").delete().eq("lead_id", leadId).eq("tag_id", tagId);
+    fetchAll();
+    toast.success("Etiqueta removida");
   };
 
   const getLeadOpColor = (lead: any) => {
@@ -402,6 +417,22 @@ export default function CrmKanban() {
 
                         {lead.email && <p className="text-[10px] text-gray-400 mt-1.5 truncate">{lead.email}</p>}
                         <p className="text-[10px] text-gray-400 mt-1">{new Date(lead.created_at).toLocaleDateString("pt-BR")}</p>
+                        {leadTagObjs.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {leadTagObjs.map((tag: any) => (
+                              <span
+                                key={tag.id}
+                                className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-medium cursor-pointer hover:opacity-80 transition"
+                                style={{ backgroundColor: tag.color + "20", color: tag.color }}
+                                onClick={() => removeTagFromLead(lead.id, tag.id)}
+                                title="Clique para remover"
+                              >
+                                {tag.name}
+                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })
