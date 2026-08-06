@@ -105,34 +105,41 @@ export default function FluxosPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setZvImporting(true);
+
     try {
-      // Lê o arquivo como base64 e envia via API (evita upload duplo + RLS)
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const base64 = (reader.result as string).split(",")[1];
-          const res = await fetch("/api/flows/import-zv", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data: base64 }),
-          });
-          const result = await res.json();
-          if (result.ok) {
-            toast.success(`${result.imported.length} fluxo(s) importado(s) do ZapVoice!`);
-            fetchFlows();
-          }
-          if (result.errors?.length) {
-            result.errors.slice(0, 3).forEach((err: string) => toast.error(err));
-          }
-          if (!result.ok && !result.errors?.length) {
-            toast.error(result.error || "Erro ao importar");
-          }
-        } catch { toast.error("Erro ao importar"); }
+      // Upload direto pro Supabase Storage (burla limite 4.5MB do Vercel)
+      const supabase = createClient();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `temp-imports/${Date.now()}_${safeName}`;
+      const { error: uploadErr } = await supabase.storage.from("flow-media").upload(path, file, { upsert: true });
+
+      if (uploadErr) {
+        toast.error("Erro no upload: " + uploadErr.message);
         setZvImporting(false);
-        if (zvFileRef.current) zvFileRef.current.value = "";
-      };
-      reader.readAsDataURL(file);
-    } catch { toast.error("Erro ao ler arquivo"); setZvImporting(false); }
+        return;
+      }
+
+      // Envia path para API processar
+      const res = await fetch("/api/flows/import-zv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      const result = await res.json();
+
+      if (result.ok) {
+        toast.success(`${result.imported.length} fluxo(s) importado(s) do ZapVoice!`);
+        fetchFlows();
+      }
+      if (result.errors?.length) {
+        result.errors.slice(0, 3).forEach((err: string) => toast.error(err));
+      }
+      if (!result.ok && !result.errors?.length) {
+        toast.error(result.error || "Erro ao importar");
+      }
+    } catch { toast.error("Erro ao importar"); }
+    setZvImporting(false);
+    if (zvFileRef.current) zvFileRef.current.value = "";
   };
 
   const doImport = async () => {
