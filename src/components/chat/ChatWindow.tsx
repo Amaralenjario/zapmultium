@@ -37,15 +37,15 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   const supabase = createClient();
 
   const customer = Array.isArray(conversation.customer) ? conversation.customer[0] : conversation.customer;
-  const phoneNumberId = (conversation as any).metadata?.phone_number_id || "";
+  const rawPhoneId = (conversation as any).metadata?.phone_number_id || "";
+  const [phoneNumberId, setPhoneNumberId] = useState(rawPhoneId);
   const operation = phoneMap[phoneNumberId];
   const customerPhone = customer?.phone || "";
 
-  // Se a conversa não tem phone_number_id, tenta corrigir com o mapeamento do vendedor
+  // Se a conversa não tem phone_number_id, pega do canal do vendedor
   useEffect(() => {
-    if (!phoneNumberId && conversation.id) {
+    if (!rawPhoneId) {
       const fixPhoneId = async () => {
-        // Pega o phone_number_id do vendedor logado
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
         const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id).limit(1);
@@ -61,13 +61,15 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
           };
           const pid = phoneIdMap[sc[0].evohub_channel_id];
           if (pid) {
+            setPhoneNumberId(pid);
+            // Salva no banco pra conversa não ficar sem phone_id
             await supabase.from("conversations").update({ metadata: { phone_number_id: pid } }).eq("id", conversation.id);
           }
         }
       };
       fixPhoneId();
     }
-  }, [phoneNumberId, conversation.id]);
+  }, [rawPhoneId, conversation.id]);
 
   const lastCustomerMsg = useMemo(() => {
     const cm = messages.filter(m => m.sender_type === "customer");
