@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useRef, useMemo, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
 import ReactFlow, {
   Controls,
   Background,
@@ -175,14 +176,16 @@ function MediaEditor({ type, config }: { type: string; config: any }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("type", type);
     try {
-      const res = await fetch("/api/flows/media", { method: "POST", body: fd });
-      const data = await res.json();
-      if (res.ok) { config.url = data.url; }
-      else { alert(data.error || "Erro no upload"); }
+      const supabase = createClient();
+      const ext = file.name.split(".").pop() || "bin";
+      const path = `flow-build/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: uploadErr } = await supabase.storage.from("flow-media").upload(path, file, { upsert: true });
+      if (uploadErr) { alert(uploadErr.message); }
+      else {
+        const { data: urlData } = supabase.storage.from("flow-media").getPublicUrl(path);
+        config.url = urlData.publicUrl;
+      }
     } catch { alert("Erro no upload"); }
     setUploading(false);
   };
