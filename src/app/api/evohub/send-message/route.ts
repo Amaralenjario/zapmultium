@@ -61,7 +61,8 @@ export async function POST(request: Request) {
     const data = await res.json();
 
     if (!res.ok) {
-      return NextResponse.json({ error: data }, { status: res.status });
+      const msg = typeof data === "object" ? (data?.error?.message || data?.message || data?.error_data?.details || JSON.stringify(data)) : String(data);
+      return NextResponse.json({ error: msg }, { status: res.status });
     }
 
     // Salvar mensagem enviada no banco
