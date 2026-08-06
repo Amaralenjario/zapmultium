@@ -160,6 +160,27 @@ export default function FluxosPage() {
     setConfirmDelete(false);
   };
 
+  const handleExportFlow = async (flow: Flow) => {
+    const { exportFlowV1 } = await import("@/lib/flow-export");
+    const code = exportFlowV1(flow.name, flow.config?.steps || [], flow.config?.edges || []);
+    await navigator.clipboard.writeText(code);
+    toast.success(`"${flow.name}" copiado!`);
+  };
+
+  const handleExportSelected = async () => {
+    const { exportFlowV1 } = await import("@/lib/flow-export");
+    let allCode = "";
+    for (const id of selectedIds) {
+      const flow = flows.find(f => f.id === id);
+      if (!flow) continue;
+      const code = exportFlowV1(flow.name, flow.config?.steps || [], flow.config?.edges || []);
+      allCode += (allCode ? "\n\n" : "") + `# ${flow.name}\n` + code;
+    }
+    await navigator.clipboard.writeText(allCode);
+    toast.success(`${selectedIds.size} fluxo(s) exportados!`);
+    setSelectedIds(new Set());
+  };
+
   const handleBulkImport = async () => {
     if (!bulkImportText.trim()) return;
     setBulkImporting(true);
@@ -271,12 +292,20 @@ export default function FluxosPage() {
                 Selecionar todos ({flows.length})
               </label>
               {selectedIds.size > 0 && (
+                <>
                 <button
                   onClick={() => setConfirmDelete(true)}
                   className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500/20 transition"
                 >
-                  Excluir selecionados ({selectedIds.size})
+                  Excluir ({selectedIds.size})
                 </button>
+                <button
+                  onClick={() => handleExportSelected()}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition"
+                >
+                  Exportar ({selectedIds.size})
+                </button>
+                </>
               )}
             </div>
           )}
@@ -334,7 +363,8 @@ export default function FluxosPage() {
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
                     <button onClick={(e) => { e.stopPropagation(); setEditing(flow); }} className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">Editar</button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(flow); }} className="text-xs font-medium text-red-400 hover:text-red-500">Excluir</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleExportFlow(flow); }} className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-500">Exportar</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(flow); }} className="text-xs font-medium text-red-400 hover:text-red-500 ml-auto">Excluir</button>
                   </div>
                 </div>
               ))}
