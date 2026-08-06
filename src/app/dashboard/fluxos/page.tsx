@@ -27,6 +27,8 @@ export default function FluxosPage() {
   const [importCode, setImportCode] = useState("");
   const [bulkImportModal, setBulkImportModal] = useState(false);
   const [bulkImportText, setBulkImportText] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [bulkImporting, setBulkImporting] = useState(false);
 
   const handleCreate = async () => {
@@ -80,6 +82,18 @@ export default function FluxosPage() {
   const handleImportFlow = () => {
     setImportCode("");
     setImportModal(true);
+  };
+
+  const saveRename = async (flow: any) => {
+    if (!renameValue.trim() || renameValue.trim() === flow.name) { setRenamingId(null); return; }
+    await fetch(`/api/flows/${flow.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: renameValue.trim() }),
+    });
+    setFlows(prev => prev.map(f => f.id === flow.id ? { ...f, name: renameValue.trim() } : f));
+    setRenamingId(null);
+    toast.success("Renomeado!");
   };
 
   const doImport = async () => {
@@ -190,10 +204,29 @@ export default function FluxosPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {flows.map((flow) => (
-                <div key={flow.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:shadow-md transition cursor-pointer" onClick={() => setEditing(flow)}>
+                <div key={flow.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:shadow-md transition" onClick={() => setEditing(flow)}>
                   <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{flow.name}</h3>
+                    <div className="flex-1 min-w-0">
+                      {renamingId === flow.id ? (
+                        <input
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveRename(flow); if (e.key === "Escape") setRenamingId(null); }}
+                          onBlur={() => saveRename(flow)}
+                          onClick={(e) => e.stopPropagation()}
+                          autoFocus
+                          className="w-full text-sm font-semibold rounded-lg border border-emerald-400 bg-white dark:bg-gray-800 px-2 py-1 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                        />
+                      ) : (
+                        <h3
+                          className="font-semibold text-gray-900 dark:text-white cursor-text hover:text-emerald-500 transition"
+                          onClick={(e) => { e.stopPropagation(); setRenamingId(flow.id); setRenameValue(flow.name); }}
+                          title="Clique para renomear"
+                        >
+                          {flow.name}
+                        </h3>
+                      )}
                       <p className="text-xs text-gray-400 mt-0.5">{new Date(flow.created_at).toLocaleDateString("pt-BR")}</p>
                     </div>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${flow.status === "active" ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400" : flow.status === "draft" ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400" : "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"}`}>{flow.status === "active" ? "Ativo" : flow.status === "draft" ? "Rascunho" : "Inativo"}</span>
