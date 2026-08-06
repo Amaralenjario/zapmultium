@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { createClient } from "@/lib/supabase/client";
 import FlowBuilder from "@/components/flows/FlowBuilder";
 import toast from "react-hot-toast";
 
@@ -105,9 +106,18 @@ export default function FluxosPage() {
     if (!file) return;
     setZvImporting(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/flows/import-zv", { method: "POST", body: fd });
+      // Upload to Supabase Storage first (bypass Vercel body size limit)
+      const supabase = createClient();
+      const path = `temp-imports/${Date.now()}_${file.name}`;
+      const { error: uploadErr } = await supabase.storage.from("flow-media").upload(path, file);
+      if (uploadErr) { toast.error("Erro no upload"); setZvImporting(false); return; }
+
+      // Send path to API
+      const res = await fetch("/api/flows/import-zv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
       const result = await res.json();
       if (result.ok) {
         toast.success(`${result.imported.length} fluxo(s) importado(s) do ZapVoice!`);
