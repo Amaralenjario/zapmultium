@@ -8,16 +8,21 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
   try {
-    const { path } = await request.json();
-    if (!path) return NextResponse.json({ error: "path não enviado" }, { status: 400 });
+    const { data: base64 } = await request.json();
 
-    // Download file from Supabase Storage
-    const { data: fileData, error: downloadErr } = await supabase.storage.from("flow-media").download(path);
-    if (downloadErr || !fileData) return NextResponse.json({ error: "Arquivo não encontrado" }, { status: 404 });
+    let buffer: ArrayBuffer;
 
-    const buffer = await fileData.arrayBuffer();
+    if (base64) {
+      // Decode base64
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      buffer = bytes.buffer;
+    } else {
+      return NextResponse.json({ error: "Dados não enviados" }, { status: 400 });
+    }
+
     const result = await importZapVoiceJSON(buffer, user.id);
-
     return NextResponse.json(result);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
