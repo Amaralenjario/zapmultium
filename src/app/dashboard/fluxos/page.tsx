@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import FlowBuilder from "@/components/flows/FlowBuilder";
 import toast from "react-hot-toast";
 
@@ -29,6 +29,8 @@ export default function FluxosPage() {
   const [bulkImportText, setBulkImportText] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [zvImporting, setZvImporting] = useState(false);
+  const zvFileRef = useRef<HTMLInputElement>(null);
   const [bulkImporting, setBulkImporting] = useState(false);
 
   const handleCreate = async () => {
@@ -94,6 +96,27 @@ export default function FluxosPage() {
     setFlows(prev => prev.map(f => f.id === flow.id ? { ...f, name: renameValue.trim() } : f));
     setRenamingId(null);
     toast.success("Renomeado!");
+  };
+
+  const handleZvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setZvImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/flows/import-zv", { method: "POST", body: fd });
+      const result = await res.json();
+      if (result.ok) {
+        toast.success(`${result.imported.length} fluxo(s) importado(s) do ZapVoice!`);
+        fetchFlows();
+      }
+      if (result.errors?.length) {
+        result.errors.slice(0, 3).forEach((e: string) => toast.error(e));
+      }
+    } catch { toast.error("Erro ao importar"); }
+    setZvImporting(false);
+    if (zvFileRef.current) zvFileRef.current.value = "";
   };
 
   const doImport = async () => {
@@ -181,7 +204,26 @@ export default function FluxosPage() {
         <div className="flex items-center gap-2">
           <button onClick={() => setBulkImportModal(true)} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-            Importar em massa
+            Importar FLOWV1
+          </button>
+          <input
+            ref={zvFileRef}
+            type="file"
+            accept=".json"
+            onChange={handleZvImport}
+            className="hidden"
+          />
+          <button
+            onClick={() => zvFileRef.current?.click()}
+            disabled={zvImporting}
+            className="rounded-xl border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition flex items-center gap-2 disabled:opacity-50"
+          >
+            {zvImporting ? (
+              <div className="animate-spin w-4 h-4 border-2 border-amber-300 border-t-amber-600 rounded-full" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+            )}
+            {zvImporting ? "Importando..." : "Importar ZapVoice"}
           </button>
           <button onClick={handleImportFlow} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
             Importar
