@@ -8,30 +8,24 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { conversationId, phoneNumberId, to, message, context, type, caption } = body;
-    console.log("[send-message] Request:", { phoneNumberId, to, message: message?.substring(0, 50), type });
 
     if (!phoneNumberId || !to || !message) {
-      console.log("[send-message] Dados incompletos:", { phoneNumberId: !!phoneNumberId, to: !!to, message: !!message });
-      return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
+      return NextResponse.json({ error: "Dados incompletos", detail: { hasPhoneId: !!phoneNumberId, hasTo: !!to, hasMessage: !!message, phoneLen: (phoneNumberId || "").length, toLen: (to || "").length, msgLen: (message || "").length } }, { status: 400 });
     }
 
     // Buscar channel token real da EvoHub
     let channelToken = "";
-    console.log("[send-message] Buscando channel para phone:", phoneNumberId);
 
     // Primeiro tenta pegar via mapeamento de instâncias
     const { getInstanceByPhoneId } = await import("@/lib/instances");
     const instance = getInstanceByPhoneId(phoneNumberId);
-    console.log("[send-message] Instance:", instance?.name, instance?.channelId);
 
     if (instance?.channelId) {
       const realToken = await getRealChannelToken(instance.channelId);
       channelToken = realToken || "";
-      console.log("[send-message] Token obtido:", channelToken ? "sim" : "nao");
     }
 
     if (!channelToken) {
-      console.log("[send-message] Canal não encontrado");
       return NextResponse.json({ error: "Canal não encontrado" }, { status: 404 });
     }
 
