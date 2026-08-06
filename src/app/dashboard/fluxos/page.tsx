@@ -108,7 +108,8 @@ export default function FluxosPage() {
     try {
       // Upload to Supabase Storage first (bypass Vercel body size limit)
       const supabase = createClient();
-      const path = `temp-imports/${Date.now()}_${file.name}`;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `temp-imports/${Date.now()}_${safeName}`;
       const { error: uploadErr } = await supabase.storage.from("flow-media").upload(path, file);
       if (uploadErr) { toast.error("Erro no upload"); setZvImporting(false); return; }
 
