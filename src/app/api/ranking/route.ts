@@ -58,13 +58,30 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 502 });
 
   const rows = (data as any[]) || [];
+
+  // Quando o vendedor NÃO tem foto no banco de vendas, usa a foto do perfil do ZapMultium
+  // (que ele mesmo sobe). Casa por nome normalizado (ex.: "Luiz Felipe" no perfil == vendedor LF).
+  // Foto do Multium tem prioridade porque muitas do perfil são data-URL pesadas (evita payload gigante no poll).
+  const norm = (s: string) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
+  const avatarByName: Record<string, string> = {};
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (svcKey) {
+    try {
+      const admin = createSb(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { autoRefreshToken: false, persistSession: false } });
+      const { data: profs } = await admin.from("profiles").select("full_name, avatar_url").not("avatar_url", "is", null);
+      for (const p of (profs as any[]) || []) {
+        if (p.full_name && p.avatar_url) avatarByName[norm(p.full_name)] = p.avatar_url;
+      }
+    } catch { /* se falhar, usa a foto do Multium */ }
+  }
+
   const list = rows.map((r) => {
     const vendas = Number(r.vendas) || 0;
     const faturamento = Number(r.faturamento) || 0;
     return {
       utm: r.utm,
       name: r.nome || r.utm || "Vendedor",
-      avatar: r.foto_url || null,
+      avatar: r.foto_url || avatarByName[norm(r.nome)] || null,
       expert: r.expert || null,      // operação (Caio / Gustavo / Jessica)
       meta: Number(r.meta) || 0,
       vendas,
