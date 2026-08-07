@@ -148,3 +148,18 @@ html {
     animation: none;
   }
 }
+
+/* ── Rainha do X1 (variação feminina) ── */
+@keyframes queen-aura {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(236,72,153,0.55), 0 0 40px 6px rgba(236,72,153,0.35); }
+  50%      { box-shadow: 0 0 0 12px rgba(236,72,153,0), 0 0 70px 14px rgba(168,85,247,0.45); }
+}
+.queen-aura { animation: queen-aura 2.6s ease-in-out infinite; }
+@keyframes queen-sparkle {
+  0%, 100% { transform: scale(1) rotate(-8deg); opacity: 0.8; }
+  50%      { transform: scale(1.15) rotate(8deg); opacity: 1; }
+}
+.queen-sparkle { animation: queen-sparkle 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .queen-aura, .queen-sparkle { animation: none; }
+}

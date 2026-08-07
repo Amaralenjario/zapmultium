@@ -1,115 +1,144 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSb } from "@supabase/supabase-js";
+import { resolveChannelMaps } from "@/lib/attribution";
 
 export const dynamic = "force-dynamic";
 
-// Janela de datas (só a data, no fuso do Brasil) para o período do ranking.
-function rankingDates(range: string): { start: string; end: string } {
-  const now = new Date();
-  let brToday: string;
-  try {
-    brToday = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  } catch {
-    brToday = new Date(now.getTime() - 3 * 3600000).toISOString().split("T")[0];
-  }
-  if (range === "geral") return { start: "2000-01-01", end: brToday };
-  if (range === "hoje") return { start: brToday, end: brToday };
-  if (range === "ontem") {
-    const d = new Date(brToday + "T12:00:00Z");
-    d.setUTCDate(d.getUTCDate() - 1);
-    const y = d.toISOString().slice(0, 10);
-    return { start: y, end: y };
-  }
-  if (range === "mes") return { start: brToday.slice(0, 8) + "01", end: brToday };
-  const days: Record<string, number> = { "7d": 6, "30d": 29 };
-  const back = days[range] ?? 6;
-  const d = new Date(brToday + "T00:00:00-03:00");
-  d.setUTCDate(d.getUTCDate() - back);
-  return { start: d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }), end: brToday };
+const norm = (s: string) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
+
+function brToday(): string {
+  try { return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+  catch { return new Date(Date.now() - 3 * 3600000).toISOString().split("T")[0]; }
 }
 
-// Ranking de vendas do X1 — dados reais do banco Multium (RPC read-only x1_ranking).
-// Visível a TODOS os autenticados (vendedores e admins).
+// Janela do período selecionado (Hoje/Ontem/7d/Mês/Geral).
+function rankingDates(range: string): { start: string; end: string } {
+  const today = brToday();
+  if (range === "geral") return { start: "2000-01-01", end: today };
+  if (range === "hoje") return { start: today, end: today };
+  if (range === "ontem") {
+    const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 1);
+    const y = d.toISOString().slice(0, 10); return { start: y, end: y };
+  }
+  if (range === "mes") return { start: today.slice(0, 8) + "01", end: today };
+  const days: Record<string, number> = { "7d": 6, "30d": 29 };
+  const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - (days[range] ?? 6));
+  return { start: d.toISOString().slice(0, 10), end: today };
+}
+
+// Mês passado (calendário) — o Lobo/Rainha é sempre o campeão do mês anterior.
+function lastMonthRange(): { start: string; end: string; label: string } {
+  const firstThis = new Date(brToday().slice(0, 8) + "01T12:00:00Z");
+  const end = new Date(firstThis); end.setUTCDate(0); // último dia do mês anterior
+  const endStr = end.toISOString().slice(0, 10);
+  const label = end.toLocaleDateString("pt-BR", { month: "long", timeZone: "UTC" });
+  return { start: endStr.slice(0, 8) + "01", end: endStr, label };
+}
+
+// Ranking de vendas do X1 por operação, com Lobo (homem) / Rainha (mulher) do mês passado.
 export async function GET(request: Request) {
   const serverClient = createServerClient();
   const { data: { user } } = await serverClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-  // Papel do usuário — "Geral" é exclusivo de admin/supervisor.
-  const { data: prof } = await serverClient.from("profiles").select("role").eq("id", user.id).single();
+  const { data: prof } = await serverClient.from("profiles").select("role, full_name").eq("id", user.id).single();
   const isAdmin = prof?.role === "admin" || prof?.role === "supervisor";
+  const myName = prof?.full_name || "";
 
-  const url = process.env.MULTIUM_SUPABASE_URL;
-  const key = process.env.MULTIUM_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    return NextResponse.json({ error: "Fonte de vendas (Multium) não configurada" }, { status: 500 });
-  }
+  const mUrl = process.env.MULTIUM_SUPABASE_URL;
+  const mKey = process.env.MULTIUM_SUPABASE_ANON_KEY;
+  if (!mUrl || !mKey) return NextResponse.json({ error: "Fonte de vendas (Multium) não configurada" }, { status: 500 });
 
   const range = new URL(request.url).searchParams.get("range") || "hoje";
-  // Blindagem server-side: vendedor não vê o total geral, nem batendo direto na API.
   if (range === "geral" && !isAdmin) {
     return NextResponse.json({ error: "Apenas administradores podem ver o ranking geral" }, { status: 403 });
   }
-  const { start, end } = rankingDates(range);
 
-  const multium = createSb(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-  const { data, error } = await multium.rpc("x1_ranking", { p_start: start, p_end: end });
-  if (error) return NextResponse.json({ error: error.message }, { status: 502 });
-
-  const rows = (data as any[]) || [];
-
-  // Quando o vendedor NÃO tem foto no banco de vendas, usa a foto do perfil do ZapMultium
-  // (que ele mesmo sobe). Casa por nome normalizado (ex.: "Luiz Felipe" no perfil == vendedor LF).
-  // Foto do Multium tem prioridade porque muitas do perfil são data-URL pesadas (evita payload gigante no poll).
-  const norm = (s: string) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
-  const avatarByName: Record<string, string> = {};
   const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (svcKey) {
+  const admin = svcKey ? createSb(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
+
+  // Fotos do perfil ZapMultium (fallback quando o vendedor não tem foto no banco de vendas).
+  const avatarByName: Record<string, string> = {};
+  if (admin) {
     try {
-      const admin = createSb(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { autoRefreshToken: false, persistSession: false } });
       const { data: profs } = await admin.from("profiles").select("full_name, avatar_url").not("avatar_url", "is", null);
-      for (const p of (profs as any[]) || []) {
-        if (p.full_name && p.avatar_url) avatarByName[norm(p.full_name)] = p.avatar_url;
-      }
-    } catch { /* se falhar, usa a foto do Multium */ }
+      for (const p of (profs as any[]) || []) if (p.full_name && p.avatar_url) avatarByName[norm(p.full_name)] = p.avatar_url;
+    } catch {}
   }
 
-  const list = rows.map((r) => {
+  const multium = createSb(mUrl, mKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const period = rankingDates(range);
+  const lm = lastMonthRange();
+  const [periodRes, champRes] = await Promise.all([
+    multium.rpc("x1_ranking", { p_start: period.start, p_end: period.end }),
+    multium.rpc("x1_ranking", { p_start: lm.start, p_end: lm.end }),
+  ]);
+  if (periodRes.error) return NextResponse.json({ error: periodRes.error.message }, { status: 502 });
+
+  const decorate = (r: any) => {
     const vendas = Number(r.vendas) || 0;
     const faturamento = Number(r.faturamento) || 0;
     return {
-      utm: r.utm,
-      name: r.nome || r.utm || "Vendedor",
+      utm: r.utm, name: r.nome || r.utm || "Vendedor",
       avatar: r.foto_url || avatarByName[norm(r.nome)] || null,
-      expert: r.expert || null,      // operação (Caio / Gustavo / Jessica)
-      meta: Number(r.meta) || 0,
-      vendas,
-      faturamento,
-      // Pontuação da gamificação (venda pesa muito + fração do faturamento).
-      points: vendas * 100 + Math.round(faturamento / 100),
+      expert: r.expert || "Sem operação", genero: (r.genero || "").toUpperCase(),
+      vendas, faturamento,
+    };
+  };
+  const periodRows = ((periodRes.data as any[]) || []).map(decorate);
+  const champRows = ((champRes.data as any[]) || []).map(decorate);
+
+  // Operações (experts) presentes.
+  const experts = Array.from(new Set(periodRows.map((r) => r.expert))).filter(Boolean);
+
+  // Escopo: vendedor vê SÓ a operação dele; admin vê todas.
+  let visibleExperts = experts;
+  if (!isAdmin) {
+    let myExpert: string | null = null;
+    if (admin) {
+      try {
+        const maps = await resolveChannelMaps(admin);
+        const phones = maps.sellerToPhones[user.id] || [];
+        for (const ph of phones) {
+          const opName = maps.phoneToOp[ph]?.name;
+          if (!opName) continue;
+          const e = experts.find((E) => norm(opName).includes(norm(E)) || norm(E).includes(norm(opName)));
+          if (e) { myExpert = e; break; }
+        }
+      } catch {}
+    }
+    // Fallback: casa o nome do vendedor com um vendedor do Multium → expert dele.
+    if (!myExpert) {
+      const hit = periodRows.find((r) => norm(r.name) === norm(myName));
+      if (hit) myExpert = hit.expert;
+    }
+    visibleExperts = myExpert ? [myExpert] : experts; // sem match → mostra tudo (raro)
+  }
+
+  const operations = visibleExperts.map((expert) => {
+    const rows = periodRows.filter((r) => r.expert === expert)
+      .sort((a, b) => b.vendas - a.vendas || b.faturamento - a.faturamento);
+    const champCandidates = champRows.filter((r) => r.expert === expert && r.vendas > 0)
+      .sort((a, b) => b.vendas - a.vendas || b.faturamento - a.faturamento);
+    const champ = champCandidates[0] || null;
+    const ranking = rows.map((r, i) => ({ ...r, rank: i + 1, isChampion: !!champ && r.utm === champ.utm }));
+    return {
+      key: expert,
+      // Homem = Lobo, Mulher = Rainha. Sem gênero definido → Lobo (padrão da marca).
+      title: champ && champ.genero === "F" ? "rainha" : "lobo",
+      champion: champ ? { name: champ.name, avatar: champ.avatar, vendas: champ.vendas, faturamento: champ.faturamento, genero: champ.genero } : null,
+      ranking,
+      totalVendas: rows.reduce((a, b) => a + b.vendas, 0),
+      totalFaturamento: rows.reduce((a, b) => a + b.faturamento, 0),
     };
   });
 
-  // Ordena por vendas, desempata por faturamento.
-  list.sort((a, b) => b.vendas - a.vendas || b.faturamento - a.faturamento);
-
-  const ranking = list.map((r, i) => ({ ...r, rank: i + 1, isWolf: i === 0 && r.vendas > 0 }));
-  const totalVendas = ranking.reduce((a, b) => a + b.vendas, 0);
-  const totalFaturamento = ranking.reduce((a, b) => a + b.faturamento, 0);
-  const leader = ranking[0];
-  const wolf = leader && leader.vendas > 0
-    ? { utm: leader.utm, name: leader.name, avatar: leader.avatar, expert: leader.expert, vendas: leader.vendas, faturamento: leader.faturamento }
-    : null;
-
   return NextResponse.json({
-    range,
     isAdmin,
-    period: { start, end },
+    range,
+    monthLabel: lm.label,
     updatedAt: new Date().toISOString(),
-    wolf,
-    totalVendas,
-    totalFaturamento,
-    ranking,
+    operations,
   });
 }

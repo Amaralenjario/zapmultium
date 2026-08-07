@@ -44,7 +44,7 @@ $$;
 -- Venda = linha com Evento purchase_approved (case-insensitive). Refund/chargeback não contam.
 create or replace function x1_ranking(p_start date, p_end date)
 returns table(
-  utm text, nome text, foto_url text, expert text, meta numeric,
+  utm text, nome text, foto_url text, expert text, genero text, meta numeric,
   vendas bigint, faturamento numeric
 )
 language sql stable security definer set search_path = public as $$
@@ -61,7 +61,7 @@ language sql stable security definer set search_path = public as $$
     where dt is not null and dt >= p_start and dt <= p_end
     group by utm
   )
-  select vd.utm, vd.nome, vd.foto_url, vd.expert, vd.meta,
+  select vd.utm, vd.nome, vd.foto_url, vd.expert, vd.genero, vd.meta,
          coalesce(a.vendas,0)::bigint, coalesce(a.faturamento,0)::numeric
   from vendedores vd
   left join agg a on a.utm = vd.utm

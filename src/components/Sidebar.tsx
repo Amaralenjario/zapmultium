@@ -7,12 +7,13 @@ import { LayoutDashboard, MessagesSquare, Contact, Workflow, Smartphone, Buildin
 import ThemeToggle from "@/components/ThemeToggle";
 import { createClient } from "@/lib/supabase/client";
 
-const menuItems: { label: string; href: string; icon: LucideIcon; section: string; adminOnly?: boolean }[] = [
+const menuItems: { label: string; href: string; icon: LucideIcon; section: string; adminOnly?: boolean; beta?: boolean }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, section: "main" },
   { label: "Chat ao vivo", href: "/dashboard/chat-ao-vivo", icon: MessagesSquare, section: "main" },
   { label: "CRM Leads", href: "/dashboard/crm-leads", icon: Contact, section: "main" },
   { label: "Fluxos", href: "/dashboard/fluxos", icon: Workflow, section: "main" },
   { label: "Ranking", href: "/dashboard/ranking", icon: Swords, section: "main" },
+  { label: "Meu WhatsApp", href: "/dashboard/meu-numero", icon: Smartphone, section: "main" },
   { label: "Meu perfil", href: "/dashboard/perfil", icon: User, section: "main" },
   { label: "WhatsApps", href: "/dashboard/whatsapps", icon: Smartphone, section: "admin", adminOnly: true },
   { label: "Operações", href: "/dashboard/operacoes", icon: Building2, section: "admin", adminOnly: true },
@@ -36,6 +37,9 @@ function MenuItem({ item, isActive, onClose }: { item: typeof menuItems[number];
       )}
       <Icon className="w-[1.15rem] h-[1.15rem] flex-shrink-0" strokeWidth={isActive ? 2.1 : 1.9} />
       {item.label}
+      {item.beta && (
+        <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wider text-white bg-gradient-to-r from-accent to-violet-500 rounded-full px-1.5 py-0.5">Beta</span>
+      )}
     </Link>
   );
 }
