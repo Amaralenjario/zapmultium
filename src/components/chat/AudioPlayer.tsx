@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 
 const SPEEDS = [1, 1.5, 2];
 
-export default function AudioPlayer({ src }: { src: string }) {
+export default function AudioPlayer({ src, onAccent }: { src: string; onAccent?: boolean }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -79,11 +79,18 @@ export default function AudioPlayer({ src }: { src: string }) {
     a.click();
   };
 
+  const fillColor = onAccent ? "#ffffff" : "var(--accent)";
+  const idleColor = onAccent ? "rgba(255,255,255,0.35)" : "var(--track)";
+  const playBtn = onAccent ? "bg-white/20 text-white hover:bg-white/30" : "bg-accent text-white hover:bg-accent2";
+  const timeText = onAccent ? "text-white/70" : "text-tx3";
+  const chipBtn = onAccent ? "bg-white/15 text-white hover:bg-white/25" : "bg-surface2 text-tx2 hover:bg-hover";
+  const dlBtn = onAccent ? "text-white/70 hover:text-white hover:bg-white/15" : "text-tx3 hover:text-tx hover:bg-hover";
+
   return (
     <div className="flex items-center gap-2.5 px-3 py-2.5 min-w-[240px] max-w-[300px]">
       <audio ref={audioRef} src={src} preload="auto" className="hidden" />
 
-      <button onClick={toggle} className="w-10 h-10 rounded-full bg-[#075e54] text-white flex items-center justify-center hover:bg-[#064e46] transition flex-shrink-0 shadow-md">
+      <button onClick={toggle} className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 shadow-md ${playBtn}`}>
         {playing ? (
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
         ) : (
@@ -99,27 +106,26 @@ export default function AudioPlayer({ src }: { src: string }) {
             return (
               <div key={i} className="flex-1 rounded-full transition-all duration-200" style={{
                 height: `${h}%`,
-                backgroundColor: active ? "#075e54" : "#d1d5db",
-                opacity: active ? 1 : 0.5,
+                backgroundColor: active ? fillColor : idleColor,
               }} />
             );
           })}
         </div>
 
-        <div className="relative h-1.5 bg-gray-300 dark:bg-gray-600 rounded-full cursor-pointer overflow-hidden group" onClick={seek}>
-          <div className="absolute inset-y-0 left-0 bg-[#075e54] rounded-full transition-all duration-100" style={{ width: `${progress}%` }} />
-          <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-[#075e54] rounded-full shadow opacity-0 group-hover:opacity-100 transition" style={{ left: `calc(${progress}% - 6px)` }} />
+        <div className="relative h-1.5 rounded-full cursor-pointer overflow-hidden group" style={{ backgroundColor: idleColor }} onClick={seek}>
+          <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-100" style={{ width: `${progress}%`, backgroundColor: fillColor }} />
+          <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full shadow opacity-0 group-hover:opacity-100 transition" style={{ left: `calc(${progress}% - 6px)`, backgroundColor: fillColor }} />
         </div>
 
         <div className="flex items-center justify-between mt-1.5">
-          <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums w-10">{formatTime(currentTime)}</span>
-          <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums">{loaded ? formatTime(duration) : "--:--"}</span>
+          <span className={`text-[11px] tabular-nums w-10 ${timeText}`}>{formatTime(currentTime)}</span>
+          <span className={`text-[11px] tabular-nums ${timeText}`}>{loaded ? formatTime(duration) : "--:--"}</span>
         </div>
       </div>
 
-      <button onClick={nextSpeed} className="w-8 h-6 rounded-md bg-gray-200 dark:bg-gray-700 text-[10px] font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition flex-shrink-0 flex items-center justify-center" title={`Velocidade ${speed}x`}>{speed}x</button>
+      <button onClick={nextSpeed} className={`w-8 h-6 rounded-md text-[10px] font-bold transition flex-shrink-0 flex items-center justify-center ${chipBtn}`} title={`Velocidade ${speed}x`}>{speed}x</button>
 
-      <button onClick={handleDownload} className="w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center transition flex-shrink-0" title="Baixar áudio">
+      <button onClick={handleDownload} className={`w-8 h-8 rounded-full flex items-center justify-center transition flex-shrink-0 ${dlBtn}`} title="Baixar áudio">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
       </button>
     </div>

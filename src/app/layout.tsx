@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-jakarta",
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 export const metadata: Metadata = {
   title: "ZapMultium - Atendimento WhatsApp",
@@ -18,7 +22,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className="dark">
-      <body className={`min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-white antialiased ${inter.variable} font-sans`}>
+      <body className={`min-h-screen bg-bg text-tx antialiased ${jakarta.variable} font-sans`}>
         <ThemeProvider>
           <Toaster position="top-right" />
           {children}

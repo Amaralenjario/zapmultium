@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { Plus, Trash2, Copy, ExternalLink, MessageCircle, AlertTriangle, Repeat2, FolderOpen } from "lucide-react";
 import CreateChannelModal from "@/components/whatsapp/CreateChannelModal";
 import OperationPickerModal from "@/components/whatsapp/OperationPickerModal";
 import toast from "react-hot-toast";
@@ -22,20 +23,17 @@ const KNOWN_PHONES: Record<string, string> = {
   "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
 };
 
-const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
-  active: { label: "Conectado", dot: "bg-emerald-400", bg: "bg-emerald-500/10", text: "text-emerald-400" },
-  inactive: { label: "Pendente", dot: "bg-amber-400", bg: "bg-amber-500/10", text: "text-amber-400" },
-  connecting: { label: "Conectando", dot: "bg-sky-400 animate-pulse", bg: "bg-sky-500/10", text: "text-sky-400" },
-  banned: { label: "Banido", dot: "bg-red-400", bg: "bg-red-500/10", text: "text-red-400" },
-  disconnected: { label: "Desconectado", dot: "bg-gray-400", bg: "bg-gray-500/10", text: "text-gray-400" },
+const STATUS_CONFIG: Record<string, { label: string; dot: string; cls: string }> = {
+  active: { label: "Conectado", dot: "bg-success", cls: "bg-success-soft text-success" },
+  inactive: { label: "Pendente", dot: "bg-amber-500", cls: "bg-amber-500/12 text-amber-600 dark:text-amber-400" },
+  connecting: { label: "Conectando", dot: "bg-accent animate-pulse", cls: "bg-accentsoft text-accent" },
+  banned: { label: "Banido", dot: "bg-red-500", cls: "bg-red-500/12 text-red-600 dark:text-red-400" },
+  disconnected: { label: "Desconectado", dot: "bg-tx3", cls: "bg-surface2 text-tx2" },
 };
+function getStatus(s: string) { return STATUS_CONFIG[s] || { label: s, dot: "bg-tx3", cls: "bg-surface2 text-tx2" }; }
+function daysAgo(date: string) { return Math.max(1, Math.floor((Date.now() - new Date(date).getTime()) / 86400000)); }
 
-function getStatus(s: string) { return STATUS_CONFIG[s] || { label: s, dot: "bg-gray-400", bg: "bg-gray-500/10", text: "text-gray-400" }; }
-
-function daysAgo(date: string) {
-  const diff = Date.now() - new Date(date).getTime();
-  return Math.max(1, Math.floor(diff / (1000 * 60 * 60 * 24)));
-}
+const NO_OP = "__none__";
 
 export default function WhatsappPageClient({
   initialChannels,
@@ -45,6 +43,7 @@ export default function WhatsappPageClient({
   phoneMap: Record<string, { phoneId: string; opName: string; opColor: string; opId: string }>;
 }) {
   const [showModal, setShowModal] = useState(false);
+  const [createForOp, setCreateForOp] = useState<{ id: string; name: string } | null>(null);
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [phoneMap, setPhoneMap] = useState(initialPhoneMap);
   const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
@@ -61,7 +60,7 @@ export default function WhatsappPageClient({
     }
   }, []);
 
-  useEffect(() => { fetchChannels(); fetch("/api/operations").then(r => r.json()).then(setOperations); }, []);
+  useEffect(() => { fetchChannels(); fetch("/api/operations").then(r => r.json()).then(setOperations); }, [fetchChannels]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -77,8 +76,7 @@ export default function WhatsappPageClient({
   const changeOperation = async (channelId: string, newOpId: string, channelName: string) => {
     const phoneId = phoneMap[channelId]?.phoneId || KNOWN_PHONES[channelId] || "";
     const res = await fetch(`/api/operations/${newOpId}/channels`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ evohub_channel_id: channelId, evohub_channel_name: channelName, phone_number_id: phoneId || null }),
     });
     if (!res.ok) { const d = await res.json(); toast.error(d.error || "Erro"); return; }
@@ -86,110 +84,166 @@ export default function WhatsappPageClient({
     fetchChannels();
   };
 
+  // Vincula um canal (recém-criado) a uma operação — telefone entra depois, ao conectar
+  const assignChannelToOp = async (channelId: string, channelName: string, opId: string) => {
+    await fetch(`/api/operations/${opId}/channels`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ evohub_channel_id: channelId, evohub_channel_name: channelName, phone_number_id: null }),
+    });
+  };
+
+  const openConnect = (op?: { id: string; name: string }) => { setCreateForOp(op || null); setShowModal(true); };
+  const handleChannelCreated = async (ch: { id: string; name: string }) => {
+    if (createForOp) { await assignChannelToOp(ch.id, ch.name, createForOp.id); }
+    fetchChannels();
+    setShowModal(false);
+    setCreateForOp(null);
+  };
+
+  const connected = channels.filter(c => c.status === "active").length;
+
+  // Agrupa por operação — TODAS as operações viram pasta (mesmo vazias)
+  const groups = useMemo(() => {
+    const map: Record<string, { key: string; name: string; color: string; opId: string | null; channels: Channel[] }> = {};
+    // 1) cria uma pasta pra cada operação existente
+    for (const op of operations) {
+      map[op.id] = { key: op.id, name: op.name, color: op.color, opId: op.id, channels: [] };
+    }
+    // 2) distribui os canais
+    for (const ch of channels) {
+      const m = phoneMap[ch.id];
+      const key = m?.opId && map[m.opId] ? m.opId : (m?.opId || NO_OP);
+      if (!map[key]) map[key] = { key, name: m?.opName || "Sem operação", color: m?.opColor || "var(--tx3)", opId: key === NO_OP ? null : key, channels: [] };
+      map[key].channels.push(ch);
+    }
+    return Object.values(map).sort((a, b) => {
+      if (a.key === NO_OP) return 1;
+      if (b.key === NO_OP) return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [channels, phoneMap, operations]);
+
+  const renderCard = (ch: Channel, opColor: string) => {
+    const st = getStatus(ch.status);
+    const isActive = ch.status === "active";
+    const link = `https://app.evohub.evolutionfoundation.com.br/connect/${ch.token}`;
+    const phone = (ch as any).displayPhone;
+    const days = daysAgo(ch.created_at);
+
+    return (
+      <div key={ch.id} className="group rounded-card border border-bd bg-surface p-4 hover:shadow-pop transition-all" style={{ borderLeftWidth: "3px", borderLeftColor: opColor }}>
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`w-9 h-9 rounded-control flex items-center justify-center flex-shrink-0 ${isActive ? "bg-success-soft text-success" : "bg-surface2 text-tx3"}`}>
+              <MessageCircle className="w-[1.15rem] h-[1.15rem]" strokeWidth={2} />
+            </div>
+            <p className="font-bold text-sm text-tx truncate">{ch.name}</p>
+          </div>
+          <span className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 flex-shrink-0 ${st.cls}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}
+          </span>
+        </div>
+
+        <div className="space-y-2 text-sm">
+          {phone && (
+            <div className="flex items-center justify-between">
+              <span className="text-tx3 text-xs">Telefone</span>
+              <span className="font-bold text-tx text-xs tabular-nums">{phone}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-tx3 text-xs">Criado</span>
+            <span className="text-xs text-tx2">{new Date(ch.created_at).toLocaleDateString("pt-BR")}<span className="text-tx3 ml-1">· {days} dia{days > 1 ? "s" : ""}</span></span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 mt-3 pt-3 border-t border-line">
+          {!isActive ? (
+            <>
+              <a href={link} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-tx2 hover:text-tx py-1.5 rounded-lg hover:bg-hover transition"><ExternalLink className="w-3.5 h-3.5" strokeWidth={2} /> Abrir</a>
+              <button onClick={() => { navigator.clipboard.writeText(link); toast.success("Link copiado!"); }} className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-accent py-1.5 rounded-lg hover:bg-accentsoft transition"><Copy className="w-3.5 h-3.5" strokeWidth={2} /> Copiar</button>
+            </>
+          ) : (
+            <span className="flex-1 text-center text-[11px] text-tx3 py-1.5">{days} dia{days > 1 ? "s" : ""} ativo</span>
+          )}
+          <button onClick={() => setPickerFor(ch)} className="p-1.5 text-tx3 hover:text-accent hover:bg-accentsoft rounded-lg transition flex-shrink-0" title="Trocar operação"><Repeat2 className="w-4 h-4" strokeWidth={2} /></button>
+          <button onClick={() => setDeleteTarget(ch)} className="p-1.5 text-tx3 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition flex-shrink-0" title="Excluir"><Trash2 className="w-4 h-4" strokeWidth={2} /></button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">WhatsApps</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">{channels.length} instâncias</p>
+          <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-tx">WhatsApps</h1>
+          <p className="text-tx2 text-sm mt-0.5">
+            {channels.length} {channels.length === 1 ? "instância" : "instâncias"}
+            {connected > 0 && <span className="text-success font-semibold"> · {connected} conectada{connected > 1 ? "s" : ""}</span>}
+          </p>
         </div>
-        <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          Conectar WhatsApp
+        <button onClick={() => openConnect()} className="inline-flex items-center gap-2 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition">
+          <Plus className="w-4 h-4" strokeWidth={2.2} /> Conectar WhatsApp
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {channels.map((ch) => {
-          const st = getStatus(ch.status);
-          const isActive = ch.status === "active";
-          const link = `https://app.evohub.evolutionfoundation.com.br/connect/${ch.token}`;
-          const m = phoneMap[ch.id];
-          const phone = (ch as any).displayPhone;
-          const opName = m?.opName;
-          const days = daysAgo(ch.created_at);
-
-          return (
-            <div key={ch.id} className="group rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-md transition-all">
-              {/* Top: nome + status */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-gray-100 dark:bg-gray-800 text-gray-400"}`}>
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                  </div>
-                  <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">{ch.name}</p>
-                </div>
-                <span className={`inline-flex items-center gap-1 text-[10px] font-medium rounded-full px-2 py-0.5 flex-shrink-0 ml-2 ${st.bg} ${st.text}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                  {st.label}
+      {groups.length === 0 ? (
+        <div className="text-center py-20 text-tx3 flex flex-col items-center">
+          <div className="w-16 h-16 rounded-2xl bg-accentsoft flex items-center justify-center mb-4"><MessageCircle className="w-8 h-8 text-accent" strokeWidth={1.6} /></div>
+          <p className="text-lg font-bold text-tx2">Nenhuma operação ou WhatsApp ainda</p>
+          <p className="text-sm mt-1">Crie uma operação ou conecte um número para começar</p>
+        </div>
+      ) : (
+        <div className="space-y-7">
+          {groups.map((g) => (
+            <section key={g.key}>
+              {/* Cabeçalho da pasta (operação) */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-8 h-8 rounded-control flex items-center justify-center flex-shrink-0" style={{ backgroundColor: g.color === "var(--tx3)" ? "var(--surface2)" : g.color + "1f" }}>
+                  <FolderOpen className="w-4 h-4" strokeWidth={2} style={{ color: g.color }} />
                 </span>
-              </div>
-
-              {/* Info */}
-              <div className="space-y-2 text-sm">
-                {phone && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 text-xs">Telefone</span>
-                    <span className="font-semibold text-gray-900 dark:text-white text-xs">{phone}</span>
-                  </div>
+                <h2 className="text-sm font-extrabold tracking-[-0.01em]" style={{ color: g.key === NO_OP ? "var(--tx2)" : g.color }}>{g.name}</h2>
+                <span className="text-[11px] font-bold text-tx2 bg-surface2 rounded-full px-2 py-0.5">{g.channels.length}</span>
+                <div className="flex-1 h-px" style={{ background: g.color === "var(--tx3)" ? "var(--line)" : g.color + "26" }} />
+                {g.opId && (
+                  <button onClick={() => openConnect({ id: g.opId!, name: g.name })} className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full transition flex-shrink-0" style={{ color: g.color, backgroundColor: g.color + "1a" }} title={`Conectar WhatsApp em ${g.name}`}>
+                    <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Conectar
+                  </button>
                 )}
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-xs">Operação</span>
-                  <div className="flex items-center gap-1.5">
-                    {opName ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: m.opColor }}>
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.opColor }} />
-                        {opName}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
-                    )}
-                    <button onClick={() => setPickerFor(ch)} className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline ml-1">Trocar</button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-xs">Criado</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {new Date(ch.created_at).toLocaleDateString("pt-BR")}
-                    <span className="text-gray-400 ml-1">· {days} dia{days > 1 ? "s" : ""}</span>
-                  </span>
-                </div>
               </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-50 dark:border-gray-800/50">
-                {!isActive ? (
-                  <>
-                    <a href={link} target="_blank" rel="noopener noreferrer" className="flex-1 text-center text-[11px] font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800/50 transition">Abrir link</a>
-                    <button onClick={() => { navigator.clipboard.writeText(link); toast.success("Copiado!"); }} className="flex-1 text-center text-[11px] font-medium text-emerald-600 dark:text-emerald-400 py-1 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition">Copiar link</button>
-                  </>
-                ) : (
-                  <span className="flex-1 text-center text-[11px] text-gray-400 py-1">{days} dia{days > 1 ? "s" : ""} ativo</span>
-                )}
-                <button onClick={() => setDeleteTarget(ch)} className="px-2 py-1 text-[11px] text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition flex-shrink-0" title="Excluir">Excluir</button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              {g.channels.length === 0 ? (
+                <button onClick={() => g.opId && openConnect({ id: g.opId, name: g.name })} disabled={!g.opId} className="w-full rounded-card border border-dashed border-bd hover:border-accent hover:bg-hover disabled:hover:bg-transparent disabled:cursor-default transition p-6 flex flex-col items-center gap-1 text-tx3">
+                  <Plus className="w-5 h-5" strokeWidth={2} />
+                  <span className="text-xs font-semibold">{g.opId ? `Conectar um WhatsApp em ${g.name}` : "Nenhum número"}</span>
+                </button>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {g.channels.map((ch) => renderCard(ch, g.color))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
 
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div className="w-full max-w-sm rounded-card border border-bd bg-surface shadow-pop p-6" onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-4">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-100 dark:bg-red-600/20 flex items-center justify-center"><svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg></div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Excluir {deleteTarget.name}?</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Esta ação é permanente e não pode ser desfeita.</p>
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-500/12 flex items-center justify-center"><AlertTriangle className="w-6 h-6 text-red-500" strokeWidth={2} /></div>
+              <h3 className="text-lg font-bold text-tx">Excluir {deleteTarget.name}?</h3>
+              <p className="text-sm text-tx2 mt-1">Esta ação é permanente e não pode ser desfeita.</p>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteTarget(null)} disabled={deleting} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
-              <button onClick={handleDelete} disabled={deleting} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50">{deleting ? "Excluindo..." : "Sim, excluir"}</button>
+              <button onClick={() => setDeleteTarget(null)} disabled={deleting} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+              <button onClick={handleDelete} disabled={deleting} className="flex-1 rounded-control bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-500 disabled:opacity-50 transition">{deleting ? "Excluindo..." : "Sim, excluir"}</button>
             </div>
           </div>
         </div>
       )}
 
-      {showModal && <CreateChannelModal onClose={() => setShowModal(false)} onCreated={() => { fetchChannels(); setShowModal(false); }} />}
+      {showModal && <CreateChannelModal operationName={createForOp?.name} onClose={() => { setShowModal(false); setCreateForOp(null); }} onCreated={handleChannelCreated} />}
       {pickerFor && (
         <OperationPickerModal
           operations={operations.filter(o => o.id !== phoneMap[pickerFor.id]?.opId)}

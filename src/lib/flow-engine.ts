@@ -41,30 +41,53 @@ async function ensureConversationTag(userId: string, name: string): Promise<stri
   return data?.id || null;
 }
 
-async function applyTag(execution: any, action: "add" | "remove"): Promise<{ tagId: string; name: string } | null> {
-  const currentNode = execution.current_node;
-  const name = (currentNode?.config?.tagName || currentNode?.config?.name || "").trim();
-  if (!name) throw new Error("Etiqueta sem nome");
+// Aplica/remove uma ETIQUETA DO CRM (crm_tags) no lead do cliente — aparece no CRM e no chat.
+async function applyTag(execution: any, node: any, action: "add" | "remove"): Promise<{ tagId: string; name: string } | null> {
+  const cfg = node?.config || {};
+  const name = (cfg.tagName || cfg.name || "").trim();
+  const cfgTagId = cfg.tagId || null;
+  if (!name && !cfgTagId) throw new Error("Etiqueta sem nome");
   const sb = getServiceClient();
   const { data: flowRow } = await sb.from("flows").select("user_id").eq("id", execution.flow_id).single();
   const userId = flowRow?.user_id;
   if (!userId) throw new Error("Não foi possível identificar o dono do fluxo");
-  const tagId = await ensureConversationTag(userId, name);
-  if (!tagId) throw new Error(`Falha ao resolver etiqueta "${name}"`);
-  if (action === "add") {
-    const { error } = await sb
-      .from("conversation_tag_assignments")
-      .upsert({ conversation_id: execution.conversation_id, tag_id: tagId }, { onConflict: "conversation_id,tag_id" });
-    if (error) throw new Error(`add_tag: ${error.message}`);
-  } else {
-    const { error } = await sb
-      .from("conversation_tag_assignments")
-      .delete()
-      .eq("conversation_id", execution.conversation_id)
-      .eq("tag_id", tagId);
-    if (error) throw new Error(`remove_tag: ${error.message}`);
+
+  // Resolve a etiqueta: por id, senão por nome (cria se não existir)
+  let tag: any = null;
+  if (cfgTagId) {
+    const { data } = await sb.from("crm_tags").select("id, name, column_key").eq("id", cfgTagId).maybeSingle();
+    tag = data;
   }
-  return { tagId, name };
+  if (!tag && name) {
+    const { data } = await sb.from("crm_tags").select("id, name, column_key").eq("user_id", userId).eq("name", name).maybeSingle();
+    tag = data;
+    if (!tag) {
+      const { data: created } = await sb.from("crm_tags").insert({ user_id: userId, name, color: cfg.color || "#6366f1", column_key: cfg.columnKey || null }).select("id, name, column_key").single();
+      tag = created;
+    }
+  }
+  if (!tag) throw new Error(`Etiqueta "${name}" não encontrada`);
+
+  // Find-or-create o lead pelo telefone do cliente
+  const phone = execution.customer_phone;
+  let leadId: string | null = null;
+  const { data: existingLead } = await sb.from("leads").select("id").eq("phone", phone).maybeSingle();
+  if (existingLead) leadId = existingLead.id;
+  else {
+    const { data: conv }: any = await sb.from("conversations").select("customer_id, customer:customer_id(name)").eq("id", execution.conversation_id).maybeSingle();
+    const cust = Array.isArray(conv?.customer) ? conv.customer[0] : conv?.customer;
+    const { data: created } = await sb.from("leads").insert({ name: cust?.name || phone, phone, status: tag.column_key || "new", source: "whatsapp", customer_id: conv?.customer_id || null, conversation_id: execution.conversation_id }).select("id").single();
+    leadId = created?.id || null;
+  }
+  if (!leadId) throw new Error("Não foi possível resolver o lead");
+
+  if (action === "add") {
+    await sb.from("lead_tags").upsert({ lead_id: leadId, tag_id: tag.id });
+    if (tag.column_key) await sb.from("leads").update({ status: tag.column_key }).eq("id", leadId);
+  } else {
+    await sb.from("lead_tags").delete().eq("lead_id", leadId).eq("tag_id", tag.id);
+  }
+  return { tagId: tag.id, name: tag.name || name };
 }
 
 async function sendWhatsAppMessage(execution: any, text: string) {
@@ -291,6 +314,15 @@ export async function processFlowStep(executionId: string): Promise<{
           logResult.actual = actualValue; logResult.matches = matches;
           nextNodeId = findNextNodeByHandle(currentNode.id, edges, matches ? "true" : "false");
           if (!nextNodeId) nextNodeId = findNextNode(currentNode.id, edges);
+          break;
+        }
+
+        case "add_tag":
+        case "remove_tag": {
+          const res = await applyTag(execution, currentNode, currentNode.type === "add_tag" ? "add" : "remove");
+          logResult.tag = res?.name;
+          logResult.action = currentNode.type;
+          nextNodeId = findNextNode(currentNode.id, edges);
           break;
         }
 

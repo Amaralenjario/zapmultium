@@ -41,6 +41,37 @@ export async function POST(request: Request) {
   return NextResponse.json(data, { status: 201 });
 }
 
+export async function PUT(request: Request) {
+  const serverClient = createServerClient();
+  const { data: { user } } = await serverClient.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+
+  const { id, name, color, column_key } = await request.json();
+  if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+
+  const updates: any = {};
+  if (name !== undefined) updates.name = name;
+  if (color !== undefined) updates.color = color;
+  if (column_key !== undefined) updates.column_key = column_key; // pode ser null (sem coluna)
+
+  const adminClient = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  const { data, error } = await adminClient
+    .from("crm_tags")
+    .update(updates)
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("*")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json(data);
+}
+
 export async function DELETE(request: Request) {
   const serverClient = createServerClient();
   const { data: { user } } = await serverClient.auth.getUser();

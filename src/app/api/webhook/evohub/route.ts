@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { friendlyWaError } from "@/lib/wa-errors";
 
 let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
 
@@ -64,6 +65,13 @@ async function processMessages(payload: any) {
       const contact = value.contacts?.[0];
       const meta = value.metadata || {};
       const phoneNumberId = meta.phone_number_id || entry.id;
+
+      // Status de entrega/leitura das mensagens que ENVIAMOS (read receipts, falhas)
+      const statuses = value.statuses || [];
+      if (statuses.length > 0) {
+        await processStatuses(supabase, statuses);
+      }
+
       if (messages.length === 0) continue;
       const from = messages[0]?.from || contact?.wa_id;
       if (!from) continue;
@@ -97,11 +105,34 @@ async function processMessages(payload: any) {
           updated_at: new Date().toISOString(),
         } as any).eq("id", convId);
       } else {
-        const { data: newConv }: any = await supabase
+        const { data: newConv, error: insErr }: any = await supabase
           .from("conversations")
           .insert({ customer_id: cust.id, status: "active", source: "whatsapp", unread_count: 1, metadata: { phone_number_id: phoneNumberId } } as any)
           .select("id").single();
-        convId = newConv!.id;
+        if (insErr || !newConv) {
+          // Corrida/duplicidade: re-busca a conversa ativa desse cliente NESTE número.
+          const { data: retry }: any = await supabase
+            .from("conversations")
+            .select("id, unread_count")
+            .eq("customer_id", cust.id)
+            .eq("status", "active")
+            .filter("metadata->>phone_number_id", "eq", phoneNumberId)
+            .limit(1);
+          if (retry && retry.length > 0) {
+            convId = retry[0].id;
+            unread = (retry[0].unread_count || 0) + 1;
+            await supabase.from("conversations").update({
+              last_message_at: new Date().toISOString(),
+              unread_count: unread,
+              updated_at: new Date().toISOString(),
+            } as any).eq("id", convId);
+          } else {
+            console.error("[EvoHub] Falha ao criar conversa:", insErr?.message, "cliente:", cust.id, "número:", phoneNumberId);
+            continue;
+          }
+        } else {
+          convId = newConv.id;
+        }
       }
 
       for (const msg of messages) {
@@ -166,7 +197,45 @@ async function processMessages(payload: any) {
       await supabase.from("conversations").update({
         last_message: lastContent,
         last_message_at: new Date().toISOString(),
+        last_message_sender: "customer",
       } as any).eq("id", convId);
+    }
+  }
+}
+
+// Processa status de entrega/leitura das mensagens que ENVIAMOS.
+// status "read" = cliente visualizou → grava read_at e (se for a última do atendente) marca o preview.
+// status "failed" = não entregue → grava o motivo pra aparecer em vermelho.
+async function processStatuses(supabase: any, statuses: any[]) {
+  for (const st of statuses) {
+    if (!st?.id) continue;
+    const { data: msgs } = await supabase
+      .from("messages")
+      .select("id, conversation_id, read_at, metadata, sender_type")
+      .filter("metadata->>wa_message_id", "eq", st.id)
+      .limit(1);
+    const m = msgs?.[0];
+    if (!m) continue;
+
+    if (st.status === "read") {
+      if (!m.read_at) {
+        const ts = st.timestamp ? new Date(parseInt(st.timestamp) * 1000).toISOString() : new Date().toISOString();
+        await supabase.from("messages").update({ read_at: ts } as any).eq("id", m.id);
+      }
+      // Se é a última mensagem do atendente na conversa, marca o preview como "lido"
+      const { data: last } = await supabase
+        .from("messages")
+        .select("id")
+        .eq("conversation_id", m.conversation_id)
+        .eq("sender_type", "agent")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (last?.[0]?.id === m.id) {
+        await supabase.from("conversations").update({ last_message_read: true } as any).eq("id", m.conversation_id);
+      }
+    } else if (st.status === "failed") {
+      const reason = friendlyWaError({ error: st.errors?.[0] || st });
+      await supabase.from("messages").update({ metadata: { ...(m.metadata || {}), error: reason, failed: true } } as any).eq("id", m.id);
     }
   }
 }

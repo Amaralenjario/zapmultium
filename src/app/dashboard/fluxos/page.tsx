@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Plus, Upload, FileUp, Download, Trash2, Copy, Pencil, Workflow, AlertTriangle, Loader2, CheckSquare, Square } from "lucide-react";
 import FlowBuilder from "@/components/flows/FlowBuilder";
 import toast from "react-hot-toast";
 
@@ -15,10 +15,21 @@ interface Flow {
   updated_at: string;
 }
 
+const statusMeta: Record<string, { label: string; cls: string; dot: string }> = {
+  active: { label: "Ativo", cls: "bg-success-soft text-success", dot: "bg-success" },
+  draft: { label: "Rascunho", cls: "bg-surface2 text-tx2", dot: "bg-tx3" },
+  inactive: { label: "Inativo", cls: "bg-amber-500/12 text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
+};
+const execStatusMeta: Record<string, { label: string; cls: string; dot: string }> = {
+  running: { label: "Executando", cls: "bg-accentsoft text-accent", dot: "bg-accent animate-pulse" },
+  paused: { label: "Pausado", cls: "bg-amber-500/12 text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
+  completed: { label: "Concluído", cls: "bg-success-soft text-success", dot: "bg-success" },
+  error: { label: "Erro", cls: "bg-red-500/12 text-red-600 dark:text-red-400", dot: "bg-red-500" },
+};
+
 export default function FluxosPage() {
   const [flows, setFlows] = useState<Flow[]>([]);
   const [editing, setEditing] = useState<Flow | null>(null);
-  const [creating, setCreating] = useState(false);
   const [nameModal, setNameModal] = useState(false);
   const [newFlowName, setNewFlowName] = useState("");
   const [tab, setTab] = useState<"flows" | "logs">("flows");
@@ -35,17 +46,12 @@ export default function FluxosPage() {
   const [bulkImporting, setBulkImporting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [search, setSearch] = useState("");
 
   const handleCreate = async () => {
     if (!newFlowName.trim()) return;
     setNameModal(false);
-
-    const res = await fetch("/api/flows", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newFlowName.trim(), config: { steps: [] } }),
-    });
-
+    const res = await fetch("/api/flows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newFlowName.trim(), config: { steps: [] } }) });
     if (!res.ok) { toast.error("Erro ao criar"); return; }
     const flow = await res.json();
     toast.success("Fluxo criado!");
@@ -54,28 +60,18 @@ export default function FluxosPage() {
     fetchFlows();
   };
 
-  const fetchFlows = async () => {
-    const res = await fetch("/api/flows");
-    setFlows(await res.json());
-  };
-
+  const fetchFlows = async () => { const res = await fetch("/api/flows"); setFlows(await res.json()); };
   useEffect(() => { fetchFlows(); }, []);
 
-  const handleSave = async (result: { steps: any[]; edges: any[] }) => {
-    const url = editing ? `/api/flows/${editing.id}` : "/api/flows";
-    const method = editing ? "PUT" : "POST";
+  // Salvamento automático silencioso (sem fechar o construtor nem toast)
+  const editingId = editing?.id;
+  const editingName = editing?.name;
+  const handlePersist = useCallback(async (result: { steps: any[]; edges: any[] }) => {
+    if (!editingId) return;
+    await fetch(`/api/flows/${editingId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: editingName, config: { steps: result.steps, edges: result.edges } }) });
+  }, [editingId, editingName]);
 
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: editing?.name, config: { steps: result.steps, edges: result.edges } }),
-    });
-
-    if (!res.ok) { toast.error("Erro ao salvar"); return; }
-    toast.success(editing ? "Fluxo atualizado!" : "Fluxo criado!");
-    setEditing(null);
-    fetchFlows();
-  };
+  const handleExitBuilder = () => { setEditing(null); fetchFlows(); };
 
   const handleDelete = async (flow: Flow) => {
     if (!confirm(`Excluir "${flow.name}"?`)) return;
@@ -84,18 +80,9 @@ export default function FluxosPage() {
     fetchFlows();
   };
 
-  const handleImportFlow = () => {
-    setImportCode("");
-    setImportModal(true);
-  };
-
   const saveRename = async (flow: any) => {
     if (!renameValue.trim() || renameValue.trim() === flow.name) { setRenamingId(null); return; }
-    await fetch(`/api/flows/${flow.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: renameValue.trim() }),
-    });
+    await fetch(`/api/flows/${flow.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: renameValue.trim() }) });
     setFlows(prev => prev.map(f => f.id === flow.id ? { ...f, name: renameValue.trim() } : f));
     setRenamingId(null);
     toast.success("Renomeado!");
@@ -105,29 +92,15 @@ export default function FluxosPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setZvImporting(true);
-
     try {
       const formData = new FormData();
       formData.append("file", file);
       const res = await fetch("/api/flows/import-zv", { method: "POST", body: formData });
-
-      if (res.status === 413) {
-        toast.error("Arquivo muito grande (limite 4.5MB). Tente dividir em partes menores.");
-        setZvImporting(false);
-        return;
-      }
-
+      if (res.status === 413) { toast.error("Arquivo muito grande (limite 4.5MB)."); setZvImporting(false); return; }
       const result = await res.json();
-      if (result.ok) {
-        toast.success(`${result.imported.length} fluxo(s) importado(s) do ZapVoice!`);
-        fetchFlows();
-      }
-      if (result.errors?.length) {
-        result.errors.slice(0, 3).forEach((err: string) => toast.error(err));
-      }
-      if (!result.ok && !result.errors?.length) {
-        toast.error(result.error || "Erro ao importar");
-      }
+      if (result.ok) { toast.success(`${result.imported.length} fluxo(s) importado(s) do ZapVoice!`); fetchFlows(); }
+      if (result.errors?.length) result.errors.slice(0, 3).forEach((err: string) => toast.error(err));
+      if (!result.ok && !result.errors?.length) toast.error(result.error || "Erro ao importar");
     } catch { toast.error("Erro ao importar"); }
     setZvImporting(false);
     if (zvFileRef.current) zvFileRef.current.value = "";
@@ -138,16 +111,11 @@ export default function FluxosPage() {
     const { importFlowV1 } = await import("@/lib/flow-export");
     const result = importFlowV1(importCode.trim());
     if (!result) { toast.error("Código FLOWV1 inválido"); return; }
-
-    const res = await fetch("/api/flows", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: result.name, config: { steps: result.steps, edges: result.edges } }),
-    });
+    const res = await fetch("/api/flows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: result.name, config: { steps: result.steps, edges: result.edges } }) });
     if (!res.ok) { toast.error("Erro ao importar"); return; }
     const flow = await res.json();
     toast.success("Fluxo importado!");
-    setImportModal(false);
+    setImportModal(false); setImportCode("");
     setEditing(flow);
     fetchFlows();
   };
@@ -177,7 +145,7 @@ export default function FluxosPage() {
       allCode += (allCode ? "\n\n" : "") + `# ${flow.name}\n` + code;
     }
     await navigator.clipboard.writeText(allCode);
-    toast.success(`${selectedIds.size} fluxo(s) exportados!`);
+    toast.success(`${selectedIds.size} fluxo(s) exportados! Cole em outra conta.`);
     setSelectedIds(new Set());
   };
 
@@ -185,20 +153,15 @@ export default function FluxosPage() {
     if (!bulkImportText.trim()) return;
     setBulkImporting(true);
     try {
-      const res = await fetch("/api/flows/bulk-import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: bulkImportText }),
-      });
+      const res = await fetch("/api/flows/bulk-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: bulkImportText }) });
       const data = await res.json();
       if (res.ok) {
-        toast.success(`${data.imported} fluxos importados!`);
-        setBulkImportModal(false);
-        setBulkImportText("");
+        const ok = (data.results || []).filter((r: any) => !r.error).length;
+        const fail = (data.results || []).filter((r: any) => r.error).length;
+        toast.success(`${ok} fluxo(s) importado(s)${fail ? ` · ${fail} com erro` : ""}!`);
+        setBulkImportModal(false); setBulkImportText("");
         fetchFlows();
-      } else {
-        toast.error(data.error || "Erro");
-      }
+      } else toast.error(data.error || "Erro");
     } catch { toast.error("Erro"); }
     setBulkImporting(false);
   };
@@ -207,167 +170,114 @@ export default function FluxosPage() {
     const res = await fetch(`/api/flows/logs?status=${logsFilter}&limit=50`);
     if (res.ok) setExecutions(await res.json());
   };
-
   useEffect(() => { fetchExecutions(); const i = setInterval(fetchExecutions, 3000); return () => clearInterval(i); }, [logsFilter]);
 
-  const cancelExecution = async (execId: string) => {
-    await fetch(`/api/flows/advance`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ execution_id: execId }),
-    });
-    fetchExecutions();
-  };
+  const visibleFlows = search.trim() ? flows.filter(f => f.name.toLowerCase().includes(search.trim().toLowerCase())) : flows;
 
   if (editing) {
     return (
-      <div className="fixed inset-0 top-[4rem] z-20 bg-white dark:bg-gray-950">        <button onClick={() => setEditing(null)} className="absolute top-3 left-3 z-30 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1 bg-white dark:bg-gray-900 px-3 py-1.5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          Voltar
-        </button>
+      <div className="fixed inset-0 z-50 bg-bg">
         <FlowBuilder
+          flowName={editing.name}
           initialSteps={editing.config?.steps || [{ id: "start", type: "start", label: "Início", config: {} }]}
           initialEdges={editing.config?.edges || []}
-          onSave={handleSave}
+          onBack={handleExitBuilder}
+          onPersist={handlePersist}
         />
       </div>
     );
   }
 
+  const btnGhost = "rounded-control border border-bd px-3.5 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover hover:text-tx transition flex items-center gap-2";
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Fluxos</h1>
-          <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
-            <button onClick={() => setTab("flows")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${tab === "flows" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500"}`}>Fluxos</button>
-            <button onClick={() => setTab("logs")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${tab === "logs" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500"}`}>Execuções</button>
+          <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-tx">Fluxos</h1>
+          <div className="flex bg-surface2 rounded-control p-0.5">
+            <button onClick={() => setTab("flows")} className={`px-3.5 py-1.5 text-xs font-bold rounded-[9px] transition ${tab === "flows" ? "bg-surface text-tx shadow-card" : "text-tx2 hover:text-tx"}`}>Fluxos</button>
+            <button onClick={() => setTab("logs")} className={`px-3.5 py-1.5 text-xs font-bold rounded-[9px] transition ${tab === "logs" ? "bg-surface text-tx shadow-card" : "text-tx2 hover:text-tx"}`}>Execuções</button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setBulkImportModal(true)} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-            Importar FLOWV1
-          </button>
-          <input
-            ref={zvFileRef}
-            type="file"
-            accept=".json"
-            onChange={handleZvImport}
-            className="hidden"
-          />
-          <button
-            onClick={() => zvFileRef.current?.click()}
-            disabled={zvImporting}
-            className="rounded-xl border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition flex items-center gap-2 disabled:opacity-50"
-          >
-            {zvImporting ? (
-              <div className="animate-spin w-4 h-4 border-2 border-amber-300 border-t-amber-600 rounded-full" />
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-            )}
-            {zvImporting ? "Importando..." : "Importar ZapVoice"}
-          </button>
-          <button onClick={handleImportFlow} className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
-            Importar
-          </button>
-          <button onClick={() => setNameModal(true)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/25 flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Novo fluxo
-          </button>
-        </div>
+        {tab === "flows" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setBulkImportModal(true)} className={btnGhost} title="Importar vários fluxos de uma vez (de outra conta)">
+              <Upload className="w-4 h-4" strokeWidth={2} /> Importar em massa
+            </button>
+            <input ref={zvFileRef} type="file" accept=".json" onChange={handleZvImport} className="hidden" />
+            <button onClick={() => zvFileRef.current?.click()} disabled={zvImporting} className="rounded-control border border-amber-300/60 dark:border-amber-800/60 px-3.5 py-2.5 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition flex items-center gap-2 disabled:opacity-50">
+              {zvImporting ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2} /> : <FileUp className="w-4 h-4" strokeWidth={2} />}
+              {zvImporting ? "Importando..." : "ZapVoice"}
+            </button>
+            <button onClick={() => { setImportCode(""); setImportModal(true); }} className={btnGhost}>
+              <Download className="w-4 h-4" strokeWidth={2} /> Importar
+            </button>
+            <button onClick={() => setNameModal(true)} className="rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition flex items-center gap-2">
+              <Plus className="w-4 h-4" strokeWidth={2.2} /> Novo fluxo
+            </button>
+          </div>
+        )}
       </div>
 
       {tab === "flows" && (
         <>
-          {flows.length > 0 && (
-            <div className="flex items-center gap-2 mb-3">
-              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.size === flows.length}
-                  onChange={() => setSelectedIds(selectedIds.size === flows.length ? new Set() : new Set(flows.map(f => f.id)))}
-                  className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-400"
-                />
-                Selecionar todos ({flows.length})
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar fluxo..." className="rounded-control border border-bd bg-surface2 px-4 py-2 text-sm text-tx placeholder:text-tx3 focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none transition w-full max-w-xs" />
+            {visibleFlows.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-tx2 cursor-pointer select-none">
+                <input type="checkbox" checked={selectedIds.size === visibleFlows.length && visibleFlows.length > 0} onChange={() => setSelectedIds(selectedIds.size === visibleFlows.length ? new Set() : new Set(visibleFlows.map(f => f.id)))} className="accent-[color:var(--accent)] w-4 h-4" />
+                Selecionar todos ({visibleFlows.length})
               </label>
-              {selectedIds.size > 0 && (
-                <>
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500/20 transition"
-                >
-                  Excluir ({selectedIds.size})
-                </button>
-                <button
-                  onClick={() => handleExportSelected()}
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition"
-                >
-                  Exportar ({selectedIds.size})
-                </button>
-                </>
-              )}
-            </div>
-          )}
-          {flows.length === 0 ? (
-            <div className="text-center py-20 text-gray-400">
-              <svg className="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-              <p className="text-lg">Nenhum fluxo criado</p>
+            )}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2">
+                <button onClick={() => setConfirmDelete(true)} className="text-xs font-bold px-3 py-1.5 rounded-control bg-red-500/10 text-red-600 hover:bg-red-500/20 transition flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5" strokeWidth={2} /> Excluir ({selectedIds.size})</button>
+                <button onClick={handleExportSelected} className="text-xs font-bold px-3 py-1.5 rounded-control bg-accentsoft text-accent hover:brightness-95 transition flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" strokeWidth={2} /> Exportar ({selectedIds.size})</button>
+              </div>
+            )}
+          </div>
+
+          {visibleFlows.length === 0 ? (
+            <div className="text-center py-20 text-tx3 flex flex-col items-center">
+              <Workflow className="w-16 h-16 mb-4 opacity-30" strokeWidth={1.5} />
+              <p className="text-lg font-semibold text-tx2">{search ? "Nenhum fluxo encontrado" : "Nenhum fluxo criado"}</p>
               <p className="text-sm mt-1">Crie seu primeiro fluxo de atendimento automatizado</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {flows.map((flow) => (
-                <div key={flow.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:shadow-md transition relative" onClick={() => setEditing(flow)}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1 min-w-0 pl-6">
-                      <label className="absolute top-3 left-3 z-10" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(flow.id)}
-                          onChange={() => {
-                            const next = new Set(selectedIds);
-                            next.has(flow.id) ? next.delete(flow.id) : next.add(flow.id);
-                            setSelectedIds(next);
-                          }}
-                          className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-400"
-                        />
-                      </label>
-                      {renamingId === flow.id ? (
-                        <input
-                          type="text"
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") saveRename(flow); if (e.key === "Escape") setRenamingId(null); }}
-                          onBlur={() => saveRename(flow)}
-                          onClick={(e) => e.stopPropagation()}
-                          autoFocus
-                          className="w-full text-sm font-semibold rounded-lg border border-emerald-400 bg-white dark:bg-gray-800 px-2 py-1 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                        />
-                      ) : (
-                        <h3
-                          className="font-semibold text-gray-900 dark:text-white cursor-text hover:text-emerald-500 transition"
-                          onClick={(e) => { e.stopPropagation(); setRenamingId(flow.id); setRenameValue(flow.name); }}
-                          title="Clique para renomear"
-                        >
-                          {flow.name}
-                        </h3>
-                      )}
-                      <p className="text-xs text-gray-400 mt-0.5">{new Date(flow.created_at).toLocaleDateString("pt-BR")}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {visibleFlows.map((flow) => {
+                const sm = statusMeta[flow.status] || statusMeta.draft;
+                const selected = selectedIds.has(flow.id);
+                return (
+                  <div key={flow.id} className={`group rounded-card border bg-surface p-5 hover:shadow-pop transition relative cursor-pointer ${selected ? "border-accent ring-2 ring-accent/20" : "border-bd"}`} onClick={() => setEditing(flow)}>
+                    <div className="flex items-start gap-3">
+                      <button onClick={(e) => { e.stopPropagation(); const next = new Set(selectedIds); next.has(flow.id) ? next.delete(flow.id) : next.add(flow.id); setSelectedIds(next); }} className="mt-0.5 text-tx3 hover:text-accent transition flex-shrink-0" title="Selecionar">
+                        {selected ? <CheckSquare className="w-5 h-5 text-accent" strokeWidth={2} /> : <Square className="w-5 h-5" strokeWidth={2} />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        {renamingId === flow.id ? (
+                          <input type="text" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveRename(flow); if (e.key === "Escape") setRenamingId(null); }} onBlur={() => saveRename(flow)} onClick={(e) => e.stopPropagation()} autoFocus className="w-full text-sm font-bold rounded-lg border border-accent bg-surface2 px-2 py-1 text-tx focus:outline-none" />
+                        ) : (
+                          <h3 className="font-bold text-tx truncate pr-2" onClick={(e) => { e.stopPropagation(); setRenamingId(flow.id); setRenameValue(flow.name); }} title="Clique para renomear">{flow.name}</h3>
+                        )}
+                        <p className="text-xs text-tx3 mt-0.5">{new Date(flow.created_at).toLocaleDateString("pt-BR")}</p>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 flex-shrink-0 ${sm.cls}`}><span className={`w-1.5 h-1.5 rounded-full ${sm.dot}`} />{sm.label}</span>
                     </div>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${flow.status === "active" ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400" : flow.status === "draft" ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400" : "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"}`}>{flow.status === "active" ? "Ativo" : flow.status === "draft" ? "Rascunho" : "Inativo"}</span>
+                    <div className="flex items-center gap-2 text-xs text-tx3 mt-3">
+                      <span className="bg-surface2 px-2 py-0.5 rounded font-semibold">{flow.trigger_type}</span>
+                      <span className="flex items-center gap-1"><Workflow className="w-3 h-3" strokeWidth={2} />{Math.max(0, (flow.config?.steps?.length || 1) - 1)} etapa(s)</span>
+                    </div>
+                    <div className="flex gap-3 pt-3 mt-3 border-t border-line">
+                      <button onClick={(e) => { e.stopPropagation(); setEditing(flow); }} className="text-xs font-bold text-tx2 hover:text-accent transition flex items-center gap-1"><Pencil className="w-3.5 h-3.5" strokeWidth={2} /> Editar</button>
+                      <button onClick={(e) => { e.stopPropagation(); handleExportFlow(flow); }} className="text-xs font-bold text-accent hover:text-accent2 transition flex items-center gap-1"><Copy className="w-3.5 h-3.5" strokeWidth={2} /> Exportar</button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(flow); }} className="text-xs font-bold text-red-400 hover:text-red-500 transition ml-auto flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" strokeWidth={2} /> Excluir</button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
-                    <span className="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{flow.trigger_type}</span>
-                    <span>{(flow.config?.steps?.length || 1) - 1} etapa(s)</span>
-                  </div>
-                  <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
-                    <button onClick={(e) => { e.stopPropagation(); setEditing(flow); }} className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">Editar</button>
-                    <button onClick={(e) => { e.stopPropagation(); handleExportFlow(flow); }} className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-500">Exportar</button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(flow); }} className="text-xs font-medium text-red-400 hover:text-red-500 ml-auto">Excluir</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
@@ -375,134 +285,101 @@ export default function FluxosPage() {
 
       {tab === "logs" && (
         <div>
-          <div className="flex gap-1 mb-3">
+          <div className="flex gap-1.5 mb-4 flex-wrap">
             {(["all", "running", "paused", "completed", "error"] as const).map((s) => (
-              <button key={s} onClick={() => setLogsFilter(s)} className={`text-[11px] px-3 py-1.5 rounded-lg font-medium transition ${logsFilter === s ? "bg-emerald-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"}`}>
-                {s === "all" ? "Todas" : s === "running" ? "Em execução" : s === "paused" ? "Pausadas" : s === "completed" ? "Concluídas" : "Erros"}
+              <button key={s} onClick={() => setLogsFilter(s)} className={`text-[11px] px-3 py-1.5 rounded-control font-bold transition ${logsFilter === s ? "bg-accent text-white shadow-glow" : "bg-surface2 text-tx2 hover:bg-hover hover:text-tx"}`}>
+                {s === "all" ? "Todas" : execStatusMeta[s]?.label || s}
               </button>
             ))}
           </div>
-
           {executions.length === 0 ? (
-            <div className="text-center py-12 text-gray-400 text-sm">Nenhuma execução encontrada</div>
+            <div className="text-center py-16 text-tx3 text-sm">Nenhuma execução encontrada</div>
           ) : (
             <div className="space-y-2">
-              {executions.map((exec) => (
-                <div key={exec.id} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${exec.status === "running" ? "bg-blue-500 animate-pulse" : exec.status === "paused" ? "bg-amber-500" : exec.status === "completed" ? "bg-emerald-500" : "bg-red-500"}`} />
-                      <span className="font-medium text-sm text-gray-900 dark:text-white">{exec.flowName}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${exec.status === "running" ? "bg-blue-100 text-blue-600 dark:bg-blue-600/20 dark:text-blue-400" : exec.status === "paused" ? "bg-amber-100 text-amber-600 dark:bg-amber-600/20 dark:text-amber-400" : exec.status === "completed" ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-600/20 dark:text-emerald-400" : "bg-red-100 text-red-600 dark:bg-red-600/20 dark:text-red-400"}`}>
-                        {exec.status === "running" ? "Executando" : exec.status === "paused" ? "Pausado" : exec.status === "completed" ? "Concluído" : "Erro"}
-                      </span>
+              {executions.map((exec) => {
+                const em = execStatusMeta[exec.status] || execStatusMeta.error;
+                return (
+                  <div key={exec.id} className="rounded-card border border-bd bg-surface p-4 hover:shadow-card transition">
+                    <div className="flex items-center justify-between mb-1.5 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${em.dot}`} />
+                        <span className="font-bold text-sm text-tx truncate">{exec.flowName}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${em.cls}`}>{em.label}</span>
+                      </div>
+                      <span className="text-[10px] text-tx3 flex-shrink-0">{new Date(exec.startedAt).toLocaleString("pt-BR")}</span>
                     </div>
-                    <span className="text-[10px] text-gray-400">{new Date(exec.startedAt).toLocaleString("pt-BR")}</span>
+                    <div className="flex items-center gap-3 text-xs text-tx3 flex-wrap">
+                      <span className="font-semibold text-tx2">{exec.customerName}</span>
+                      {exec.customerPhone && <span>{exec.customerPhone}</span>}
+                      {exec.nextStepAt && exec.status === "paused" && <span className="text-amber-500">Retoma {new Date(exec.nextStepAt).toLocaleTimeString("pt-BR")}</span>}
+                      {exec.error && <span className="text-red-500 truncate max-w-[300px]">{exec.error}</span>}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>{exec.customerName}</span>
-                    {exec.customerPhone && <span className="text-gray-400">{exec.customerPhone}</span>}
-                    {exec.nextStepAt && exec.status === "paused" && (
-                      <span className="text-amber-500">Retoma {new Date(exec.nextStepAt).toLocaleTimeString("pt-BR")}</span>
-                    )}
-                    {exec.error && <span className="text-red-400 truncate max-w-[300px]">{exec.error}</span>}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
+      {/* Modais */}
       {nameModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Novo fluxo</h2>
-            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">Nome do fluxo</label>
-            <input
-              type="text"
-              value={newFlowName}
-              onChange={(e) => setNewFlowName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              placeholder="Ex: Boas-vindas automático"
-              autoFocus
-              className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
-            />
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => { setNameModal(false); setNewFlowName(""); }} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
-              <button onClick={handleCreate} disabled={!newFlowName.trim()} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">Criar fluxo</button>
-            </div>
+        <Modal onClose={() => { setNameModal(false); setNewFlowName(""); }} title="Novo fluxo" width="max-w-sm">
+          <label className="block text-sm font-semibold text-tx2 mb-1.5">Nome do fluxo</label>
+          <input type="text" value={newFlowName} onChange={(e) => setNewFlowName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreate()} placeholder="Ex: Boas-vindas automático" autoFocus className="w-full rounded-control border border-bd bg-surface2 px-4 py-2.5 text-sm text-tx placeholder:text-tx3 focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none" />
+          <div className="flex gap-3 mt-5">
+            <button onClick={() => { setNameModal(false); setNewFlowName(""); }} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+            <button onClick={handleCreate} disabled={!newFlowName.trim()} className="flex-1 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 transition">Criar fluxo</button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {importModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Importar Fluxo</h2>
-            <p className="text-xs text-gray-500 mb-3">Cole o código FLOWV1 exportado de outra ferramenta</p>
-            <textarea
-              value={importCode}
-              onChange={(e) => setImportCode(e.target.value)}
-              placeholder="FLOWV1:eyJ2ZXJzaW9uIjoxLC..."
-              rows={6}
-              className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none font-mono text-xs"
-              autoFocus
-            />
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => setImportModal(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
-              <button onClick={doImport} disabled={!importCode.trim()} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">Importar</button>
-            </div>
+        <Modal onClose={() => setImportModal(false)} title="Importar fluxo" width="max-w-lg">
+          <p className="text-xs text-tx3 mb-3">Cole o código FLOWV1 exportado de outro fluxo/conta</p>
+          <textarea value={importCode} onChange={(e) => setImportCode(e.target.value)} placeholder="FLOWV1:eyJ2ZXJzaW9uIjoxLC..." rows={6} autoFocus className="w-full rounded-control border border-bd bg-surface2 px-4 py-3 text-tx placeholder:text-tx3 focus:border-accent focus:outline-none font-mono text-xs resize-none" />
+          <div className="flex gap-3 mt-5">
+            <button onClick={() => setImportModal(false)} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+            <button onClick={doImport} disabled={!importCode.trim()} className="flex-1 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 transition">Importar</button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {bulkImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Importar Fluxos em Massa</h2>
-            <p className="text-xs text-gray-500 mb-3">Cole o texto com múltiplos fluxos no formato: # Nome do Fluxo + FLOWV1:...</p>
-            <textarea
-              value={bulkImportText}
-              onChange={(e) => setBulkImportText(e.target.value)}
-              placeholder={`# [ZV] Nome do Fluxo 1\nFLOWV1:eyJ2ZXJzaW9uIjo...\n\n# [ZV] Nome do Fluxo 2\nFLOWV1:eyJ2ZXJzaW9uIjo...`}
-              rows={12}
-              className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none font-mono text-xs"
-              autoFocus
-            />
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => setBulkImportModal(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
-              <button onClick={handleBulkImport} disabled={!bulkImportText.trim() || bulkImporting} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
-                {bulkImporting ? "Importando..." : "Importar todos"}
-              </button>
-            </div>
+        <Modal onClose={() => setBulkImportModal(false)} title="Importar fluxos em massa" width="max-w-2xl">
+          <p className="text-xs text-tx3 mb-3">Cole vários fluxos no formato: <span className="font-mono text-tx2"># Nome do Fluxo</span> seguido do <span className="font-mono text-tx2">FLOWV1:...</span> — um por bloco. Ideal para migrar de uma conta para outra.</p>
+          <textarea value={bulkImportText} onChange={(e) => setBulkImportText(e.target.value)} placeholder={`# Boas-vindas\nFLOWV1:eyJ2ZXJzaW9uIjo...\n\n# Pós-venda\nFLOWV1:eyJ2ZXJzaW9uIjo...`} rows={12} autoFocus className="w-full rounded-control border border-bd bg-surface2 px-4 py-3 text-tx placeholder:text-tx3 focus:border-accent focus:outline-none font-mono text-xs resize-none" />
+          <div className="flex gap-3 mt-5">
+            <button onClick={() => setBulkImportModal(false)} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+            <button onClick={handleBulkImport} disabled={!bulkImportText.trim() || bulkImporting} className="flex-1 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 transition">{bulkImporting ? "Importando..." : "Importar todos"}</button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setConfirmDelete(false)}>
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-6" onClick={e => e.stopPropagation()}>
-            <div className="text-center mb-4">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center">
-                <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Excluir fluxos?</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Tem certeza que deseja excluir <span className="font-semibold text-red-500">{selectedIds.size} fluxo(s)</span> permanentemente?
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-                Cancelar
-              </button>
-              <button onClick={handleBulkDelete} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500 transition">
-                Sim, excluir
-              </button>
-            </div>
+        <Modal onClose={() => setConfirmDelete(false)} title="" width="max-w-sm">
+          <div className="text-center mb-4">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-500/12 flex items-center justify-center"><AlertTriangle className="w-6 h-6 text-red-500" strokeWidth={2} /></div>
+            <h3 className="text-lg font-bold text-tx">Excluir fluxos?</h3>
+            <p className="text-sm text-tx2 mt-1">Tem certeza que deseja excluir <span className="font-bold text-red-500">{selectedIds.size} fluxo(s)</span> permanentemente?</p>
           </div>
-        </div>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmDelete(false)} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+            <button onClick={handleBulkDelete} className="flex-1 rounded-control bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-500 transition">Sim, excluir</button>
+          </div>
+        </Modal>
       )}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, width = "max-w-sm" }: { title: string; onClose: () => void; children: React.ReactNode; width?: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className={`w-full ${width} rounded-card border border-bd bg-surface shadow-pop p-6`} onClick={(e) => e.stopPropagation()}>
+        {title && <h2 className="text-lg font-bold text-tx mb-4">{title}</h2>}
+        {children}
+      </div>
     </div>
   );
 }

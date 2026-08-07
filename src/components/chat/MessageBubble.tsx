@@ -3,6 +3,7 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useState } from "react";
+import { Reply, Smile, CheckCheck, Plus, Minus, X, AlertTriangle } from "lucide-react";
 import AudioPlayer from "./AudioPlayer";
 import DocumentPreview from "./DocumentPreview";
 import EmojiPicker from "./EmojiPicker";
@@ -50,6 +51,10 @@ export default function MessageBubble({
   onReply,
   onReact,
   quotedContentType,
+  quotedMediaUrl,
+  quotedMsgId,
+  onScrollTo,
+  domId,
 }: {
   message: Message;
   isFirst?: boolean;
@@ -57,6 +62,10 @@ export default function MessageBubble({
   quotedContent?: string | null;
   quotedByAgent?: boolean;
   quotedContentType?: string;
+  quotedMediaUrl?: string | null;
+  quotedMsgId?: string | null;
+  onScrollTo?: (id: string) => void;
+  domId?: string;
   onReply?: () => void;
   onReact?: (emoji: string) => void;
 }) {
@@ -67,76 +76,106 @@ export default function MessageBubble({
   const reactions = message.metadata?.reactions || {};
   const reactionList = Object.entries(reactions) as [string, string][];
   const [showPicker, setShowPicker] = useState(false);
+  const sendError: string | undefined = isAgent ? (message.metadata?.error as string | undefined) : undefined;
+  const isRead = !!message.read_at;
+  const quoteIsMedia = quotedContentType === "image" || quotedContentType === "sticker" || quotedContentType === "video";
 
   if (isSystem) {
     return (
       <div className="flex justify-center my-3">
-        <span className="text-xs bg-[#e1f3fb] dark:bg-gray-800 text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">{message.content}</span>
+        <span className="text-xs bg-surface2 text-tx2 px-3 py-1 rounded-full">{message.content}</span>
       </div>
     );
   }
+
+  const cornerClass = isFirst === false
+    ? (isAgent ? "rounded-2xl rounded-tr-md" : "rounded-2xl rounded-tl-md")
+    : "rounded-2xl";
+  const bubbleTheme = isAgent
+    ? "bg-accent text-white"
+    : "bg-surface text-tx border border-bd";
+  const metaColor = isAgent ? "text-white/70" : "text-tx3";
 
   return (
     <>
       {showDate && (
         <div className="flex justify-center my-3">
-          <span className="text-[11px] bg-white/90 dark:bg-gray-800/90 text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">{showDate}</span>
+          <span className="text-[11px] bg-surface2 text-tx2 px-3 py-1 rounded-full">{showDate}</span>
         </div>
       )}
-      <div className={`flex ${isAgent ? "justify-end" : "justify-start"} group ${isFirst !== false ? "mt-2" : "mt-0.5"}`}>
-        <div className={`relative text-sm leading-[1.4] ${isFirst === false ? (isAgent ? "rounded-tr-sm" : "rounded-tl-sm") : ""} ${isAgent ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-l-lg" : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-gray-100 rounded-t-lg rounded-r-lg"} shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]`} style={{ maxWidth: "min(65%, 500px)" }}>
-          {/* Quoted message */}
+      <div data-message-id={domId} className={`flex ${isAgent ? "justify-end" : "justify-start"} group ${isFirst !== false ? "mt-2" : "mt-0.5"}`}>
+        <div className={`relative text-sm leading-[1.45] shadow-card ${cornerClass} ${bubbleTheme}`} style={{ maxWidth: "min(70%, 520px)" }}>
+          {/* Mensagem citada (clicável → rola até a original) */}
           {(context?.id || quotedContent) && (
-            <div className={`mx-2 mt-2 px-2.5 py-1.5 rounded-md border-l-[3px] text-xs ${isAgent ? "bg-black/10 border-[#075e54]" : "bg-black/5 dark:bg-white/5 border-[#25d366]"}`}>
-              <p className="text-[11px] opacity-60 mb-0.5 truncate">{quotedByAgent ? "Você" : (context?.from || "Cliente")}</p>
-              {quotedContentType === "image" || quotedContentType === "sticker" ? (
-                <div className="flex items-center gap-1.5">
-                  <img src={quotedContent!} alt="" className="w-8 h-8 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                  <span className="opacity-80">📷 Imagem</span>
-                </div>
-              ) : quotedContentType === "video" ? (
-                <span className="opacity-80">🎬 Vídeo</span>
-              ) : (
-                <p className="truncate opacity-80">{quotedContent || "Mensagem"}</p>
+            <button
+              type="button"
+              onClick={() => quotedMsgId && onScrollTo?.(quotedMsgId)}
+              className={`flex items-stretch gap-2 mx-2 mt-2 rounded-lg border-l-[3px] text-xs overflow-hidden text-left transition w-[calc(100%-1rem)] ${isAgent ? "bg-black/15 border-white/60 hover:bg-black/25" : "bg-surface2 border-accent hover:bg-hover"} ${quotedMsgId ? "cursor-pointer" : "cursor-default"}`}
+            >
+              <div className="flex-1 min-w-0 px-2.5 py-1.5">
+                <p className="text-[11px] opacity-70 mb-0.5 truncate font-semibold">{quotedByAgent ? "Você" : (context?.from || "Cliente")}</p>
+                {quoteIsMedia ? (
+                  <span className="opacity-80">{quotedContentType === "video" ? "🎬 Vídeo" : "📷 Imagem"}</span>
+                ) : (
+                  <p className="truncate opacity-80">{quotedContent || "Mensagem"}</p>
+                )}
+              </div>
+              {quoteIsMedia && quotedMediaUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={quotedMediaUrl} alt="" className="w-12 h-12 object-cover flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
               )}
-            </div>
+            </button>
           )}
           {isMedia ? (
-            <MediaContent messageId={message.id} content={message.content} type={message.content_type} metadata={message.metadata} />
+            <MediaContent messageId={message.id} content={message.content} type={message.content_type} metadata={message.metadata} isAgent={isAgent} />
           ) : (
-            <p className="whitespace-pre-wrap break-all px-3.5 pt-2 pb-1.5 overflow-hidden">{message.content}</p>
+            <p className="whitespace-pre-wrap break-words px-3.5 pt-2 pb-1.5 overflow-hidden">{message.content}</p>
           )}
-          <span className="inline-flex items-center gap-1 float-right mr-2 mb-1.5 text-[11px] text-[#667781] dark:text-gray-400">
+          <span className={`inline-flex items-center gap-1 float-right mr-2.5 mb-1.5 text-[11px] ${metaColor}`}>
             {format(new Date(message.created_at), "HH:mm")}
             {isAgent && (
-              <svg className={`w-3.5 h-3.5 ${message.read_at ? "text-[#53bdeb]" : "text-[#8696a0]"}`} fill="currentColor" viewBox="0 0 16 11">
-                <path d="M11.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" />
-                {message.read_at && <path d="M14.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" transform="translate(3,0)" />}
-              </svg>
+              sendError ? (
+                <AlertTriangle className="w-3.5 h-3.5 text-red-200" strokeWidth={2.2} />
+              ) : (
+                <CheckCheck className={`w-3.5 h-3.5 ${isRead ? "text-sky-300" : "text-white/45"}`} strokeWidth={2.2} />
+              )
             )}
           </span>
-          {/* Reply button on hover */}
-          <div className={`absolute ${isAgent ? "-left-8" : "-right-8"} top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition`}>
+          {/* Ações no hover */}
+          <div className={`absolute ${isAgent ? "-left-9" : "-right-9"} top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition`}>
             {onReply && (
-              <button onClick={onReply} className="w-6 h-6 rounded-full bg-gray-400 dark:bg-gray-600 text-white flex items-center justify-center shadow text-[10px] hover:bg-gray-500" title="Responder">↩</button>
+              <button onClick={onReply} className="w-7 h-7 rounded-full bg-surface border border-bd text-tx2 flex items-center justify-center shadow-card hover:text-accent hover:border-accent transition" title="Responder">
+                <Reply className="w-3.5 h-3.5" strokeWidth={2} />
+              </button>
             )}
             {onReact && (
               <div className="relative">
-                <button onClick={() => setShowPicker(!showPicker)} className="w-6 h-6 rounded-full bg-gray-400 dark:bg-gray-600 text-white flex items-center justify-center shadow text-[13px] hover:bg-gray-500" title="Reagir">😊</button>
+                <button onClick={() => setShowPicker(!showPicker)} className="w-7 h-7 rounded-full bg-surface border border-bd text-tx2 flex items-center justify-center shadow-card hover:text-accent hover:border-accent transition" title="Reagir">
+                  <Smile className="w-3.5 h-3.5" strokeWidth={2} />
+                </button>
                 {showPicker && <EmojiPicker onSelect={(e) => { onReact(e); setShowPicker(false); }} onClose={() => setShowPicker(false)} />}
               </div>
             )}
           </div>
         </div>
       </div>
-      {/* Reactions */}
+      {/* Erro de envio (janela 24h, etc.) */}
+      {sendError && (
+        <div className="flex justify-end mt-0.5">
+          <div className="flex items-start gap-1 text-[11px] text-red-500 dark:text-red-400 max-w-[75%]">
+            <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-[1px]" strokeWidth={2} />
+            <span className="leading-snug">{sendError}</span>
+          </div>
+        </div>
+      )}
+      {/* Reações */}
       {reactionList.length > 0 && (
         <div className={`flex ${isAgent ? "justify-end" : "justify-start"} -mt-1 relative z-10`}>
-          <div className={`inline-flex gap-0.5 bg-white dark:bg-gray-800 rounded-full px-2 py-0.5 shadow-sm border border-gray-200 dark:border-gray-700 ${isAgent ? "mr-0" : "ml-0"}`}>
+          <div className="inline-flex gap-0.5 bg-surface rounded-full px-2 py-0.5 shadow-card border border-bd">
             {reactionList.map(([user, emoji]) => (
               <span key={user} className="text-sm leading-none" title={user}>{emoji}</span>
             ))}
-            <span className="text-[10px] text-gray-400 ml-0.5">{reactionList.length}</span>
+            <span className="text-[10px] text-tx3 ml-0.5">{reactionList.length}</span>
           </div>
         </div>
       )}
@@ -144,7 +183,7 @@ export default function MessageBubble({
   );
 }
 
-function MediaContent({ messageId, content, type, metadata }: { messageId: string; content: string; type: string; metadata?: any }) {
+function MediaContent({ messageId, content, type, metadata, isAgent }: { messageId: string; content: string; type: string; metadata?: any; isAgent?: boolean }) {
   const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lightbox, setLightbox] = useState(false);
@@ -152,6 +191,7 @@ function MediaContent({ messageId, content, type, metadata }: { messageId: strin
   const isFlow = metadata?.source === "flow";
   const isDirectUrl = content.startsWith("http");
   const mediaUrl = isFlow && isDirectUrl ? content : (isDirectUrl && !isFlow ? content : `/api/media/${messageId}`);
+  const captionColor = isAgent ? "text-white/80" : "text-tx3";
 
   const handleSaveSticker = async (msgId: string) => {
     if (saving) return;
@@ -167,23 +207,23 @@ function MediaContent({ messageId, content, type, metadata }: { messageId: strin
   const openLightbox = () => { setLightbox(true); setZoom(1); };
   const closeLightbox = () => setLightbox(false);
 
-  if (error) return <p className="px-3.5 py-2 text-gray-500 dark:text-gray-400 text-sm">{content}</p>;
+  if (error) return <p className={`px-3.5 py-2 text-sm ${isAgent ? "text-white/80" : "text-tx3"}`}>{content}</p>;
 
-  if (type === "sticker") return <div className="p-1 relative group/sticker"><img src={mediaUrl} alt="" className="rounded-lg max-w-[140px] max-h-[140px] object-contain cursor-pointer" loading="lazy" onError={() => setError(true)} onClick={openLightbox} /><button onClick={() => handleSaveSticker(messageId)} className="absolute top-1 right-1 opacity-0 group-hover/sticker:opacity-100 transition bg-gray-800/70 text-white text-[10px] px-1.5 py-0.5 rounded hover:bg-gray-800">{saving ? "..." : "Salvar"}</button></div>;
+  if (type === "sticker") return <div className="p-1 relative group/sticker"><img src={mediaUrl} alt="" className="rounded-lg max-w-[140px] max-h-[140px] object-contain cursor-pointer" loading="lazy" onError={() => setError(true)} onClick={openLightbox} /><button onClick={() => handleSaveSticker(messageId)} className="absolute top-1 right-1 opacity-0 group-hover/sticker:opacity-100 transition bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded hover:bg-black">{saving ? "..." : "Salvar"}</button></div>;
   if (type === "image") return (
     <>
-      <div className="p-1"><img src={mediaUrl} alt="" className="rounded-lg max-w-[300px] max-h-[300px] object-cover cursor-pointer hover:opacity-90 transition" loading="lazy" onError={() => setError(true)} onClick={openLightbox} /></div>
-      {metadata?.caption && <p className="px-3.5 pb-2 text-[13px] text-[#667781] dark:text-gray-400">{metadata.caption}</p>}
+      <div className="p-1"><img src={mediaUrl} alt="" className="rounded-xl max-w-[300px] max-h-[300px] object-cover cursor-pointer hover:opacity-90 transition" loading="lazy" onError={() => setError(true)} onClick={openLightbox} /></div>
+      {metadata?.caption && <p className={`px-3.5 pb-2 text-[13px] ${captionColor}`}>{metadata.caption}</p>}
       {lightbox && <ImageViewer src={mediaUrl} zoom={zoom} setZoom={setZoom} onClose={closeLightbox} />}
     </>
   );
   if (type === "video") return (
     <div className="p-1">
-      <video controls className="rounded-lg max-w-[300px] max-h-[300px]" preload="metadata"><source src={mediaUrl} /></video>
-      {metadata?.caption && <p className="px-3.5 pb-2 text-[13px] text-[#667781] dark:text-gray-400">{metadata.caption}</p>}
+      <video controls className="rounded-xl max-w-[300px] max-h-[300px]" preload="metadata"><source src={mediaUrl} /></video>
+      {metadata?.caption && <p className={`px-3.5 pb-2 text-[13px] ${captionColor}`}>{metadata.caption}</p>}
     </div>
   );
-  if (type === "audio") return <AudioPlayer src={mediaUrl} />;
+  if (type === "audio") return <AudioPlayer src={mediaUrl} onAccent={isAgent} />;
   if (type === "document") return <DocumentPreview src={mediaUrl} name={content} />;
   return null;
 }
@@ -193,14 +233,14 @@ function ImageViewer({ src, zoom, setZoom, onClose }: { src: string; zoom: numbe
     <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center" onClick={onClose}>
       <div className="absolute top-4 right-4 flex items-center gap-2 z-50">
         <button onClick={() => setZoom(Math.min(3, zoom + 0.5))} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Aumentar zoom">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          <Plus className="w-5 h-5" strokeWidth={2} />
         </button>
         <button onClick={() => setZoom(Math.max(0.5, zoom - 0.5))} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Diminuir zoom">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
+          <Minus className="w-5 h-5" strokeWidth={2} />
         </button>
         <span className="text-white text-xs">{Math.round(zoom * 100)}%</span>
         <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Fechar">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          <X className="w-5 h-5" strokeWidth={2} />
         </button>
       </div>
       <img

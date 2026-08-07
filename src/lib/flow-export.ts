@@ -1,5 +1,19 @@
 // FLOWV1 Export/Import Format
 
+// Base64 UTF-8 seguro pra NAVEGADOR e servidor (não usa Buffer, que não existe no browser).
+function b64Encode(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64Decode(b64: string): string {
+  const bin = atob(b64.trim());
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
 const TO_FLOWV1: Record<string, string> = {
   start: "trigger",
   wait: "delay",
@@ -93,7 +107,7 @@ export function exportFlowV1(
   };
 
   const json = JSON.stringify(data);
-  return `FLOWV1:${Buffer.from(json).toString("base64")}`;
+  return `FLOWV1:${b64Encode(json)}`;
 }
 
 export function importFlowV1(code: string): {
@@ -103,8 +117,8 @@ export function importFlowV1(code: string): {
 } | null {
   try {
     if (!code.startsWith("FLOWV1:")) return null;
-    const base64 = code.replace("FLOWV1:", "");
-    const json = Buffer.from(base64, "base64").toString("utf-8");
+    const base64 = code.replace("FLOWV1:", "").trim();
+    const json = b64Decode(base64);
     const data = JSON.parse(json);
 
     if (!data.nodes || !Array.isArray(data.nodes)) return null;

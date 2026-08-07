@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getInstanceByPhoneId, getRealChannelToken } from "@/lib/instances";
+import { friendlyWaError } from "@/lib/wa-errors";
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 
@@ -26,6 +27,7 @@ export async function POST(request: NextRequest) {
     const conversationId = formData.get("conversation_id") as string | null;
     const phoneNumberId = formData.get("phone_number_id") as string | null;
     const customerPhone = formData.get("customer_phone") as string | null;
+    const caption = ((formData.get("caption") as string | null) || "").trim();
 
     if (!file || !conversationId || !phoneNumberId || !customerPhone) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
@@ -61,11 +63,29 @@ export async function POST(request: NextRequest) {
 
     let waMsgId: string | null = null;
 
+    // Registra a mídia como FALHA (aparece no chat com o motivo em vermelho)
+    const saveFailed = async (reason: string) => {
+      await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        sender_type: "agent",
+        content: publicUrl,
+        content_type: mediaType,
+        metadata: { phone_number_id: phoneNumberId, caption: caption || undefined, error: reason, failed: true },
+      });
+      await supabase.from("conversations").update({
+        last_message: caption || LABELS[mediaType] || "📎 Mídia",
+        last_message_sender: "agent",
+        last_message_read: false,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", conversationId);
+    };
+
     if (mediaType === "audio") {
       // Use audio pipeline
       const { processAndSendMedia } = await import("@/lib/audio-pipeline");
       const result = await processAndSendMedia(publicUrl, "audio", customerPhone, phoneNumberId, channelToken);
-      if (result.error) return NextResponse.json({ error: result.error }, { status: 500 });
+      if (result.error) { const friendly = friendlyWaError(result.error); await saveFailed(friendly); return NextResponse.json({ error: friendly }, { status: 500 }); }
       waMsgId = result.waMessageId;
     } else {
       // Send with link for image/video/document
@@ -77,8 +97,13 @@ export async function POST(request: NextRequest) {
 
       if (mediaType === "document") {
         msgBody.document = { link: publicUrl, filename: file.name };
+        if (caption) msgBody.document.caption = caption;
       } else {
         msgBody[mediaType] = { link: publicUrl };
+        // image e video suportam legenda no WhatsApp
+        if (caption && (mediaType === "image" || mediaType === "video")) {
+          msgBody[mediaType].caption = caption;
+        }
       }
 
       const sendRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
@@ -91,7 +116,7 @@ export async function POST(request: NextRequest) {
       });
 
       const sendData = await sendRes.json();
-      if (!sendRes.ok) return NextResponse.json({ error: sendData }, { status: 500 });
+      if (!sendRes.ok) { const friendly = friendlyWaError(sendData); await saveFailed(friendly); return NextResponse.json({ error: friendly }, { status: 500 }); }
       waMsgId = sendData?.messages?.[0]?.id || null;
     }
 
@@ -101,13 +126,13 @@ export async function POST(request: NextRequest) {
       sender_type: "agent",
       content: publicUrl,
       content_type: mediaType,
-      metadata: { wa_message_id: waMsgId, phone_number_id: phoneNumberId },
+      metadata: { wa_message_id: waMsgId, phone_number_id: phoneNumberId, caption: caption || undefined },
     });
 
     await supabase
       .from("conversations")
       .update({
-        last_message: LABELS[mediaType] || "📎 Mídia",
+        last_message: caption || LABELS[mediaType] || "📎 Mídia",
         last_message_sender: "agent",
         last_message_read: false,
         last_message_at: new Date().toISOString(),

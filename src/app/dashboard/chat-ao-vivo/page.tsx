@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MessagesSquare } from "lucide-react";
 import ConversationList, { type Conversation } from "@/components/chat/ConversationList";
 import ChatWindow from "@/components/chat/ChatWindow";
 
@@ -8,8 +9,8 @@ export default function ChatPageClient() {
   const [selected, setSelected] = useState<Conversation | null>(null);
 
   return (
-    <div className="absolute inset-0 flex overflow-hidden">
-      <div className={`${selected ? "hidden lg:block" : "w-full"} lg:w-[340px] flex-shrink-0 border-r border-gray-200 dark:border-[#222d34]`}>
+    <div className="absolute inset-0 flex overflow-hidden bg-bg">
+      <div className={`${selected ? "hidden lg:block" : "w-full"} lg:w-[360px] flex-shrink-0 border-r border-bd`}>
         <ConversationList selectedId={selected?.id || null} onSelect={setSelected} />
       </div>
 
@@ -20,10 +21,13 @@ export default function ChatPageClient() {
       )}
 
       {!selected && (
-        <div className="hidden lg:flex flex-1 items-center justify-center bg-[#efeae2] dark:bg-[#0b141a]">
+        <div className="hidden lg:flex flex-1 items-center justify-center bg-bg">
           <div className="text-center">
-            <p className="text-4xl mb-2">💬</p>
-            <p className="text-gray-500 dark:text-gray-400">Selecione uma conversa</p>
+            <div className="w-16 h-16 rounded-2xl bg-accentsoft flex items-center justify-center mx-auto mb-4">
+              <MessagesSquare className="w-8 h-8 text-accent" strokeWidth={1.8} />
+            </div>
+            <p className="text-tx font-bold">Selecione uma conversa</p>
+            <p className="text-tx3 text-sm mt-1">Escolha um contato à esquerda para começar</p>
           </div>
         </div>
       )}

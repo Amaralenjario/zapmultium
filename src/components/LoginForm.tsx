@@ -4,6 +4,9 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 
+const inputClass =
+  "w-full rounded-control border border-bd bg-surface2 px-4 py-3 text-tx placeholder:text-tx3 focus:border-accent focus:ring-2 focus:ring-accent/25 focus:outline-none transition";
+
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +35,7 @@ export default function LoginForm() {
   return (
     <form onSubmit={handleLogin} className="space-y-5">
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+        <label htmlFor="email" className="block text-sm font-semibold text-tx2 mb-1.5">
           Email
         </label>
         <input
@@ -42,12 +45,12 @@ export default function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           placeholder="seu@email.com"
-          className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none transition"
+          className={inputClass}
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+        <label htmlFor="password" className="block text-sm font-semibold text-tx2 mb-1.5">
           Senha
         </label>
         <input
@@ -57,14 +60,14 @@ export default function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           placeholder="••••••••"
-          className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none transition"
+          className={inputClass}
         />
       </div>
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-green-600 px-4 py-3 font-semibold text-white hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        className="w-full rounded-control bg-accent px-4 py-3 font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {loading ? "Entrando..." : "Entrar"}
       </button>

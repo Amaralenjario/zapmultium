@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
+import { ChevronLeft, Tag, Archive, ArchiveRestore, MessagesSquare, Smartphone } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import MessageBubble, { formatDateHeader, shouldShowDate, isConsecutive } from "./MessageBubble";
 import ChatInput from "./ChatInput";
@@ -26,7 +27,7 @@ interface CrmTag { id: string; name: string; color: string; column_key: string; 
 export default function ChatWindow({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
+  const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string; channel?: string }>>({});
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [archived, setArchived] = useState(!!(conversation as any).archived);
   const [showTagModal, setShowTagModal] = useState(false);
@@ -42,7 +43,6 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   const operation = phoneMap[phoneNumberId];
   const customerPhone = customer?.phone || "";
 
-  // Se a conversa não tem phone_number_id, pega do canal do vendedor
   useEffect(() => {
     if (!rawPhoneId) {
       const fixPhoneId = async () => {
@@ -62,7 +62,6 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
           const pid = phoneIdMap[sc[0].evohub_channel_id];
           if (pid) {
             setPhoneNumberId(pid);
-            // Salva no banco pra conversa não ficar sem phone_id
             await supabase.from("conversations").update({ metadata: { phone_number_id: pid } }).eq("id", conversation.id);
           }
         }
@@ -105,12 +104,12 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   useEffect(() => {
     setMessages([]); setLoading(true); prevLength.current = 0;
     fetchMessages();
-    supabase.from("operations_channels").select("phone_number_id, operation:operation_id(name, color)").eq("is_active", true).not("phone_number_id", "is", null).then(({ data }) => {
+    supabase.from("operations_channels").select("phone_number_id, evohub_channel_name, operation:operation_id(name, color)").eq("is_active", true).not("phone_number_id", "is", null).then(({ data }) => {
       if (data) {
-        const map: Record<string, { name: string; color: string }> = {};
+        const map: Record<string, { name: string; color: string; channel?: string }> = {};
         for (const row of data) {
           const op = Array.isArray(row.operation) ? row.operation[0] : row.operation;
-          if (row.phone_number_id && op) map[row.phone_number_id] = { name: op.name, color: op.color };
+          if (row.phone_number_id && op) map[row.phone_number_id] = { name: op.name, color: op.color, channel: (row as any).evohub_channel_name || undefined };
         }
         setPhoneMap(map);
       }
@@ -119,7 +118,9 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   }, [conversation.id]);
 
   const markAsRead = async () => {
-    await supabase.from("conversations").update({ unread_count: 0, last_message_read: true }).eq("id", conversation.id);
+    // Só zera o contador de não-lidas do ATENDENTE. NÃO marca last_message_read:
+    // esse campo é "o cliente viu minha mensagem" e vem do webhook de status (read receipt).
+    await supabase.from("conversations").update({ unread_count: 0 }).eq("id", conversation.id);
     const { data: unread } = await supabase.from("messages").select("id, metadata").eq("conversation_id", conversation.id).eq("sender_type", "customer").is("read_at", null);
     if (unread && unread.length > 0) {
       const now = new Date().toISOString();
@@ -129,6 +130,18 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
         fetch("/api/evohub/mark-read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phoneNumberId, messageId: lastMsg.metadata.wa_message_id }) }).catch(() => {});
       }
     }
+  };
+
+  // Rola suavemente até a mensagem citada e dá um destaque rápido
+  const scrollToMessage = (id: string) => {
+    const el = containerRef.current?.querySelector(`[data-message-id="${id}"]`) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const bubble = (el.firstElementChild as HTMLElement | null) || el;
+    bubble.style.transition = "box-shadow .3s ease";
+    bubble.style.boxShadow = "0 0 0 3px var(--accent)";
+    bubble.style.borderRadius = "16px";
+    setTimeout(() => { bubble.style.boxShadow = "none"; }, 1400);
   };
 
   const handleReact = async (msg: Message, emoji: string) => {
@@ -154,7 +167,6 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   const handleAddTag = async (tagId: string) => {
     const customerId = Array.isArray(conversation.customer) ? (conversation.customer[0] as any)?.id : (conversation.customer as any)?.id;
 
-    // Buscar ou criar lead
     let { data: lead } = await supabase.from("leads").select("id, lead_tags(tag_id)").eq("phone", customerPhone).maybeSingle();
     if (!lead) {
       const { data: newLead, error: createErr } = await supabase
@@ -180,7 +192,6 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
       }).eq("id", lead.id);
     }
 
-    // Toggle: se já tem a tag, remove; senão, adiciona
     const existingTags = (lead as any).lead_tags || [];
     const hasTag = existingTags.some((lt: any) => lt.tag_id === tagId);
 
@@ -227,69 +238,88 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
     return () => { supabase.removeChannel(channel); };
   }, [conversation.id]);
 
-  const headerBg = operation?.color || "#075e54";
-
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-bg">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 text-white flex-shrink-0" style={{ backgroundColor: headerBg }}>
-        <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition md:hidden">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-surface border-b border-bd flex-shrink-0">
+        <button onClick={onClose} className="p-1.5 hover:bg-hover rounded-full transition lg:hidden text-tx2">
+          <ChevronLeft className="w-5 h-5" strokeWidth={2} />
         </button>
-        <Avatar name={customer?.name} size="sm" />
+        <Avatar name={customer?.name} url={customer?.avatar_url} size="sm" />
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-[15px] truncate">{customer?.name || customer?.phone || "Desconhecido"}</p>
-          <p className="text-[12px] text-white/80 truncate">{customerPhone}</p>
+          <p className="font-bold text-[15px] text-tx truncate">{customer?.name || customer?.phone || "Desconhecido"}</p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            {operation && (
+              <span className="flex items-center gap-1 flex-shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: operation.color }} />
+                <span className="text-[12px] font-semibold truncate" style={{ color: operation.color }}>{operation.name}</span>
+                <span className="text-tx3">·</span>
+              </span>
+            )}
+            <p className="text-[12px] text-tx3 truncate">{customerPhone}</p>
+          </div>
         </div>
-        <button onClick={handleOpenTagModal} className="p-2 hover:bg-white/10 rounded-full transition" title="Etiquetar lead">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+        {(operation?.channel || operation?.name) && (
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl flex-shrink-0 mr-1" style={{ backgroundColor: (operation.color || "#3A5AF0") + "1f" }} title={`Atendendo pelo número ${operation.channel || operation.name}`}>
+            <Smartphone className="w-4 h-4 flex-shrink-0" style={{ color: operation.color }} strokeWidth={2} />
+            <div className="leading-tight min-w-0">
+              <p className="text-[9px] uppercase tracking-wide text-tx3 font-bold">Atendendo por</p>
+              <p className="text-[11px] font-bold truncate max-w-[140px]" style={{ color: operation.color }}>{operation.channel || operation.name}</p>
+            </div>
+          </div>
+        )}
+        <button onClick={handleOpenTagModal} className="p-2 hover:bg-hover rounded-full transition text-tx2 hover:text-accent" title="Etiquetar lead">
+          <Tag className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} />
         </button>
-        <button onClick={toggleArchive} className="p-2 hover:bg-white/10 rounded-full transition" title={archived ? "Desarquivar" : "Arquivar"}>
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={archived ? "M3 4h18M3 8l1.5 13h15L21 8M9 12v6M12 12v6M15 12v6" : "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"} /></svg>
+        <button onClick={toggleArchive} className="p-2 hover:bg-hover rounded-full transition text-tx2 hover:text-tx" title={archived ? "Desarquivar" : "Arquivar"}>
+          {archived ? <ArchiveRestore className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} /> : <Archive className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} />}
         </button>
       </div>
 
-      {/* 24h window */}
+      {/* Janela 24h */}
       {window24h && (
-        <div className={`px-3 py-1.5 text-[10px] font-medium text-center flex-shrink-0 ${window24h.open ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-b border-amber-200 dark:border-amber-800" : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-b border-red-200 dark:border-red-800"}`}>
+        <div className={`px-3 py-1.5 text-[11px] font-semibold text-center flex-shrink-0 ${window24h.open ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-b border-amber-500/20" : "bg-red-500/10 text-red-600 dark:text-red-400 border-b border-red-500/20"}`}>
           {window24h.open ? `Janela 24h · fecha em ${countdown}` : "Janela 24h fechada"}
         </div>
       )}
 
       <QuickLinksBar phoneNumberId={phoneNumberId} customerPhone={customerPhone} conversationId={conversation.id} customerName={customer?.name || customer?.phone || "Desconhecido"} />
 
-      {/* Messages */}
+      {/* Mensagens */}
       <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="animate-spin w-8 h-8 border-[3px] border-gray-300 border-t-[#075e54] dark:border-gray-600 dark:border-t-green-400 rounded-full" />
+            <div className="animate-spin w-8 h-8 border-[3px] border-bd border-t-accent rounded-full" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full opacity-40">
+          <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <svg className="w-16 h-16 mx-auto mb-3 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              <p className="text-[#8696a0] text-sm">Nenhuma mensagem</p>
+              <div className="w-14 h-14 rounded-2xl bg-accentsoft flex items-center justify-center mx-auto mb-3">
+                <MessagesSquare className="w-7 h-7 text-accent" strokeWidth={1.6} />
+              </div>
+              <p className="text-tx3 text-sm">Nenhuma mensagem ainda</p>
             </div>
           </div>
         ) : (
           <div className="mt-auto py-2">
             <div className="flex justify-center mb-3">
-              <span className="text-[11px] bg-white/90 dark:bg-[#182229] text-[#54656f] dark:text-gray-400 px-3 py-1 rounded-lg shadow-sm">As mensagens são criptografadas de ponta a ponta</span>
+              <span className="text-[11px] bg-surface2 text-tx3 px-3 py-1 rounded-full">Início da conversa</span>
             </div>
             {messages.map((msg, i) => {
               const prev = i > 0 ? messages[i - 1] : null;
               const consecutive = isConsecutive(prev, msg);
               const dateLabel = shouldShowDate(prev?.created_at || "", msg.created_at) ? formatDateHeader(new Date(msg.created_at)) : undefined;
               const quotedMsg = msg.metadata?.context?.id ? messages.find(m => m.metadata?.wa_message_id === msg.metadata?.context?.id) : null;
-              // Use enriched context content from webhook if available
               const quotedContent = quotedMsg?.content || msg.metadata?.context?.quoted_content || null;
               const quotedByAgent = quotedMsg?.sender_type === "agent" || msg.metadata?.context?.quoted_sender_type === "agent";
               const quotedContentType = quotedMsg?.content_type || msg.metadata?.context?.quoted_content_type || "text";
-              const isQuotedMedia = quotedContentType === "image" || quotedContentType === "video" || quotedContentType === "sticker";
+              // URL real da mídia citada (mostra a miniatura da imagem certa)
+              const qIsMedia = quotedContentType === "image" || quotedContentType === "sticker" || quotedContentType === "video";
+              const quotedMediaUrl = qIsMedia && quotedMsg
+                ? (quotedMsg.content?.startsWith("http") ? quotedMsg.content : `/api/media/${quotedMsg.id}`)
+                : null;
               return (
-                <MessageBubble key={msg.id} message={msg} isFirst={!consecutive} showDate={dateLabel} quotedContent={quotedContent} quotedByAgent={quotedByAgent} quotedContentType={quotedContentType} onReply={() => setReplyTo(msg)} onReact={(emoji) => handleReact(msg, emoji)} />
+                <MessageBubble key={msg.id} message={msg} isFirst={!consecutive} showDate={dateLabel} quotedContent={quotedContent} quotedByAgent={quotedByAgent} quotedContentType={quotedContentType} quotedMediaUrl={quotedMediaUrl} quotedMsgId={quotedMsg?.id || null} onScrollTo={scrollToMessage} domId={msg.id} onReply={() => setReplyTo(msg)} onReact={(emoji) => handleReact(msg, emoji)} />
               );
             })}
             <div ref={bottomRef} />
@@ -302,18 +332,18 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
 
       {showTagModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowTagModal(false)}>
-          <div className="w-full max-w-xs rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Etiquetar lead</h3>
+          <div className="w-full max-w-xs rounded-card border border-bd bg-surface shadow-pop p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-tx mb-3">Etiquetar lead</h3>
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {crmTags.map((tag) => (
-                <button key={tag.id} onClick={() => handleAddTag(tag.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition text-left">
+                <button key={tag.id} onClick={() => handleAddTag(tag.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-control hover:bg-hover transition text-left">
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{tag.name}</span>
+                  <span className="text-sm text-tx2">{tag.name}</span>
                 </button>
               ))}
-              {!crmTags.length && <p className="text-xs text-gray-400 text-center py-4">Nenhuma etiqueta. Crie no CRM.</p>}
+              {!crmTags.length && <p className="text-xs text-tx3 text-center py-4">Nenhuma etiqueta. Crie no CRM.</p>}
             </div>
-            <button onClick={() => setShowTagModal(false)} className="w-full mt-3 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm text-gray-600 dark:text-gray-300">Fechar</button>
+            <button onClick={() => setShowTagModal(false)} className="w-full mt-3 rounded-control border border-bd px-4 py-2 text-sm font-semibold text-tx2 hover:bg-hover transition">Fechar</button>
           </div>
         </div>
       )}

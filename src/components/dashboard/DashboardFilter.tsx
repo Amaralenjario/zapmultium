@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 const presets = [
   { key: "hoje", label: "Hoje" },
@@ -11,10 +11,11 @@ const presets = [
   { key: "30d", label: "30 dias" },
 ] as const;
 
-export default function DashboardFilter() {
+// operations vem do servidor JÁ FILTRADO por permissão (o vendedor só recebe as dele)
+export default function DashboardFilter({ operations = [] }: { operations?: { name: string; color: string }[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const active = searchParams.get("range") || "7d";
+  const active = searchParams.get("range") || "hoje";
   const activeOp = searchParams.get("op") || "";
   const customStart = searchParams.get("start") || "";
   const customEnd = searchParams.get("end") || "";
@@ -22,11 +23,6 @@ export default function DashboardFilter() {
   const [showCustom, setShowCustom] = useState(active === "custom");
   const [startDate, setStartDate] = useState(customStart);
   const [endDate, setEndDate] = useState(customEnd);
-  const [operations, setOperations] = useState<{ name: string; color: string }[]>([]);
-
-  useEffect(() => {
-    fetch("/api/operations").then(r => r.json()).then(setOperations).catch(() => {});
-  }, []);
 
   const applyFilter = (range: string, op?: string, start?: string, end?: string) => {
     const params = new URLSearchParams();
@@ -45,10 +41,10 @@ export default function DashboardFilter() {
           <button
             key={p.key}
             onClick={() => { setShowCustom(false); applyFilter(p.key); }}
-            className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-150 ${
+            className={`text-xs font-semibold px-3 py-1.5 rounded-control transition-all duration-150 ${
               active === p.key && !showCustom
-                ? "bg-emerald-500 text-white shadow-sm"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-700 dark:hover:text-gray-200"
+                ? "bg-accent text-white shadow-glow"
+                : "text-tx2 hover:bg-hover hover:text-tx"
             }`}
           >
             {p.label}
@@ -56,20 +52,20 @@ export default function DashboardFilter() {
         ))}
         <button
           onClick={() => setShowCustom(!showCustom)}
-          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-150 ${
+          className={`text-xs font-semibold px-3 py-1.5 rounded-control transition-all duration-150 ${
             showCustom
-              ? "bg-emerald-500 text-white shadow-sm"
-              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-700 dark:hover:text-gray-200"
+              ? "bg-accent text-white shadow-glow"
+              : "text-tx2 hover:bg-hover hover:text-tx"
           }`}
         >
           Personalizado
         </button>
         {showCustom && (
           <div className="flex items-center gap-1.5 ml-1">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-[11px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 py-1.5 text-gray-700 dark:text-gray-300 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none" />
-            <span className="text-xs text-gray-400">até</span>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-[11px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 py-1.5 text-gray-700 dark:text-gray-300 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none" />
-            <button onClick={() => applyFilter("custom", undefined, startDate, endDate)} disabled={!startDate || !endDate} className="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-emerald-500 text-white disabled:opacity-40 transition">Aplicar</button>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-[11px] rounded-control border border-bd bg-surface2 px-2.5 py-1.5 text-tx focus:ring-1 focus:ring-accent focus:border-accent outline-none" />
+            <span className="text-xs text-tx3">até</span>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-[11px] rounded-control border border-bd bg-surface2 px-2.5 py-1.5 text-tx focus:ring-1 focus:ring-accent focus:border-accent outline-none" />
+            <button onClick={() => applyFilter("custom", undefined, startDate, endDate)} disabled={!startDate || !endDate} className="text-[11px] font-semibold px-3 py-1.5 rounded-control bg-accent text-white disabled:opacity-40 transition">Aplicar</button>
           </div>
         )}
       </div>
@@ -77,7 +73,7 @@ export default function DashboardFilter() {
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
             onClick={() => applyFilter(active, "")}
-            className={`text-[11px] px-2.5 py-1 rounded-full font-medium transition ${!activeOp ? "bg-emerald-500 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
+            className={`text-[11px] px-2.5 py-1 rounded-full font-semibold transition ${!activeOp ? "bg-accent text-white" : "bg-surface2 text-tx2 hover:bg-hover"}`}
           >
             Todas operações
           </button>

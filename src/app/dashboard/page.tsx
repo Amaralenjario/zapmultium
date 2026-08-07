@@ -1,14 +1,18 @@
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
-import LogoutButton from "./LogoutButton";
-import MetricCard from "@/components/dashboard/MetricCard";
-import ConversationsChart from "@/components/dashboard/ConversationsChart";
-import LeadsByStatus from "@/components/dashboard/LeadsByStatus";
-import RecentConversations from "@/components/dashboard/RecentConversations";
-import RecentLeads from "@/components/dashboard/RecentLeads";
-import DashboardFilter from "@/components/dashboard/DashboardFilter";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import MetricCard from "@/components/dashboard/MetricCard";
+import MessageVolumeChart from "@/components/dashboard/MessageVolumeChart";
+import OperationDonut from "@/components/dashboard/OperationDonut";
+import SellerPerformanceTable from "@/components/dashboard/SellerPerformanceTable";
+import RecentConversations from "@/components/dashboard/RecentConversations";
+import DashboardFilter from "@/components/dashboard/DashboardFilter";
+import WolfTeaser from "@/components/dashboard/WolfTeaser";
+import { MessageSquarePlus, Clock, MessagesSquare, Timer, Inbox, Send, Workflow, Hourglass } from "lucide-react";
 
+const kpiIcon = "w-[1.15rem] h-[1.15rem]";
+
+// phone_number_ids conhecidos por canal (fallback)
 const KNOWN_PHONES: Record<string, string> = {
   "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
   "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
@@ -17,61 +21,67 @@ const KNOWN_PHONES: Record<string, string> = {
   "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
 };
 
-const PHONE_NAMES: Record<string, string> = {
-  "897878513398151": "VH - 1692",
-  "976034132269824": "GABI - 8176",
-  "892228177298374": "GUSTAVO - LUIS",
-  "1034222499765101": "AMANDA - JÉ",
-  "1234821229708132": "NC - CAIO",
-};
-
 function getDateRange(range: string, start?: string, end?: string) {
-  const TZ = "-03:00"; // Brasil
-
+  const TZ = "-03:00";
   if (range === "custom" && start && end) {
     return {
       startISO: new Date(start + "T00:00:00" + TZ).toISOString(),
       endISO: new Date(end + "T23:59:59.999" + TZ).toISOString(),
     };
   }
-
-  // Data de hoje no timezone do Brasil
   const now = new Date();
   let brToday: string;
   try {
-    const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-    brToday = brNow.toISOString().split("T")[0]; // "2026-08-04"
+    // en-CA devolve YYYY-MM-DD; timeZone garante a data no fuso do Brasil
+    // independente do fuso da máquina/servidor.
+    brToday = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   } catch {
-    // Fallback: usar UTC-3 manual
-    const localNow = new Date(now.getTime() - 3 * 3600000);
-    brToday = localNow.toISOString().split("T")[0];
+    brToday = new Date(now.getTime() - 3 * 3600000).toISOString().split("T")[0];
   }
-
-  const todayEnd = new Date(brToday + "T23:59:59.999" + TZ); // hoje 23:59 BRT → UTC
-
+  const todayEnd = new Date(brToday + "T23:59:59.999" + TZ);
   if (range === "hoje") {
-    const todayStart = new Date(brToday + "T00:00:00" + TZ);
-    return { startISO: todayStart.toISOString(), endISO: todayEnd.toISOString() };
+    return { startISO: new Date(brToday + "T00:00:00" + TZ).toISOString(), endISO: todayEnd.toISOString() };
   }
-
   if (range === "ontem") {
-    // Ontem no timezone BR
-    const yesterday = new Date(brToday + "T00:00:00" + TZ);
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-    const yesterdayEnd = new Date(yesterday);
-    yesterdayEnd.setUTCHours(26, 59, 59, 999); // 23:59:59 BRT do dia seguinte = 02:59:59 UTC
-    return { startISO: yesterday.toISOString(), endISO: yesterdayEnd.toISOString() };
+    const y = new Date(brToday + "T00:00:00" + TZ);
+    y.setUTCDate(y.getUTCDate() - 1);
+    const yEnd = new Date(y);
+    yEnd.setUTCHours(26, 59, 59, 999);
+    return { startISO: y.toISOString(), endISO: yEnd.toISOString() };
   }
-
-  // 7d, 15d, 30d
   const days: Record<string, number> = { "7d": 6, "15d": 14, "30d": 29 };
-  const daysBack = days[range] || 6;
-
-  // Calcula a data de início: today - daysBack no timezone BR
+  const daysBack = days[range] ?? 0;
   const rangeStart = new Date(brToday + "T00:00:00" + TZ);
   rangeStart.setUTCDate(rangeStart.getUTCDate() - daysBack);
-
   return { startISO: rangeStart.toISOString(), endISO: todayEnd.toISOString() };
+}
+
+function fmtDuration(sec: number | null): string {
+  if (sec == null || !isFinite(sec) || sec <= 0) return "—";
+  const s = Math.round(sec);
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  if (h < 24) return rm > 0 ? `${h}h ${rm}min` : `${h}h`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh > 0 ? `${d}d ${rh}h` : `${d}d`;
+}
+
+function fmtNum(n: number): string {
+  return (n || 0).toLocaleString("pt-BR");
+}
+
+function timeAgo(date: Date) {
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `${mins}min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 export default async function DashboardPage({
@@ -79,416 +89,251 @@ export default async function DashboardPage({
 }: {
   searchParams: { range?: string; start?: string; end?: string; op?: string };
 }) {
-  const range = searchParams.range;
-  const start = searchParams.start;
-  const end = searchParams.end;
-  const opFilter = searchParams.op; // operação específica
-  const activeRange = range || "7d";
-  const { startISO, endISO } = getDateRange(activeRange, start, end);
+  const activeRange = searchParams.range || "hoje";
+  const opFilter = searchParams.op;
+  const { startISO, endISO } = getDateRange(activeRange, searchParams.start, searchParams.end);
 
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const displayName = user?.user_metadata?.full_name || user?.email;
 
-  let sellerPhoneIds: string[] | null = null;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const admin = serviceKey
+    ? createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    : supabase;
+
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user?.id || "").single();
+  const isAdmin = profile?.role === "admin" || profile?.role === "supervisor";
 
-  if (profile?.role !== "admin" && profile?.role !== "supervisor") {
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const adminClient = serviceKey
-      ? createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-      : supabase;
-
-    const { data: sc } = await adminClient.from("seller_channels").select("evohub_channel_id").eq("user_id", user?.id || "");
-    if (sc && sc.length > 0) {
-      const channelIds = sc.map((s) => s.evohub_channel_id);
-      const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
-      const phoneIdMap: Record<string, string> = {};
-      for (const [chId, phoneId] of Object.entries(KNOWN_PHONES)) phoneIdMap[chId] = phoneId;
-      for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }
-      sellerPhoneIds = channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean);
-    }
-  }
-
-  const addPhoneFilter = (query: any) => {
-    // Se tem filtro de operação, aplica junto
-    const phoneIds = sellerPhoneIds && sellerPhoneIds.length > 0 
-      ? (opPhoneIds && opPhoneIds.length > 0 
-          ? sellerPhoneIds.filter(id => opPhoneIds.includes(id))
-          : sellerPhoneIds)
-      : (opPhoneIds && opPhoneIds.length > 0 ? opPhoneIds : null);
-
-    if (phoneIds && phoneIds.length > 0) {
-      if (phoneIds.length === 1) return query.eq("metadata->>phone_number_id", phoneIds[0]);
-      return query.or(phoneIds.map(id => `metadata->>phone_number_id.eq.${id}`).join(","));
-    }
-    return query;
-  };
-
-  const convBase = (q: any) => addPhoneFilter(q).gte("created_at", startISO).lte("created_at", endISO);
-  const allTimeConv = (q: any) => addPhoneFilter(q);
-
-  // Fetch operations_channels for leads-by-operation mapping
-  const { data: opChannels } = await supabase
+  // Mapas de canais (phone_number_id -> operação / nome), e canal -> phone
+  const { data: opChannels } = await admin
     .from("operations_channels")
-    .select("phone_number_id, operation:operation_id(name, color)")
-    .eq("is_active", true)
-    .not("phone_number_id", "is", null);
+    .select("phone_number_id, evohub_channel_id, evohub_channel_name, operation:operation_id(name, color)")
+    .eq("is_active", true);
 
-  // Mapear operação → phone_number_ids para filtro
-  const opPhoneIds = opFilter 
-    ? (opChannels || []).filter(ch => {
-        const op = Array.isArray(ch.operation) ? (ch.operation[0] as any) : (ch.operation as any);
-        return op?.name === opFilter;
-      }).map(ch => ch.phone_number_id).filter(Boolean) as string[]
-    : null;
-
-  // Fetch seller_channels for leads-by-seller mapping (admin only)
-  const isAdminOrSupervisor = profile?.role === "admin" || profile?.role === "supervisor";
-  let sellerChannels: { user_id: string; phone_number_id: string }[] = [];
-  if (isAdminOrSupervisor) {
-    const { data: sc } = await supabase
-      .from("seller_channels")
-      .select("user_id, evohub_channel_id");
-    if (sc) {
-      const phoneIdMap: Record<string, string> = {};
-      for (const ch of opChannels || []) {
-        if (ch.phone_number_id) phoneIdMap[ch.phone_number_id] = ch.phone_number_id;
-      }
-      // Also use known phone IDs
-      const knownPhones: Record<string, string> = {
-        "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
-        "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
-        "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
-        "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
-        "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
-      };
-      for (const [chId, phoneId] of Object.entries(knownPhones)) {
-        phoneIdMap[chId] = phoneId;
-      }
-      sellerChannels = sc.map(s => ({
-        user_id: s.user_id,
-        phone_number_id: phoneIdMap[s.evohub_channel_id] || "",
-      })).filter(s => s.phone_number_id);
-    }
-  }
-
-  const [
-    { count: activeConversations },
-    { count: totalConversations },
-    { count: flowsTriggered },
-    { data: recentConversations },
-    { data: conversationsByDay },
-    { data: allMessages },
-    { data: newConversations },
-    { data: firstMessages },
-    { data: activeConversationsInPeriod },
-  ] = await Promise.all([
-    allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })).eq("status", "active"),
-    allTimeConv(supabase.from("conversations").select("*", { count: "exact", head: true })),
-    supabase.from("flow_executions").select("*", { count: "exact", head: true }).gte("started_at", startISO).lte("started_at", endISO),
-    addPhoneFilter(supabase.from("conversations").select("id, status, last_message, customer:customer_id(name, phone), updated_at").order("updated_at", { ascending: false }).limit(5)),
-    convBase(supabase.from("conversations").select("created_at, status")),
-    supabase.from("messages").select("metadata, sender_type").gte("created_at", startISO).lte("created_at", endISO).limit(5000),
-    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("created_at", startISO).lte("created_at", endISO).limit(5000)),
-    supabase.from("messages").select("conversation_id, content, sender_type, created_at").eq("sender_type", "customer").order("created_at", { ascending: true }).limit(5000),
-    addPhoneFilter(supabase.from("conversations").select("id, metadata, created_at").gte("last_message_at", startISO).lte("last_message_at", endISO).limit(5000)),
-  ]);
-
-  // Seller message stats
-  const sellerStats: Record<string, { sent: number; received: number; name: string }> = {};
-  for (const phoneId of Object.keys(PHONE_NAMES)) {
-    sellerStats[phoneId] = { sent: 0, received: 0, name: PHONE_NAMES[phoneId] || phoneId };
-  }
-  for (const m of (allMessages || [])) {
-    const pid = (m.metadata as any)?.phone_number_id || "";
-    if (sellerStats[pid]) {
-      if (m.sender_type === "agent") sellerStats[pid].sent++;
-      else if (m.sender_type === "customer") sellerStats[pid].received++;
-    }
-  }
-
-  // If seller-filtered, only show their channels
-  if (sellerPhoneIds) {
-    for (const key of Object.keys(sellerStats)) {
-      if (!sellerPhoneIds.includes(key)) delete sellerStats[key];
-    }
-  }
-
-  const sellerTotal = Object.values(sellerStats).reduce((a, b) => a + b.sent + b.received, 0);
-  const sellerStatsArray = Object.entries(sellerStats)
-    .filter(([, v]) => v.sent > 0 || v.received > 0)
-    .sort((a, b) => (b[1].sent + b[1].received) - (a[1].sent + a[1].received));
-
-  // Leads por operação - conta conversas com ATIVIDADE no período (leads totais)
-  const opsMap: Record<string, { opName: string; opColor: string; count: number }> = {};
-  const phoneToOp: Record<string, { opName: string; opColor: string }> = {};
+  const phoneToOp: Record<string, { name: string; color: string }> = {};
+  const phoneToName: Record<string, string> = {};
+  const channelToPhone: Record<string, string> = { ...Object.fromEntries(Object.entries(KNOWN_PHONES)) };
+  const allPhones: string[] = [];
   for (const ch of opChannels || []) {
     const op = Array.isArray(ch.operation) ? (ch.operation[0] as any) : (ch.operation as any);
-    if (ch.phone_number_id && op) {
-      phoneToOp[ch.phone_number_id] = { opName: op.name, opColor: op.color };
+    if (ch.phone_number_id) {
+      if (op) phoneToOp[ch.phone_number_id] = { name: op.name, color: op.color };
+      if (ch.evohub_channel_name) phoneToName[ch.phone_number_id] = ch.evohub_channel_name;
+      if (ch.evohub_channel_id) channelToPhone[ch.evohub_channel_id] = ch.phone_number_id;
+      allPhones.push(ch.phone_number_id);
     }
   }
-  for (const conv of (activeConversationsInPeriod || [])) {
-    const pid = (conv as any).metadata?.phone_number_id || "";
-    const op = phoneToOp[pid];
-    if (!op) continue;
-    if (!opsMap[op.opName]) opsMap[op.opName] = { opName: op.opName, opColor: op.opColor, count: 0 };
-    opsMap[op.opName].count++;
-  }
-  const leadsByOperation = Object.values(opsMap).sort((a, b) => b.count - a.count);
-  const totalLeadsAtivos = leadsByOperation.reduce((a, b) => a + b.count, 0);
 
-  // Leads NOVOS - conversas CRIADAS no período
-  const totalLeadsNovos = (newConversations || []).length;
+  // Operação -> phones (para filtro por operação)
+  const opPhoneIds = opFilter
+    ? allPhones.filter((p) => phoneToOp[p]?.name === opFilter)
+    : null;
 
-  // Leads por vendedor (admin only)
-  const sellerLeadMap: Record<string, { userId: string; count: number }> = {};
+  // Vendedor (operator) -> apenas seus canais
+  let sellerPhoneIds: string[] | null = null;
   const phoneToSeller: Record<string, string> = {};
-  for (const sc of sellerChannels) {
-    phoneToSeller[sc.phone_number_id] = sc.user_id;
-  }
-  for (const conv of (activeConversationsInPeriod || [])) {
-    const pid = (conv as any).metadata?.phone_number_id || "";
-    const userId = phoneToSeller[pid];
-    if (!userId) continue;
-    if (!sellerLeadMap[userId]) sellerLeadMap[userId] = { userId, count: 0 };
-    sellerLeadMap[userId].count++;
+  if (!isAdmin) {
+    const { data: sc } = await admin.from("seller_channels").select("evohub_channel_id").eq("user_id", user?.id || "");
+    sellerPhoneIds = (sc || []).map((s) => channelToPhone[s.evohub_channel_id]).filter(Boolean);
   }
 
-  // Get seller names from profiles
-  const sellerNames: Record<string, string> = {};
-  if (isAdminOrSupervisor && Object.keys(sellerLeadMap).length > 0) {
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, email, full_name")
-      .in("id", Object.keys(sellerLeadMap));
-    if (profiles) {
-      for (const p of profiles) {
-        sellerNames[p.id] = (p as any).full_name || (p as any).email || p.id;
+  // Mapa phone -> vendedor (para tabela admin)
+  if (isAdmin) {
+    const { data: sc } = await admin.from("seller_channels").select("user_id, evohub_channel_id");
+    for (const s of sc || []) {
+      const phone = channelToPhone[s.evohub_channel_id];
+      if (phone) phoneToSeller[phone] = s.user_id;
+    }
+  }
+
+  // Operações que ESTE usuário pode filtrar (admin = todas; vendedor = só as dos canais dele)
+  const visibleOpsSeen: Record<string, string> = {};
+  for (const [phone, op] of Object.entries(phoneToOp)) {
+    if (!isAdmin && !(sellerPhoneIds || []).includes(phone)) continue;
+    if (!visibleOpsSeen[op.name]) visibleOpsSeen[op.name] = op.color;
+  }
+  const visibleOperations = Object.entries(visibleOpsSeen).map(([name, color]) => ({ name, color }));
+
+  // phones efetivos para as RPCs (null = todos)
+  let effectivePhones: string[] | null;
+  if (isAdmin) {
+    effectivePhones = opPhoneIds; // null = todos, ou filtrado por operação
+  } else {
+    const base = sellerPhoneIds || [];
+    effectivePhones = opPhoneIds ? base.filter((p) => opPhoneIds.includes(p)) : base;
+  }
+
+  // Bucket do gráfico: por hora em dia único, senão por dia
+  const bucket = activeRange === "hoje" || activeRange === "ontem" ? "hour" : "day";
+
+  // ── Chamadas ao banco (funções SQL — precisas, sem teto de 1000) ──
+  const [summaryRes, channelRes, volumeRes, waitingRes, recentRes] = await Promise.all([
+    admin.rpc("dashboard_summary", { p_start: startISO, p_end: endISO, p_phones: effectivePhones }),
+    admin.rpc("dashboard_by_channel", { p_start: startISO, p_end: endISO, p_phones: effectivePhones }),
+    admin.rpc("dashboard_volume", { p_start: startISO, p_end: endISO, p_phones: effectivePhones, p_bucket: bucket }),
+    // Fila: conversas aguardando resposta há mais tempo
+    (() => {
+      let q = admin
+        .from("conversations")
+        .select("id, last_message, last_message_at, customer:customer_id(name, phone), metadata")
+        .eq("status", "active")
+        .eq("last_message_sender", "customer")
+        .order("last_message_at", { ascending: true })
+        .limit(6);
+      if (effectivePhones && effectivePhones.length === 1) q = q.eq("metadata->>phone_number_id", effectivePhones[0]);
+      else if (effectivePhones && effectivePhones.length > 1) q = q.or(effectivePhones.map((id) => `metadata->>phone_number_id.eq.${id}`).join(","));
+      else if (effectivePhones && effectivePhones.length === 0) q = q.eq("metadata->>phone_number_id", "__none__");
+      return q;
+    })(),
+    // Conversas recentes
+    (() => {
+      let q = admin
+        .from("conversations")
+        .select("id, status, last_message, last_message_sender, customer:customer_id(name, phone), updated_at, metadata")
+        .order("updated_at", { ascending: false })
+        .limit(6);
+      if (effectivePhones && effectivePhones.length === 1) q = q.eq("metadata->>phone_number_id", effectivePhones[0]);
+      else if (effectivePhones && effectivePhones.length > 1) q = q.or(effectivePhones.map((id) => `metadata->>phone_number_id.eq.${id}`).join(","));
+      else if (effectivePhones && effectivePhones.length === 0) q = q.eq("metadata->>phone_number_id", "__none__");
+      return q;
+    })(),
+  ]);
+
+  const s = (summaryRes.data as any) || {};
+  const channels: any[] = (channelRes.data as any[]) || [];
+  const volume: any[] = (volumeRes.data as any[]) || [];
+
+  // Gráfico de volume
+  const volumeData = volume.map((v) => {
+    const d = new Date(v.bucket);
+    const label = bucket === "hour"
+      ? `${String(d.getUTCHours()).padStart(2, "0")}h`
+      : `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+    return { label, enviadas: Number(v.enviadas), recebidas: Number(v.recebidas) };
+  });
+
+  // Donut por operação (novas conversas no período)
+  const opAgg: Record<string, { name: string; color: string; value: number }> = {};
+  for (const ch of channels) {
+    const op = phoneToOp[ch.phone];
+    if (!op) continue;
+    if (!opAgg[op.name]) opAgg[op.name] = { name: op.name, color: op.color, value: 0 };
+    opAgg[op.name].value += Number(ch.novas);
+  }
+  const opSlices = Object.values(opAgg).sort((a, b) => b.value - a.value);
+  const opTotal = opSlices.reduce((a, b) => a + b.value, 0);
+
+  // Tabela por vendedor (admin) — agrega canais por vendedor
+  let sellerRows: any[] = [];
+  if (isAdmin) {
+    const bySeller: Record<string, { userId: string; novas: number; enviadas: number; recebidas: number; ativas: number; aguardando: number }> = {};
+    for (const ch of channels) {
+      const uid = phoneToSeller[ch.phone];
+      const key = uid || `canal:${phoneToName[ch.phone] || ch.phone}`;
+      if (!bySeller[key]) bySeller[key] = { userId: uid || "", novas: 0, enviadas: 0, recebidas: 0, ativas: 0, aguardando: 0 };
+      bySeller[key].novas += Number(ch.novas);
+      bySeller[key].enviadas += Number(ch.enviadas);
+      bySeller[key].recebidas += Number(ch.recebidas);
+      bySeller[key].ativas += Number(ch.ativas);
+      bySeller[key].aguardando += Number(ch.aguardando);
+    }
+    const userIds = Object.values(bySeller).map((b) => b.userId).filter(Boolean);
+    const names: Record<string, string> = {};
+    const avatars: Record<string, string> = {};
+    if (userIds.length > 0) {
+      const { data: profs } = await admin.from("profiles").select("id, full_name, email, avatar_url").in("id", userIds);
+      for (const p of profs || []) {
+        names[p.id] = (p as any).full_name || (p as any).email || p.id;
+        if ((p as any).avatar_url) avatars[p.id] = (p as any).avatar_url;
       }
     }
-  }
-  const leadsBySeller = Object.values(sellerLeadMap)
-    .map(s => ({ name: sellerNames[s.userId] || s.userId, count: s.count }))
-    .sort((a, b) => b.count - a.count);
-
-  // Leads por frase-chave - primeira mensagem por operação
-  const convIdsInPeriod = new Set((newConversations || []).map((c: any) => c.id));
-  // Mapa: conversation_id → { content, phone_number_id }
-  const convMeta: Record<string, { phoneId: string }> = {};
-  for (const c of (newConversations || [])) {
-    convMeta[(c as any).id] = { phoneId: (c as any).metadata?.phone_number_id || "" };
-  }
-  const firstMsgByConv: Record<string, string> = {};
-  for (const msg of (firstMessages || [])) {
-    const cid = (msg as any).conversation_id;
-    if (!convIdsInPeriod.has(cid)) continue;
-    if (firstMsgByConv[cid]) continue;
-    firstMsgByConv[cid] = (msg as any).content || "";
+    sellerRows = Object.entries(bySeller)
+      .map(([key, v]) => ({
+        name: v.userId ? (names[v.userId] || "Vendedor") : key.replace("canal:", ""),
+        avatar: v.userId ? avatars[v.userId] : undefined,
+        novas: v.novas, enviadas: v.enviadas, recebidas: v.recebidas, ativas: v.ativas, aguardando: v.aguardando,
+      }))
+      .sort((a, b) => (b.enviadas + b.recebidas) - (a.enviadas + a.recebidas));
   }
 
-  // Agrupa por operação → frase → count
-  const opPhrases: Record<string, { opName: string; opColor: string; phrases: Record<string, number> }> = {};
-  for (const [convId, content] of Object.entries(firstMsgByConv)) {
-    if (!content.trim()) continue;
-    const pid = convMeta[convId]?.phoneId || "";
-    const op = phoneToOp[pid];
-    if (!op) continue;
-    if (!opPhrases[op.opName]) opPhrases[op.opName] = { opName: op.opName, opColor: op.opColor, phrases: {} };
-    const normalized = content.trim().slice(0, 150); // trunca pra evitar frases gigantes
-    opPhrases[op.opName].phrases[normalized] = (opPhrases[op.opName].phrases[normalized] || 0) + 1;
-  }
-
-  // Converte pra array ordenado, top 5 por operação
-  const leadsByPhrasePerOp = Object.values(opPhrases).map(op => ({
-    ...op,
-    phrases: Object.entries(op.phrases)
-      .map(([text, count]) => ({ text, count }))
-      .sort((a, b) => b.count - a.count),
-  })).filter(op => op.phrases.length > 0);
-
-  const leadsByStatusCounts: Record<string, number> = {};
-  const leadsByStatusChart = ["new", "contacted", "qualified", "converted", "lost"].map((status) => ({ status, count: 0 }));
-
-  const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i)); d.setHours(0, 0, 0, 0); return d;
-  });
-  const conversationsByDayChart = last7Days.map((day) => {
-    const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
-    const dayConversations = (conversationsByDay || []).filter((c: any) => {
-      const d = new Date(c.created_at); return d >= day && d <= dayEnd;
-    });
-    return { date: dayNames[day.getDay()] + " " + day.getDate(), total: dayConversations.length, active: dayConversations.filter((c: any) => c.status === "active").length };
-  });
-
-  const recentConversationItems = (recentConversations || []).map((c: any) => {
+  const mapConv = (c: any) => {
     const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
-    return { id: c.id, name: customer?.name || customer?.phone || "Desconhecido", phone: customer?.phone || "", status: c.status, message: c.last_message || undefined, time: timeAgo(new Date(c.updated_at)) };
-  });
+    return {
+      id: c.id,
+      name: customer?.name || customer?.phone || "Desconhecido",
+      phone: customer?.phone || "",
+      status: c.status,
+      message: c.last_message || undefined,
+      time: timeAgo(new Date(c.last_message_at || c.updated_at)),
+    };
+  };
+  const waitingItems = ((waitingRes.data as any[]) || []).map((c) => ({ ...mapConv(c), status: "aguardando" }));
+  const recentItems = ((recentRes.data as any[]) || []).map(mapConv);
 
-  const recentLeadItems: any[] = [];
+  const taxaConclusao = s.fluxos_disparados > 0 ? Math.round((s.fluxos_concluidos / s.fluxos_disparados) * 100) : 0;
+  const pctAguardando = s.ativas_agora > 0 ? Math.round((s.aguardando / s.ativas_agora) * 100) : 0;
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">Bem-vindo de volta, {displayName}</p>
+          <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-tx">Dashboard</h1>
+          <p className="text-tx2 text-sm mt-0.5">
+            Bem-vindo de volta, {displayName}
+            {!isAdmin && <span className="text-tx3"> · seus canais</span>}
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Suspense fallback={<div className="h-8 w-48 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />}>
-            <DashboardFilter />
+          <Suspense fallback={<div className="h-8 w-48 bg-surface2 rounded-control animate-pulse" />}>
+            <DashboardFilter operations={visibleOperations} />
           </Suspense>
-          <LogoutButton />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
-        <MetricCard title="Conversas ativas" value={activeConversations ?? 0} subtitle="no momento" icon={<ChatIcon />} />
-        <MetricCard title="Total conversas" value={totalConversations ?? 0} subtitle="desde o início" icon={<AllChatIcon />} />
-        <MetricCard title="Leads novos" value={totalLeadsNovos ?? 0} subtitle="primeira msg no período" icon={<LeadIcon />} />
+      {/* Teaser gamificado: Lobo do X1 */}
+      <div className="mb-4">
+        <WolfTeaser />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6">
-        <MetricCard title="Fluxos disparados" value={flowsTriggered ?? 0} subtitle="no período" icon={<FlowIcon />} />
-        <MetricCard title="Mensagens enviadas" value={Object.values(sellerStats).reduce((a, b) => a + b.sent, 0)} subtitle="no período" icon={<SendIcon />} />
-        <MetricCard title="Mensagens recebidas" value={sellerTotal - Object.values(sellerStats).reduce((a, b) => a + b.sent, 0)} subtitle="no período" icon={<ReceiveIcon />} />
+      {/* KPIs principais */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <MetricCard title="Conversas novas" value={fmtNum(s.novas_conversas || 0)} subtitle="no período" icon={<MessageSquarePlus className={kpiIcon} strokeWidth={1.9} />} />
+        <MetricCard title="Aguardando resposta" value={fmtNum(s.aguardando || 0)} subtitle={`${pctAguardando}% das ativas`} icon={<Clock className={kpiIcon} strokeWidth={1.9} />} />
+        <MetricCard title="Conversas ativas" value={fmtNum(s.ativas_agora || 0)} subtitle="no momento" icon={<MessagesSquare className={kpiIcon} strokeWidth={1.9} />} />
+        <MetricCard title="Tempo de resposta" value={fmtDuration(s.tmr_mediana_seg)} subtitle="mediana (1ª resposta)" icon={<Timer className={kpiIcon} strokeWidth={1.9} />} />
       </div>
 
-      {sellerStatsArray.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Mensagens por vendedor</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-            {sellerStatsArray.map(([phoneId, stats]) => {
-              const total = stats.sent + stats.received;
-              const pctSent = total > 0 ? Math.round((stats.sent / total) * 100) : 0;
-              const pctRecv = total > 0 ? 100 - pctSent : 0;
-              return (
-                <div key={phoneId} className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-4 shadow-sm">
-                  <p className="text-xs font-medium text-gray-400 dark:text-gray-500 truncate mb-3">{stats.name}</p>
-                  <div className="flex items-end gap-1 h-8 mb-3">
-                    <div className="bg-emerald-500 rounded-t-sm transition-all" style={{ width: `${Math.max(pctSent, 8)}%`, height: `${Math.max(pctSent * 0.28, 8)}%` }} />
-                    <div className="bg-gray-300 dark:bg-gray-700 rounded-t-sm transition-all" style={{ width: `${Math.max(pctRecv, 8)}%`, height: `${Math.max(pctRecv * 0.28, 8)}%` }} />
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-                      <span className="text-gray-500 dark:text-gray-400">Enviadas</span>
-                      <span className="font-semibold text-gray-800 dark:text-gray-200">{stats.sent}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0" />
-                      <span className="text-gray-500 dark:text-gray-400">Recebidas</span>
-                      <span className="font-semibold text-gray-800 dark:text-gray-200">{stats.received}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {leadsByOperation.length > 0 && (
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Leads por operação</h3>
-            <span className="text-[11px] text-gray-400">{totalLeadsAtivos} ativos no período</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {leadsByOperation.map((op) => {
-              const maxLeads = leadsByOperation[0]?.count || 1;
-              const barW = Math.max((op.count / maxLeads) * 100, 8);
-              return (
-                <div key={op.opName} className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-4 shadow-sm">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: op.opColor }} />
-                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">{op.opName}</p>
-                    <span className="text-xs font-bold text-gray-800 dark:text-white ml-auto">{op.count}</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${barW}%`, backgroundColor: op.opColor }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {isAdminOrSupervisor && leadsBySeller.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Leads por vendedor</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {leadsBySeller.map((s) => {
-              const maxLeads = leadsBySeller[0]?.count || 1;
-              const barW = Math.max((s.count / maxLeads) * 100, 8);
-              return (
-                <div key={s.name} className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 p-4 shadow-sm">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-7 h-7 rounded-full bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                        {s.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">{s.name}</p>
-                    <span className="text-xs font-bold text-gray-800 dark:text-white ml-auto">{s.count}</span>
-                  </div>
-                  <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${barW}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {leadsByPhrasePerOp.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Primeira mensagem por operação</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {leadsByPhrasePerOp.map((op) => (
-              <div key={op.opName} className="rounded-xl border border-gray-200 dark:border-emerald-950/40 bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-800" style={{ borderLeftColor: op.opColor, borderLeftWidth: "3px" }}>
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: op.opColor }} />
-                  <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{op.opName}</p>
-                </div>
-                <div className="divide-y divide-gray-50 dark:divide-gray-800/50 max-h-[400px] overflow-y-auto">
-                  {op.phrases.map((p, i) => (
-                    <div key={i} className="px-4 py-2.5 flex items-start gap-2">
-                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex-shrink-0 mt-0.5">{p.count}</span>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">{p.text}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
-        <ConversationsChart data={conversationsByDayChart} />
-        <LeadsByStatus data={leadsByStatusChart} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <MetricCard title="Mensagens recebidas" value={fmtNum(s.msgs_recebidas || 0)} subtitle="no período" icon={<Inbox className={kpiIcon} strokeWidth={1.9} />} />
+        <MetricCard title="Mensagens enviadas" value={fmtNum(s.msgs_enviadas || 0)} subtitle="no período" icon={<Send className={kpiIcon} strokeWidth={1.9} />} />
+        <MetricCard title="Fluxos disparados" value={fmtNum(s.fluxos_disparados || 0)} subtitle={`${taxaConclusao}% concluídos`} icon={<Workflow className={kpiIcon} strokeWidth={1.9} />} />
+        <MetricCard title="Duração média" value={fmtDuration(s.duracao_media_seg)} subtitle="por conversa" icon={<Hourglass className={kpiIcon} strokeWidth={1.9} />} />
       </div>
 
+      {/* Gráficos */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
+        <div className="lg:col-span-2">
+          <MessageVolumeChart
+            data={volumeData}
+            subtitle={bucket === "hour" ? "Enviadas × recebidas por hora" : "Enviadas × recebidas por dia"}
+          />
+        </div>
+        <OperationDonut data={opSlices} total={opTotal} subtitle={`${fmtNum(opTotal)} novas no período`} />
+      </div>
+
+      {/* Performance por vendedor (admin) */}
+      {isAdmin && (
+        <div className="mb-6">
+          <SellerPerformanceTable data={sellerRows} />
+        </div>
+      )}
+
+      {/* Fila + recentes */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <RecentConversations data={recentConversationItems} />
-        <RecentLeads data={recentLeadItems} />
+        <RecentConversations data={waitingItems} title="Aguardando resposta" emptyText="Nenhuma conversa na fila 🎉" />
+        <RecentConversations data={recentItems} title="Conversas recentes" />
       </div>
     </div>
   );
 }
-
-function timeAgo(date: Date) { const diff = Date.now() - date.getTime(); const mins = Math.floor(diff / 60000); if (mins < 1) return "agora"; if (mins < 60) return `${mins}min`; const hours = Math.floor(mins / 60); if (hours < 24) return `${hours}h`; const days = Math.floor(hours / 24); return `${days}d`; }
-
-function ChatIcon() { return (<svg className="w-[1.15rem] h-[1.15rem]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3a49.5 49.5 0 01-4.02-.163 2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951" /></svg>); }
-function AllChatIcon() { return (<svg className="w-[1.15rem] h-[1.15rem]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>); }
-function LeadIcon() { return (<svg className="w-[1.15rem] h-[1.15rem]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" /></svg>); }
-function UsersIcon() { return (<svg className="w-[1.15rem] h-[1.15rem]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /></svg>); }
-function FlowIcon() { return (<svg className="w-[1.15rem] h-[1.15rem]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>); }
-function SendIcon() { return (<svg className="w-[1.15rem] h-[1.15rem]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>); }
-function ReceiveIcon() { return (<svg className="w-[1.15rem] h-[1.15rem]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 18 8.25m-9 0h10.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>); }

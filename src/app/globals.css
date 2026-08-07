@@ -2,7 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Scrollbar personalizado - WebKit (Chrome, Edge, Safari) */
+/* ============================================================
+   Design System — tokens "Nexo" (extraídos do design base)
+   Padrão: ESCURO (html.dark). Alternável para CLARO.
+   ============================================================ */
+
+/* CLARO */
+:root {
+  --bg: #F6F7FB;
+  --surface: #FFFFFF;
+  --surface2: #F6F8FD;
+  --bd: #ECEEF4;
+  --line: #F1F3F8;
+  --tx: #0E1526;
+  --tx2: #6B7488;
+  --tx3: #A5AEC0;
+  --hover: #F3F5FB;
+  --rowhover: #F8FAFE;
+  --accent: #3A5AF0;
+  --accent2: #2842C4;
+  --accentsoft: #EEF2FE;
+  --track: #F1F3F8;
+  --c1: #3A5AF0;
+  --c2: #7D97F8;
+  --c3: #C9D3F8;
+  --success: #0E9E5A;
+  --success-soft: #E8F7EF;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow2: 0 6px 20px rgba(16, 24, 40, .07);
+  --glow: 0 4px 12px rgba(58, 90, 240, .28);
+}
+
+/* ESCURO (padrão) */
+.dark {
+  --bg: #0D1119;
+  --surface: #141A26;
+  --surface2: #1A2130;
+  --bd: #242C3C;
+  --line: #1F2735;
+  --tx: #E9EDF6;
+  --tx2: #98A2B8;
+  --tx3: #697490;
+  --hover: #1D2534;
+  --rowhover: #1A2130;
+  --accent: #6E8CFF;
+  --accent2: #5877F0;
+  --accentsoft: #1D2745;
+  --track: #1F2735;
+  --c1: #6E8CFF;
+  --c2: #4257A8;
+  --c3: #2B3557;
+  --success: #3FD68C;
+  --success-soft: #12301F;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow2: 0 8px 24px rgba(0, 0, 0, .45);
+  --glow: 0 4px 14px rgba(110, 140, 255, .30);
+}
+
+body {
+  background: var(--bg);
+  color: var(--tx);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Scrollbar - WebKit (Chrome, Edge, Safari) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -13,36 +77,74 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--track);
   border-radius: 3px;
   min-height: 40px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
-}
-
-/* Dark mode scrollbar */
-.dark ::-webkit-scrollbar-thumb {
-  background: #374151;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: var(--tx3);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
-}
-
-.dark * {
-  scrollbar-color: #374151 transparent;
+  scrollbar-color: var(--track) transparent;
 }
 
 /* Previne scroll horizontal em todo o sistema */
 body,
 html {
   overflow-x: hidden;
+}
+
+/* ── Gamificação: Ranking / Lobo do X1 ── */
+@keyframes wolf-aura {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(110, 140, 255, 0.55), 0 0 40px 6px rgba(110, 140, 255, 0.35); }
+  50%      { box-shadow: 0 0 0 12px rgba(110, 140, 255, 0), 0 0 70px 14px rgba(139, 92, 246, 0.45); }
+}
+@keyframes wolf-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7px); }
+}
+@keyframes wolf-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes wolf-spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes wolf-pulse-q {
+  0%, 100% { transform: scale(1) rotate(-6deg); opacity: 0.9; }
+  50%      { transform: scale(1.12) rotate(6deg); opacity: 1; }
+}
+@keyframes wolf-flame {
+  0%, 100% { transform: scaleY(1) translateY(0); opacity: 0.85; }
+  50%      { transform: scaleY(1.25) translateY(-3px); opacity: 1; }
+}
+@keyframes wolf-live-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.8); }
+}
+@keyframes wolf-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wolf-aura { animation: wolf-aura 2.6s ease-in-out infinite; }
+.wolf-float { animation: wolf-float 3.4s ease-in-out infinite; }
+.wolf-spin-slow { animation: wolf-spin-slow 14s linear infinite; }
+.wolf-pulse-q { animation: wolf-pulse-q 2.2s ease-in-out infinite; }
+.wolf-flame { animation: wolf-flame 1.4s ease-in-out infinite; transform-origin: bottom center; }
+.wolf-live-dot { animation: wolf-live-dot 1.3s ease-in-out infinite; }
+.wolf-rise { animation: wolf-rise 0.5s ease-out both; }
+.wolf-shimmer {
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: wolf-shimmer 2.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wolf-aura, .wolf-float, .wolf-spin-slow, .wolf-pulse-q, .wolf-flame, .wolf-live-dot, .wolf-rise, .wolf-shimmer {
+    animation: none;
+  }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRealChannelToken } from "@/lib/instances";
+import { friendlyWaError } from "@/lib/wa-errors";
 
 const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 const KEY = process.env.EVOHUB_API_KEY;
@@ -60,18 +61,36 @@ export async function POST(request: Request) {
 
     const data = await res.json();
 
-    if (!res.ok) {
-      const msg = typeof data === "object" ? (data?.error?.message || data?.message || data?.error_data?.details || JSON.stringify(data)) : String(data);
-      return NextResponse.json({ error: msg }, { status: res.status });
-    }
-
-    // Salvar mensagem enviada no banco
     const { createClient } = await import("@supabase/supabase-js");
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
+
+    const contentType = msgType === "sticker" ? "sticker" : (msgType === "text" ? "text" : (msgType === "video" ? "video" : "image"));
+
+    if (!res.ok) {
+      const friendly = friendlyWaError(data);
+      // Registra a mensagem como FALHA para aparecer no chat com o motivo em vermelho
+      if (conversationId) {
+        await supabase.from("messages").insert({
+          conversation_id: conversationId,
+          sender_type: "agent",
+          content: message,
+          content_type: contentType,
+          metadata: { phone_number_id: phoneNumberId, error: friendly, failed: true, wa_error_code: data?.error?.code },
+        });
+        await supabase.from("conversations").update({
+          last_message: msgType === "text" ? message : "📎 Mídia",
+          last_message_sender: "agent",
+          last_message_read: false,
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", conversationId);
+      }
+      return NextResponse.json({ error: friendly }, { status: res.status });
+    }
 
     const mediaLabels: Record<string, string> = {
       image: "📷 Imagem",

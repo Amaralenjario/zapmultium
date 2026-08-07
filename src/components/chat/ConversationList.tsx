@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "./Avatar";
 
@@ -43,11 +44,50 @@ export default function ConversationList({
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [operationFilter, setOperationFilter] = useState<string | null>(null);
   const [leadTagsMap, setLeadTagsMap] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
-  const [availableTags, setAvailableTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const [clickLocked, setClickLocked] = useState(false);
+  const [permReady, setPermReady] = useState(false);
   const supabase = createClient();
 
+  // Conversas dentro do escopo do vendedor (admin vê todas)
+  const scopedConversations = useMemo(() => {
+    if (sellerPhoneIds === null) return allConversations;
+    return allConversations.filter((conv) => {
+      const pid = (conv as any).metadata?.phone_number_id || "";
+      if (!pid) return true;
+      return sellerPhoneIds.includes(pid);
+    });
+  }, [allConversations, sellerPhoneIds]);
+
+  // Operações visíveis: só as dos canais do próprio vendedor
+  const visibleOps = useMemo(() => {
+    const seen: Record<string, { name: string; color: string }> = {};
+    for (const [pid, op] of Object.entries(phoneMap)) {
+      if (sellerPhoneIds !== null && !sellerPhoneIds.includes(pid)) continue;
+      if (!seen[op.name]) seen[op.name] = op;
+    }
+    return Object.values(seen);
+  }, [phoneMap, sellerPhoneIds]);
+
+  // Etiquetas visíveis: só as usadas nas conversas do próprio vendedor
+  const availableTags = useMemo(() => {
+    const phones = new Set<string>();
+    for (const conv of scopedConversations) {
+      const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
+      if (customer?.phone) phones.add(customer.phone);
+    }
+    const seen = new Map<string, { id: string; name: string; color: string }>();
+    for (const ph of phones) {
+      for (const tag of leadTagsMap[ph] || []) {
+        if (!seen.has(tag.id)) seen.set(tag.id, tag);
+      }
+    }
+    return Array.from(seen.values());
+  }, [scopedConversations, leadTagsMap]);
+
   const applyFilters = useCallback(() => {
+    // Enquanto a permissão não carregou, não expõe conversa alguma
+    if (!permReady) { setConversations([]); return; }
+
     let filtered = searchResults !== null ? searchResults : allConversations;
 
     if (sellerPhoneIds !== null) {
@@ -91,7 +131,7 @@ export default function ConversationList({
     }
 
     setConversations(filtered);
-  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap]);
+  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
 
@@ -110,16 +150,6 @@ export default function ConversationList({
   }, [search]);
 
   useEffect(() => {
-    const seen = new Map<string, { id: string; name: string; color: string }>();
-    for (const tags of Object.values(leadTagsMap)) {
-      for (const tag of tags) {
-        if (!seen.has(tag.id)) seen.set(tag.id, tag);
-      }
-    }
-    setAvailableTags(Array.from(seen.values()));
-  }, [leadTagsMap]);
-
-  useEffect(() => {
     const fetchConversations = async () => {
       const { data } = await supabase
         .from("conversations")
@@ -127,34 +157,37 @@ export default function ConversationList({
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(500);
       setAllConversations(data || []);
-      // Lock clicks for 150ms after update to avoid misclicks
       setClickLocked(true);
       setTimeout(() => setClickLocked(false), 150);
     };
 
     const fetchSellerChannels = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile?.role === "admin" || profile?.role === "supervisor") {
-        setSellerPhoneIds(null);
-        return;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setSellerPhoneIds([]); return; }
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+        if (profile?.role === "admin" || profile?.role === "supervisor") {
+          setSellerPhoneIds(null);
+          return;
+        }
+        const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
+        if (!sc || sc.length === 0) { setSellerPhoneIds([]); return; }
+        const channelIds = sc.map((s) => s.evohub_channel_id);
+        const phoneIdMap: Record<string, string> = {
+          "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+          "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+          "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+          "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+          "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+          "0bce92b7-b6a9-4859-ac87-bc2ed01719e1": "1077309398802921",
+          "004d0718-04ae-4af5-b55b-aaa5136d1138": "1050317928161978",
+        };
+        const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
+        for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }
+        setSellerPhoneIds(channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean));
+      } finally {
+        setPermReady(true);
       }
-      const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
-      if (!sc || sc.length === 0) { setSellerPhoneIds([]); return; }
-      const channelIds = sc.map((s) => s.evohub_channel_id);
-      const phoneIdMap: Record<string, string> = {
-        "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
-        "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
-        "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
-        "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
-        "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
-        "0bce92b7-b6a9-4859-ac87-bc2ed01719e1": "1077309398802921",
-        "004d0718-04ae-4af5-b55b-aaa5136d1138": "1050317928161978",
-      };
-      const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
-      for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }
-      setSellerPhoneIds(channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean));
     };
 
     const fetchOperations = async () => {
@@ -243,16 +276,26 @@ export default function ConversationList({
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   };
 
+  const filterLabels: Record<string, string> = { all: "Todas", unread: "Não lidas", active: "Ativas", archived: "Arquivadas" };
+
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-[#111b21]">
-      <div className="p-3 border-b border-gray-100 dark:border-[#222d34] bg-[#f0f2f5] dark:bg-[#202c33]">
-        <div className="relative mb-2">
-          <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#54656f] dark:text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar conversas..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-[#2a3942] border-0 text-[14px] text-[#111b21] dark:text-[#e9edef] placeholder:text-[#667781] dark:placeholder:text-[#8696a0] focus:ring-1 focus:ring-emerald-500 focus:outline-none transition" />
+    <div className="h-full flex flex-col bg-surface">
+      {/* Cabeçalho */}
+      <div className="px-4 pt-4 pb-3 border-b border-bd">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-extrabold tracking-[-0.02em] text-tx">Conversas</h2>
         </div>
-        <div className="flex gap-1">
+        <div className="relative mb-3">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-tx3" strokeWidth={2} />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Pesquisar conversas..."
+            className="w-full pl-9 pr-4 py-2.5 rounded-control bg-surface2 border border-bd text-[14px] text-tx placeholder:text-tx3 focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none transition"
+          />
+        </div>
+        <div className="flex gap-1.5">
           {(["all", "unread", "active", "archived"] as const).map((f) => {
             const base = allConversations.filter((conv) => {
               if (sellerPhoneIds !== null) {
@@ -269,63 +312,63 @@ export default function ConversationList({
               archived: base.filter((c) => !!c.archived).length,
             };
             return (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`flex-1 text-[11px] font-medium py-1.5 rounded-lg transition ${
-                filter === f
-                  ? "bg-emerald-600 text-white"
-                  : "text-gray-500 dark:text-gray-400 hover:bg-white/50 dark:hover:bg-white/5"
-              }`}
-            >
-              {f === "all" ? "Todas" : f === "unread" ? "Não lidas" : f === "active" ? "Ativas" : "Arquivadas"}
-              <span className={`ml-1 text-[10px] ${filter === f ? "text-white/80" : "text-gray-400"}`}>({counts[f]})</span>
-            </button>
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`flex-1 text-[11px] font-bold py-1.5 rounded-control transition ${
+                  filter === f
+                    ? "bg-accent text-white shadow-glow"
+                    : "text-tx2 hover:bg-hover hover:text-tx"
+                }`}
+              >
+                {filterLabels[f]}
+                <span className={`ml-1 text-[10px] font-semibold ${filter === f ? "text-white/80" : "text-tx3"}`}>{permReady ? counts[f] : ""}</span>
+              </button>
             );
           })}
         </div>
-        {Object.keys(phoneMap).length > 0 && (
-          <div className="flex gap-1 mt-1.5 overflow-x-auto">
-            <button
-              onClick={() => setOperationFilter(null)}
-              className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition ${!operationFilter ? "bg-emerald-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
-            >
-              Todas ops
-            </button>
-            {Object.entries(
-              Object.values(phoneMap).reduce((acc, op) => {
-                if (!acc[op.name]) acc[op.name] = op;
-                return acc;
-              }, {} as Record<string, { name: string; color: string }>)
-            ).map(([name, op]) => (
+        {permReady && visibleOps.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2.5">
+            <Building2 className="w-3.5 h-3.5 text-tx3 flex-shrink-0" strokeWidth={2} aria-label="Operações" />
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 min-w-0">
               <button
-                key={name}
-                onClick={() => setOperationFilter(operationFilter === name ? null : name)}
-                className="flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition flex items-center gap-1"
-                style={{
-                  backgroundColor: operationFilter === name ? op.color : op.color + "20",
-                  color: operationFilter === name ? "#fff" : op.color,
-                }}
+                onClick={() => setOperationFilter(null)}
+                className={`flex-shrink-0 text-[10px] px-2.5 py-1 rounded-full font-bold transition ${!operationFilter ? "bg-accent text-white" : "bg-surface2 text-tx2 hover:bg-hover"}`}
               >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: op.color }} />
-                {name}
+                Todas
               </button>
-            ))}
+              {visibleOps.map((op) => (
+                <button
+                  key={op.name}
+                  onClick={() => setOperationFilter(operationFilter === op.name ? null : op.name)}
+                  className="flex-shrink-0 text-[10px] px-2.5 py-1 rounded-full font-bold transition flex items-center gap-1"
+                  style={{
+                    backgroundColor: operationFilter === op.name ? op.color : op.color + "20",
+                    color: operationFilter === op.name ? "#fff" : op.color,
+                  }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: op.color }} />
+                  {op.name}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-        {availableTags.length > 0 && (
-          <div className="flex gap-1 mt-1.5 overflow-x-auto">
+        {permReady && availableTags.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <Tag className="w-3.5 h-3.5 text-tx3 flex-shrink-0" strokeWidth={2} aria-label="Etiquetas" />
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 min-w-0">
             <button
               onClick={() => setTagFilter(null)}
-              className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition ${!tagFilter ? "bg-emerald-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
+              className={`flex-shrink-0 text-[10px] px-2.5 py-1 rounded-full font-bold transition ${!tagFilter ? "bg-accent text-white" : "bg-surface2 text-tx2 hover:bg-hover"}`}
             >
-              Todas tags
+              Todas
             </button>
             {availableTags.map((tag) => (
               <button
                 key={tag.id}
                 onClick={() => setTagFilter(tagFilter === tag.id ? null : tag.id)}
-                className="flex-shrink-0 text-[10px] px-2 py-1 rounded-full font-medium transition"
+                className="flex-shrink-0 text-[10px] px-2.5 py-1 rounded-full font-bold transition"
                 style={{
                   backgroundColor: tagFilter === tag.id ? tag.color : tag.color + "20",
                   color: tagFilter === tag.id ? "#fff" : tag.color,
@@ -334,16 +377,28 @@ export default function ConversationList({
                 {tag.name}
               </button>
             ))}
+            </div>
           </div>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {conversations.length === 0 ? (
-          <div className="p-12 text-center text-[#667781] dark:text-[#8696a0] text-sm">
-            <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
+        {!permReady ? (
+          // Enquanto a permissão não carregou, não mostra conversa nenhuma (evita vazar as de outros)
+          <div className="p-4 space-y-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 animate-pulse">
+                <div className="w-12 h-12 rounded-full bg-surface2 flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-surface2 rounded w-1/2" />
+                  <div className="h-2.5 bg-surface2 rounded w-3/4" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : conversations.length === 0 ? (
+          <div className="p-12 text-center text-tx3 text-sm flex flex-col items-center">
+            <MessagesSquare className="w-12 h-12 mb-3 opacity-30" strokeWidth={1.5} />
             <p>{filter === "archived" ? "Nenhuma conversa arquivada" : "Nenhuma conversa"}</p>
           </div>
         ) : (
@@ -358,18 +413,21 @@ export default function ConversationList({
             const isFromMe = conv.last_message_sender === "agent" || conv.last_message_sender === "bot";
 
             return (
-              <button
+              <div
                 key={conv.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => { if (!clickLocked) onSelect(conv); }}
-                className={`w-full flex items-start gap-3 px-3 py-3.5 transition text-left border-l-[3px] group relative overflow-hidden border-b border-gray-100 dark:border-[#222d34] ${
+                onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !clickLocked) { e.preventDefault(); onSelect(conv); } }}
+                className={`w-full flex items-start gap-3 px-3 py-3 cursor-pointer transition text-left border-l-[3px] group relative overflow-hidden border-b border-line ${
                   isSelected
-                    ? "bg-[#d9fdd3]/40 dark:bg-[#005c4b]/30 border-l-emerald-500 dark:border-l-emerald-400"
-                    : "border-l-transparent hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/80"
-                } ${conv.archived ? "opacity-55" : ""}`}
-                style={flowInfo && !isSelected ? { borderLeftColor: "#22c55e" } : operation && !isSelected ? { borderLeftColor: operation.color } : {}}
+                    ? "bg-accentsoft border-l-accent"
+                    : "border-l-transparent hover:bg-rowhover"
+                } ${conv.archived ? "opacity-60" : ""}`}
+                style={flowInfo && !isSelected ? { borderLeftColor: "var(--success)" } : operation && !isSelected ? { borderLeftColor: operation.color } : {}}
               >
                 <div className="flex-shrink-0 mt-0.5">
-                  <Avatar name={customer?.name} size="md" />
+                  <Avatar name={customer?.name} url={customer?.avatar_url} size="md" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
@@ -377,54 +435,49 @@ export default function ConversationList({
                       {operation && (
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} title={operation.name} />
                       )}
-                      <p className="font-medium text-[15px] text-[#111b21] dark:text-[#e9edef] truncate">
+                      <p className="font-bold text-[15px] text-tx truncate">
                         {customer?.name || customer?.phone || "Desconhecido"}
                       </p>
                       {flowInfo && (
-                        <span className="flex-shrink-0 flex items-center gap-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-full pl-1.5 pr-2 py-0.5" title={`${flowInfo.count} fluxo(s): ${flowInfo.flowNames.join(", ")}`}>
-                          <svg className="w-2.5 h-2.5 text-emerald-500 animate-pulse" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                          <span className="text-[9px] font-medium text-emerald-600 dark:text-emerald-400 truncate max-w-[60px]">{flowInfo.flowNames[0] || ""}</span>
+                        <span className="flex-shrink-0 flex items-center gap-1 bg-success-soft rounded-full pl-1.5 pr-2 py-0.5" title={`${flowInfo.count} fluxo(s): ${flowInfo.flowNames.join(", ")}`}>
+                          <Zap className="w-2.5 h-2.5 text-success animate-pulse" fill="currentColor" strokeWidth={0} />
+                          <span className="text-[9px] font-bold text-success truncate max-w-[60px]">{flowInfo.flowNames[0] || ""}</span>
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-[#667781] dark:text-[#8696a0] flex-shrink-0">
+                    <span className="text-[11px] text-tx3 flex-shrink-0">
                       {formatTime(conv.last_message_at || conv.created_at)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between mt-0.5 gap-2">
                     <div className="flex items-center gap-1 min-w-0 flex-1">
-                      <p className="text-[13px] text-[#667781] dark:text-[#8696a0] truncate">
-                        {isFromMe && <span className="text-emerald-600/70 dark:text-emerald-400/70">Você: </span>}
+                      {isFromMe && conv.last_message_read !== null && (
+                        <CheckCheck className={`w-3.5 h-3.5 flex-shrink-0 ${conv.last_message_read ? "text-accent" : "text-tx3"}`} strokeWidth={2.2} />
+                      )}
+                      <p className="text-[13px] text-tx3 truncate">
+                        {isFromMe && <span className="text-tx2 font-medium">Você: </span>}
                         {conv.last_message || ""}
                       </p>
-                      {isFromMe && (
-                        <svg className={`w-3.5 h-3.5 flex-shrink-0 ${conv.last_message_read ? "text-[#53bdeb]" : "text-[#8696a0]"}`} fill="currentColor" viewBox="0 0 16 11">
-                          <path d="M11.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" />
-                          <path d="M14.071.653a.457.457 0 00-.304-.102.493.493 0 00-.381.178l-6.19 7.636-2.011-2.095a.463.463 0 00-.336-.153.508.508 0 00-.432.246.458.458 0 00.058.515l2.326 2.424a.56.56 0 00.416.21.55.55 0 00.427-.208l6.502-8.022a.466.466 0 00.078-.493.458.458 0 00-.153-.136Z" transform="translate(3,0)" />
-                        </svg>
-                      )}
                     </div>
                     {tags.length > 0 && (
                       <div className="flex gap-0.5 flex-wrap flex-shrink-0">
                         {tags.slice(0, 2).map((tag) => (
-                          <span key={tag.id} className="text-[9px] px-1 py-0 rounded-full font-medium" style={{ backgroundColor: tag.color + "20", color: tag.color }}>{tag.name}</span>
+                          <span key={tag.id} className="text-[9px] px-1.5 py-0 rounded-full font-bold" style={{ backgroundColor: tag.color + "20", color: tag.color }}>{tag.name}</span>
                         ))}
-                        {tags.length > 2 && <span className="text-[9px] text-gray-400">+{tags.length - 2}</span>}
+                        {tags.length > 2 && <span className="text-[9px] text-tx3">+{tags.length - 2}</span>}
                       </div>
                     )}
                     <div className="flex items-center gap-0.5 flex-shrink-0">
-                      <button onClick={(e) => toggleArchive(conv.id, !!conv.archived, e)} className="opacity-0 group-hover:opacity-100 transition p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" title={conv.archived ? "Desarquivar" : "Arquivar"}>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={conv.archived ? "M3 4h18M3 8l1.5 13h15L21 8M9 12v6M12 12v6M15 12v6" : "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"} />
-                        </svg>
+                      <button onClick={(e) => toggleArchive(conv.id, !!conv.archived, e)} className="opacity-0 group-hover:opacity-100 transition p-0.5 text-tx3 hover:text-tx" title={conv.archived ? "Desarquivar" : "Arquivar"}>
+                        {conv.archived ? <ArchiveRestore className="w-3.5 h-3.5" strokeWidth={2} /> : <Archive className="w-3.5 h-3.5" strokeWidth={2} />}
                       </button>
-                      {conv.unread_count > 0 ? (
-                        <span className="bg-[#25d366] text-white text-[11px] font-semibold px-1.5 py-0 rounded-full flex-shrink-0 min-w-[20px] h-[20px] flex items-center justify-center">{conv.unread_count}</span>
-                      ) : null}
+                      {conv.unread_count > 0 && (
+                        <span className="bg-accent text-white text-[11px] font-bold px-1.5 py-0 rounded-full flex-shrink-0 min-w-[20px] h-[20px] flex items-center justify-center">{conv.unread_count}</span>
+                      )}
                     </div>
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })
         )}

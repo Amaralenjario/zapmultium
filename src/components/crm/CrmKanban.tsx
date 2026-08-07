@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { Tag, Plus, X, Trash2, Pencil, GripVertical, TagsIcon, Layers } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "@/components/chat/Avatar";
 import toast from "react-hot-toast";
@@ -16,491 +17,522 @@ interface Lead {
   notes: string | null;
   created_at: string;
   lead_tags?: { tag_id: string; tag: { id: string; name: string; color: string } }[];
+  _customer_id?: string;
 }
+interface Column { id: string; key: string; label: string; color: string; position: number; }
+interface CrmTag { id: string; name: string; color: string; column_key: string | null; }
 
-interface Column {
-  id: string;
-  key: string;
-  label: string;
-  color: string;
-  position: number;
-}
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  column_key: string;
-}
+type DragItem =
+  | { type: "lead"; lead: Lead }
+  | { type: "column"; colId: string }
+  | { type: "tag"; tagId: string }
+  | null;
 
 const priorityLabels: Record<string, string> = { urgent: "Urgente", high: "Alta", normal: "Normal", low: "Baixa" };
-const priorityBorder: Record<string, string> = { urgent: "border-l-red-500", high: "border-l-yellow-500", normal: "border-l-blue-500", low: "border-l-gray-400" };
 const sourceLabels: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", site: "Site", linkedin: "LinkedIn", indicacao: "Indicação" };
+const RENDER_CAP = 100; // máximo de cards renderizados por coluna (o total real aparece no cabeçalho)
+const PHONE_MAP_FALLBACK: Record<string, string> = {
+  "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
+  "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
+  "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
+  "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
+  "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
+  "0bce92b7-b6a9-4859-ac87-bc2ed01719e1": "1077309398802921",
+  "004d0718-04ae-4af5-b55b-aaa5136d1138": "1050317928161978",
+};
 
 export default function CrmKanban() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
+  const [tags, setTags] = useState<CrmTag[]>([]);
   const [opColors, setOpColors] = useState<Record<string, { color: string; name: string }>>({});
   const [custPhoneMap, setCustPhoneMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [permReady, setPermReady] = useState(false);
+  const [dragItem, setDragItem] = useState<DragItem>(null);
+  const [dropCol, setDropCol] = useState<string | null>(null);
+  const [showTags, setShowTags] = useState(false);
   const [showNewCol, setShowNewCol] = useState(false);
   const [showNewTag, setShowNewTag] = useState(false);
   const [newColLabel, setNewColLabel] = useState("");
-  const [newColColor, setNewColColor] = useState("#6b7280");
+  const [newColColor, setNewColColor] = useState("#6366f1");
   const [newTagName, setNewTagName] = useState("");
-  const [newTagColor, setNewTagColor] = useState("#6b7280");
+  const [newTagColor, setNewTagColor] = useState("#6366f1");
   const [newTagColumn, setNewTagColumn] = useState("");
   const [tagging, setTagging] = useState<{ leadId: string; leadName: string } | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
+  const [editingTag, setEditingTag] = useState<CrmTag | null>(null);
   const supabase = createClient();
 
+  // Busca TODAS as linhas (pagina de 1000 em 1000, sem o cap silencioso do Supabase)
+  const fetchAllRows = useCallback(async (table: string, cols: string, orderCol?: string): Promise<any[]> => {
+    const all: any[] = [];
+    let from = 0;
+    const page = 1000;
+    for (let i = 0; i < 20; i++) {
+      let q = supabase.from(table).select(cols).range(from, from + page - 1);
+      if (orderCol) q = q.order(orderCol, { ascending: false });
+      const { data } = await q;
+      if (!data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < page) break;
+      from += page;
+    }
+    return all;
+  }, [supabase]);
+
   const fetchAll = useCallback(async () => {
-    // Get seller's allowed phone_number_ids
+    // Escopo do vendedor
     let sellerPhoneIds: string[] | null = null;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile?.role !== "admin" && profile?.role !== "supervisor") {
-        const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
-        if (sc && sc.length > 0) {
-          const channelIds = sc.map(s => s.evohub_channel_id);
-          const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
-          const phoneIdMap: Record<string, string> = {
-            "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
-            "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
-            "c5505ddf-f9ef-4837-9337-45ed3de40d6a": "892228177298374",
-            "346e4eef-bc78-41ec-a7ae-ec7ec75bf177": "1034222499765101",
-            "b1c6879b-e962-4f50-95f7-14f1a04601a5": "1234821229708132",
-            "0bce92b7-b6a9-4859-ac87-bc2ed01719e1": "1077309398802921",
-            "004d0718-04ae-4af5-b55b-aaa5136d1138": "1050317928161978",
-          };
-          for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }
-          sellerPhoneIds = channelIds.map(cid => phoneIdMap[cid]).filter(Boolean);
-        } else {
-          sellerPhoneIds = [];
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+        if (profile?.role !== "admin" && profile?.role !== "supervisor") {
+          const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
+          if (sc && sc.length > 0) {
+            const channelIds = sc.map((s) => s.evohub_channel_id);
+            const phoneIdMap: Record<string, string> = { ...PHONE_MAP_FALLBACK };
+            const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
+            for (const row of oc || []) if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id;
+            sellerPhoneIds = channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean);
+          } else {
+            sellerPhoneIds = [];
+          }
         }
       }
+    } finally {
+      setPermReady(true);
     }
-    const [leadsRes, colsRes, tagsRes, custRes, opRes, convRes] = await Promise.all([
+
+    const [realLeads, customers, convs, colsRes, tagsRes, opRes] = await Promise.all([
       supabase.from("leads").select("*, lead_tags(tag_id, tag:crm_tags(id, name, color))").order("created_at", { ascending: false }),
+      fetchAllRows("customers", "id, name, phone, last_interaction_at", "last_interaction_at"),
+      fetchAllRows("conversations", "customer_id, metadata"),
       fetch("/api/crm/columns").then((r) => r.json()),
       fetch("/api/crm/tags").then((r) => r.json()),
-      supabase.from("customers").select("id, name, phone, last_interaction_at").order("last_interaction_at", { ascending: false }),
       supabase.from("operations_channels").select("phone_number_id, operation:operation_id(name, color)").eq("is_active", true),
-      supabase.from("conversations").select("customer_id, metadata").not("metadata->phone_number_id", "is", null),
     ]);
 
-    // Map: customer_id → phone_number_id
-    const custPhoneMap: Record<string, string> = {};
-    for (const c of convRes.data || []) {
-      const pid = c.metadata?.phone_number_id;
-      if (pid) custPhoneMap[c.customer_id] = pid;
+    // customer_id -> phone_number_id
+    const cpMap: Record<string, string> = {};
+    for (const c of convs || []) {
+      const pid = (c as any).metadata?.phone_number_id;
+      if (pid && (c as any).customer_id) cpMap[(c as any).customer_id] = pid;
     }
-
-    // Map: phone_number_id → operation color + name
-    const opColorMap: Record<string, { color: string; name: string }> = {};
+    // phone_number_id -> operação
+    const opMap: Record<string, { color: string; name: string }> = {};
     for (const oc of opRes.data || []) {
       const op = Array.isArray(oc.operation) ? oc.operation[0] : oc.operation;
-      if (oc.phone_number_id && op) opColorMap[oc.phone_number_id] = { color: op.color, name: op.name };
+      if (oc.phone_number_id && op) opMap[oc.phone_number_id] = { color: op.color, name: op.name };
     }
-    setOpColors(opColorMap);
-    setCustPhoneMap(custPhoneMap);
-    
-    const existingLeads = leadsRes.data || [];
-    const existingPhones = new Set(existingLeads.map((l: any) => l.phone));
-    
-    // Filter by seller: only show leads/customers from seller's instances
+    setOpColors(opMap);
+    setCustPhoneMap(cpMap);
+
+    const existingLeads: Lead[] = realLeads.data || [];
+    const existingPhones = new Set(existingLeads.map((l) => l.phone));
+
+    const custToLead = (c: any): Lead => ({
+      id: `customer_${c.phone}`, name: c.name || c.phone, phone: c.phone, email: null,
+      source: "whatsapp", status: "new", priority: "normal", notes: null,
+      created_at: c.last_interaction_at || new Date().toISOString(), lead_tags: [], _customer_id: c.id,
+    });
+
     if (sellerPhoneIds !== null) {
-      const allowedCustIds = new Set<string>();
-      for (const [custId, phoneId] of Object.entries(custPhoneMap)) {
-        if (sellerPhoneIds.includes(phoneId)) allowedCustIds.add(custId);
-      }
-      // Filter customers as leads to only include allowed
-      const filteredCustomers = (custRes.data || []).filter((c: any) => allowedCustIds.has(c.id));
-      // Filter real leads by their phone appearing in allowed customers
+      const allowed = new Set<string>();
+      for (const [custId, phoneId] of Object.entries(cpMap)) if (sellerPhoneIds.includes(phoneId)) allowed.add(custId);
+      const filteredCustomers = (customers || []).filter((c: any) => allowed.has(c.id));
       const allowedPhones = new Set(filteredCustomers.map((c: any) => c.phone));
-      const filteredLeads = existingLeads.filter((l: any) => allowedPhones.has(l.phone));
-      setLeads([...filteredLeads, ...filteredCustomers.map((c: any) => ({
-        id: `customer_${c.phone}`,
-        name: c.name || c.phone, phone: c.phone, email: null, source: "whatsapp",
-        status: "new", priority: "normal", notes: null,
-        created_at: c.last_interaction_at || new Date().toISOString(),
-        lead_tags: [], _customer_id: c.id,
-      }))]);
+      const filteredLeads = existingLeads.filter((l) => allowedPhones.has(l.phone));
+      setLeads([...filteredLeads, ...filteredCustomers.filter((c: any) => !existingPhones.has(c.phone)).map(custToLead)]);
     } else {
-      // Admin/supervisor: show all
-      const customersAsLeads = (custRes.data || [])
-        .filter((c: any) => c.phone && !existingPhones.has(c.phone))
-        .map((c: any) => ({
-          id: `customer_${c.phone}`,
-          name: c.name || c.phone, phone: c.phone, email: null, source: "whatsapp",
-          status: "new", priority: "normal", notes: null,
-          created_at: c.last_interaction_at || new Date().toISOString(),
-          lead_tags: [], _customer_id: c.id,
-        }));
+      const customersAsLeads = (customers || []).filter((c: any) => c.phone && !existingPhones.has(c.phone)).map(custToLead);
       setLeads([...existingLeads, ...customersAsLeads]);
     }
     if (Array.isArray(colsRes)) setColumns(colsRes);
     if (Array.isArray(tagsRes)) setTags(tagsRes);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, fetchAllRows]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-
-  // Polling and event listener
   useEffect(() => {
-    const interval = setInterval(fetchAll, 5000);
+    const i = setInterval(fetchAll, 8000);
     const onTagged = () => fetchAll();
     window.addEventListener("lead-tagged", onTagged);
-    return () => { clearInterval(interval); window.removeEventListener("lead-tagged", onTagged); };
+    return () => { clearInterval(i); window.removeEventListener("lead-tagged", onTagged); };
   }, [fetchAll]);
 
-  const moveLead = async (leadId: string, targetColumn: string) => {
-    // Update lead status
-    await supabase.from("leads").update({ status: targetColumn }).eq("id", leadId);
-
-    // Remove existing lead tags
-    await supabase.from("lead_tags").delete().eq("lead_id", leadId);
-
-    // Apply all tags from the target column
-    const colTags = tags.filter((t) => t.column_key === targetColumn);
-    if (colTags.length > 0) {
-      await supabase.from("lead_tags").insert(
-        colTags.map((t) => ({ lead_id: leadId, tag_id: t.id }))
-      );
-    }
-
-    fetchAll();
+  // ── Mover LEAD para uma coluna (cria lead real se for contato ainda não rastreado) ──
+  const moveLead = async (lead: Lead, targetKey: string) => {
+    try {
+      if (String(lead.id).startsWith("customer_")) {
+        const { data: existing } = await supabase.from("leads").select("id").eq("phone", lead.phone).maybeSingle();
+        if (existing) await supabase.from("leads").update({ status: targetKey }).eq("id", existing.id);
+        else await supabase.from("leads").insert({ name: lead.name, phone: lead.phone, status: targetKey, source: "whatsapp", customer_id: lead._customer_id || null, funnel_stage: "captura", priority: "normal" });
+      } else {
+        await supabase.from("leads").update({ status: targetKey }).eq("id", lead.id);
+      }
+      fetchAll();
+    } catch { toast.error("Erro ao mover lead"); }
   };
 
-  const handleDragStart = (e: React.DragEvent, leadId: string) => {
-    e.dataTransfer.setData("text/plain", leadId);
-    e.dataTransfer.effectAllowed = "move";
-    setDragging(leadId);
+  // ── Mover ETIQUETA para outra coluna → os leads com ela vão junto ──
+  const moveTagToColumn = async (tagId: string, targetKey: string) => {
+    const tag = tags.find((t) => t.id === tagId);
+    if (!tag || tag.column_key === targetKey) return;
+    setTags((prev) => prev.map((t) => t.id === tagId ? { ...t, column_key: targetKey } : t)); // otimista
+    try {
+      await fetch("/api/crm/tags", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: tagId, column_key: targetKey }) });
+      const { data: lt } = await supabase.from("lead_tags").select("lead_id").eq("tag_id", tagId);
+      const ids = (lt || []).map((x: any) => x.lead_id);
+      if (ids.length) await supabase.from("leads").update({ status: targetKey }).in("id", ids);
+      toast.success(`Etiqueta e ${ids.length} lead(s) movidos`);
+      fetchAll();
+    } catch { toast.error("Erro ao mover etiqueta"); fetchAll(); }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+  // ── Reordenar COLUNAS ──
+  const reorderColumnTo = async (draggedId: string, targetId: string) => {
+    const from = columns.findIndex((c) => c.id === draggedId);
+    const to = columns.findIndex((c) => c.id === targetId);
+    if (from < 0 || to < 0 || from === to) return;
+    const arr = [...columns];
+    const [m] = arr.splice(from, 1);
+    arr.splice(to, 0, m);
+    setColumns(arr.map((c, i) => ({ ...c, position: i })));
+    try {
+      await Promise.all(arr.map((c, i) => c.position !== i
+        ? fetch(`/api/crm/columns/${c.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position: i }) })
+        : null).filter(Boolean));
+    } catch { toast.error("Erro ao reordenar"); fetchAll(); }
   };
 
-  const handleDrop = (e: React.DragEvent, columnKey: string) => {
-    e.preventDefault();
-    const leadId = e.dataTransfer.getData("text/plain");
-    if (leadId) moveLead(leadId, columnKey);
-    setDragging(null);
+  const handleDropOnColumn = (col: Column) => {
+    const item = dragItem;
+    setDragItem(null); setDropCol(null);
+    if (!item) return;
+    if (item.type === "lead") moveLead(item.lead, col.key);
+    else if (item.type === "tag") moveTagToColumn(item.tagId, col.key);
+    else if (item.type === "column") reorderColumnTo(item.colId, col.id);
   };
 
   const createColumn = async () => {
     if (!newColLabel.trim()) return;
-    const res = await fetch("/api/crm/columns", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: newColLabel.trim(), color: newColColor }),
-    });
-    if (res.ok) { toast.success("Coluna criada!"); setShowNewCol(false); setNewColLabel(""); fetchAll(); }
-    else toast.error("Erro");
+    const res = await fetch("/api/crm/columns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: newColLabel.trim(), color: newColColor }) });
+    if (res.ok) { toast.success("Coluna criada!"); setShowNewCol(false); setNewColLabel(""); fetchAll(); } else toast.error("Erro");
   };
-
   const deleteColumn = async (colId: string, colKey: string) => {
-    if (!confirm("Excluir esta coluna e mover leads para 'Novos'?")) return;
-    // Move leads to 'new' column first
-    const leadsHere = leads.filter((l) => l.status === colKey);
-    for (const l of leadsHere) {
-      await supabase.from("leads").update({ status: "new" }).eq("id", l.id);
-    }
+    if (!confirm("Excluir esta coluna? Os leads voltam para 'Novos'.")) return;
+    const here = leads.filter((l) => l.status === colKey && !String(l.id).startsWith("customer_"));
+    for (const l of here) await supabase.from("leads").update({ status: "new" }).eq("id", l.id);
     await fetch(`/api/crm/columns/${colId}`, { method: "DELETE" });
     fetchAll();
   };
-
-  const moveColumnLeft = async (col: Column, idx: number) => {
-    if (idx === 0) return;
-    const prev = columns[idx - 1];
-    await fetch(`/api/crm/columns/${col.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ position: prev.position }),
-    });
-    await fetch(`/api/crm/columns/${prev.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ position: col.position }),
-    });
-    fetchAll();
-  };
-
-  const moveColumnRight = async (col: Column, idx: number) => {
-    if (idx === columns.length - 1) return;
-    const next = columns[idx + 1];
-    await fetch(`/api/crm/columns/${col.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ position: next.position }),
-    });
-    await fetch(`/api/crm/columns/${next.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ position: col.position }),
-    });
-    fetchAll();
-  };
-
   const createTag = async () => {
     if (!newTagName.trim()) return;
-    const res = await fetch("/api/crm/tags", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newTagName.trim(), color: newTagColor, column_key: newTagColumn || null }),
-    });
-    if (res.ok) { toast.success("Etiqueta criada!"); setShowNewTag(false); setNewTagName(""); fetchAll(); }
-    else toast.error("Erro");
+    const res = await fetch("/api/crm/tags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newTagName.trim(), color: newTagColor, column_key: newTagColumn || null }) });
+    if (res.ok) { toast.success("Etiqueta criada!"); setShowNewTag(false); setNewTagName(""); fetchAll(); } else toast.error("Erro");
   };
-
+  const saveTagEdit = async () => {
+    if (!editingTag) return;
+    const res = await fetch("/api/crm/tags", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editingTag.id, name: editingTag.name, color: editingTag.color, column_key: editingTag.column_key }) });
+    if (res.ok) { toast.success("Etiqueta atualizada!"); setEditingTag(null); fetchAll(); } else toast.error("Erro");
+  };
   const deleteTag = async (tagId: string) => {
     await fetch(`/api/crm/tags?id=${tagId}`, { method: "DELETE" });
     fetchAll();
   };
-
   const addTagToLead = async (leadId: string, tagId: string, columnKey: string | null) => {
-    // Toggle: se já existe, remove; caso contrário, adiciona
-    const lead = leads.find(l => l.id === leadId);
-    const existingTag = lead?.lead_tags?.find(lt => lt.tag_id === tagId);
-    if (existingTag) {
-      await supabase.from("lead_tags").delete().eq("lead_id", leadId).eq("tag_id", tagId);
-      toast.success("Etiqueta removida");
-    } else {
-      await supabase.from("lead_tags").upsert({ lead_id: leadId, tag_id: tagId });
-      if (columnKey) {
-        await supabase.from("leads").update({ status: columnKey }).eq("id", leadId);
+    const lead = leads.find((l) => l.id === leadId);
+    const existing = lead?.lead_tags?.find((lt) => lt.tag_id === tagId);
+    // resolve id real (cria lead se for contato)
+    let realId = leadId;
+    if (String(leadId).startsWith("customer_") && lead) {
+      const { data: ex } = await supabase.from("leads").select("id").eq("phone", lead.phone).maybeSingle();
+      if (ex) realId = ex.id;
+      else {
+        const { data: created } = await supabase.from("leads").insert({ name: lead.name, phone: lead.phone, status: columnKey || "new", source: "whatsapp", customer_id: lead._customer_id || null }).select("id").single();
+        realId = created?.id || leadId;
       }
+    }
+    if (existing) { await supabase.from("lead_tags").delete().eq("lead_id", realId).eq("tag_id", tagId); toast.success("Etiqueta removida"); }
+    else {
+      await supabase.from("lead_tags").upsert({ lead_id: realId, tag_id: tagId });
+      if (columnKey) await supabase.from("leads").update({ status: columnKey }).eq("id", realId);
       toast.success("Etiqueta aplicada");
     }
     setTagging(null);
     fetchAll();
   };
 
-  const removeTagFromLead = async (leadId: string, tagId: string) => {
-    await supabase.from("lead_tags").delete().eq("lead_id", leadId).eq("tag_id", tagId);
-    fetchAll();
-    toast.success("Etiqueta removida");
-  };
-
-  const getLeadOpColor = (lead: any) => {
-    const custId = (lead as any)._customer_id;
-    if (custId && custPhoneMap[custId]) {
-      return opColors[custPhoneMap[custId]]?.color || null;
-    }
+  const getLeadOpColor = (lead: Lead) => {
+    const custId = lead._customer_id;
+    if (custId && custPhoneMap[custId]) return opColors[custPhoneMap[custId]]?.color || null;
     return null;
   };
 
-  const leadsByStatus = columns.reduce((acc: Record<string, Lead[]>, col) => {
-    acc[col.key] = leads.filter((l) => l.status === col.key);
-    return acc;
-  }, {});
+  const tagLeadCount = (tagId: string) => leads.filter((l) => (l.lead_tags || []).some((lt) => lt.tag_id === tagId)).length;
 
-  // All unmatched leads go to "Novos" (first column)
-  const allColumnKeys = new Set(columns.map((c) => c.key));
-  const unmatched = leads.filter((l) => !allColumnKeys.has(l.status));
-  if (unmatched.length > 0 && columns[0]) {
-    leadsByStatus[columns[0].key] = [...(leadsByStatus[columns[0].key] || []), ...unmatched];
+  // Agrupa leads por coluna
+  const leadsByStatus: Record<string, Lead[]> = {};
+  for (const col of columns) leadsByStatus[col.key] = [];
+  const colKeys = new Set(columns.map((c) => c.key));
+  for (const l of leads) {
+    const key = colKeys.has(l.status) ? l.status : (columns[0]?.key || "new");
+    (leadsByStatus[key] = leadsByStatus[key] || []).push(l);
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin w-8 h-8 border-[3px] border-gray-300 border-t-emerald-500 rounded-full" />
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64"><div className="animate-spin w-8 h-8 border-[3px] border-bd border-t-accent rounded-full" /></div>;
   }
 
   return (
     <div className="h-[calc(100vh-6rem)] flex flex-col">
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+      {/* Cabeçalho */}
+      <div className="flex items-center justify-between mb-4 flex-shrink-0 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">CRM Leads</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">{leads.length} lead{leads.length !== 1 ? "s" : ""} no pipeline</p>
+          <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-tx">CRM Leads</h1>
+          <p className="text-tx2 text-sm">{permReady ? `${leads.length.toLocaleString("pt-BR")} lead${leads.length !== 1 ? "s" : ""} no pipeline` : "carregando..."}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => { setShowNewTag(true); setNewTagColumn(columns[0]?.key || ""); }} className="rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:border-purple-500 hover:text-purple-500 transition flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
-            Nova etiqueta
+          <button onClick={() => setShowTags(true)} className="rounded-control border border-bd px-3 py-2 text-xs font-bold text-tx2 hover:border-accent hover:text-accent transition flex items-center gap-1.5">
+            <TagsIcon className="w-4 h-4" strokeWidth={2} /> Etiquetas
           </button>
-          <button onClick={() => setShowNewCol(true)} className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:border-emerald-500 hover:text-emerald-500 transition flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Nova coluna
+          <button onClick={() => { setShowNewTag(true); setNewTagColumn(columns[0]?.key || ""); }} className="rounded-control border border-bd px-3 py-2 text-xs font-bold text-tx2 hover:border-accent hover:text-accent transition flex items-center gap-1.5">
+            <Tag className="w-4 h-4" strokeWidth={2} /> Nova etiqueta
+          </button>
+          <button onClick={() => setShowNewCol(true)} className="rounded-control bg-accent px-3 py-2 text-xs font-bold text-white shadow-glow hover:bg-accent2 transition flex items-center gap-1.5">
+            <Plus className="w-4 h-4" strokeWidth={2.2} /> Nova coluna
           </button>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x">
-        {columns.map((col, idx) => {
-          const colLeads = leadsByStatus[col.key] || [];
-          const colTags = tags.filter((t) => t.column_key === col.key);
-          return (
-            <div
-              key={col.id}
-              className="snap-start flex-shrink-0 w-[85vw] lg:flex-1 lg:min-w-[280px] lg:max-w-[360px] rounded-xl border flex flex-col transition-colors"
-              style={{ borderColor: dragging ? "#22c55e" : col.color + "40", backgroundColor: col.color + "08" }}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, col.key)}
-            >
-              <div className="px-4 py-3 flex items-center justify-between rounded-t-xl" style={{ backgroundColor: col.color + "18" }}>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => moveColumnLeft(col, idx)} className="text-gray-400 hover:text-gray-600 disabled:opacity-30" disabled={idx === 0} title="Mover esquerda">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                  </button>
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color }} />
-                  <h3 className="font-semibold text-sm text-gray-900 dark:text-white">{col.label}</h3>
-                  <button onClick={() => moveColumnRight(col, idx)} className="text-gray-400 hover:text-gray-600 disabled:opacity-30" disabled={idx === columns.length - 1} title="Mover direita">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                  </button>
+      {/* Board */}
+      {!permReady ? (
+        <div className="flex-1 flex gap-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="flex-1 rounded-card bg-surface2 animate-pulse" />)}</div>
+      ) : (
+        <div className="flex-1 flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x">
+          {columns.map((col) => {
+            const colLeads = leadsByStatus[col.key] || [];
+            const colTags = tags.filter((t) => t.column_key === col.key);
+            const isDropTarget = dropCol === col.key;
+            return (
+              <div
+                key={col.id}
+                onDragOver={(e) => { e.preventDefault(); if (dropCol !== col.key) setDropCol(col.key); }}
+                onDragLeave={(e) => { if (e.currentTarget === e.target) setDropCol(null); }}
+                onDrop={(e) => { e.preventDefault(); handleDropOnColumn(col); }}
+                className={`snap-start flex-shrink-0 w-[85vw] lg:flex-1 lg:min-w-[280px] lg:max-w-[360px] rounded-card border flex flex-col transition-all ${isDropTarget ? "border-accent ring-2 ring-accent/30" : "border-bd"}`}
+                style={{ backgroundColor: col.color + "0a" }}
+              >
+                {/* Cabeçalho da coluna (arrastável) */}
+                <div
+                  draggable
+                  onDragStart={() => setDragItem({ type: "column", colId: col.id })}
+                  onDragEnd={() => { setDragItem(null); setDropCol(null); }}
+                  className="px-3 py-2.5 flex items-center justify-between rounded-t-card cursor-grab active:cursor-grabbing"
+                  style={{ backgroundColor: col.color + "1a" }}
+                  title="Arraste para reordenar a coluna"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <GripVertical className="w-3.5 h-3.5 text-tx3 flex-shrink-0" strokeWidth={2} />
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
+                    <h3 className="font-bold text-sm text-tx truncate">{col.label}</h3>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full font-bold text-tx2" style={{ backgroundColor: col.color + "22" }}>{colLeads.length.toLocaleString("pt-BR")}</span>
+                    {col.key.startsWith("custom_") && (
+                      <button onClick={() => deleteColumn(col.id, col.key)} className="p-0.5 rounded text-tx3 hover:text-red-500 transition" title="Excluir coluna"><Trash2 className="w-3.5 h-3.5" strokeWidth={2} /></button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-400" style={{ backgroundColor: col.color + "20" }}>{colLeads.length}</span>
-                  {col.key.startsWith("custom_") && (
-                    <button onClick={() => deleteColumn(col.id, col.key)} className="p-0.5 hover:bg-white/30 rounded transition" title="Excluir coluna">
-                      <svg className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
+
+                {/* Etiquetas da coluna (arrastáveis) */}
+                {colTags.length > 0 && (
+                  <div className="px-2 py-1.5 flex gap-1 flex-wrap border-b border-bd">
+                    {colTags.map((tag) => (
+                      <span
+                        key={tag.id}
+                        draggable
+                        onDragStart={(e) => { e.stopPropagation(); setDragItem({ type: "tag", tagId: tag.id }); }}
+                        onDragEnd={() => { setDragItem(null); setDropCol(null); }}
+                        className="text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-grab active:cursor-grabbing"
+                        style={{ backgroundColor: tag.color + "26", color: tag.color }}
+                        title="Arraste a etiqueta para outra coluna (os leads vão junto)"
+                      >
+                        <GripVertical className="w-2.5 h-2.5 opacity-60" strokeWidth={2} />
+                        {tag.name}
+                        <button onClick={() => deleteTag(tag.id)} className="hover:opacity-60"><X className="w-2.5 h-2.5" strokeWidth={2.5} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Cards */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[80px]">
+                  {colLeads.length === 0 ? (
+                    <div className="flex items-center justify-center h-24 text-tx3 text-xs">Solte leads/etiquetas aqui</div>
+                  ) : (
+                    <>
+                      {colLeads.slice(0, RENDER_CAP).map((lead) => {
+                        const leadTagObjs = (lead.lead_tags || []).filter((lt) => lt.tag).map((lt) => lt.tag);
+                        return (
+                          <div
+                            key={lead.id}
+                            draggable
+                            onDragStart={() => setDragItem({ type: "lead", lead })}
+                            onDragEnd={() => { setDragItem(null); setDropCol(null); }}
+                            className={`bg-surface rounded-control border border-bd p-3 hover:shadow-card transition border-l-[3px] cursor-grab active:cursor-grabbing ${dragItem?.type === "lead" && dragItem.lead.id === lead.id ? "opacity-40" : ""}`}
+                            style={{ borderLeftColor: getLeadOpColor(lead) || "var(--tx3)" }}
+                          >
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <Avatar name={lead.name} size="sm" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-bold text-tx truncate">{lead.name}</p>
+                                <p className="text-xs text-tx3 truncate">{lead.phone}</p>
+                              </div>
+                              <button onClick={() => setTagging({ leadId: lead.id, leadName: lead.name })} className="p-1 text-tx3 hover:text-accent transition" title="Etiquetar">
+                                <Tag className="w-4 h-4" strokeWidth={2} />
+                              </button>
+                            </div>
+                            {leadTagObjs.length > 0 && (
+                              <div className="flex gap-1 flex-wrap">
+                                {leadTagObjs.map((tag) => (
+                                  <span key={tag.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: tag.color + "26", color: tag.color }}>{tag.name}</span>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface2 text-tx2 font-semibold">{sourceLabels[lead.source] || lead.source}</span>
+                              {lead.priority && lead.priority !== "normal" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface2 text-tx2 font-semibold">{priorityLabels[lead.priority] || lead.priority}</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {colLeads.length > RENDER_CAP && (
+                        <div className="text-center text-[11px] text-tx3 py-2">+{(colLeads.length - RENDER_CAP).toLocaleString("pt-BR")} leads (use as etiquetas para organizar)</div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {/* Tags row */}
-              {colTags.length > 0 && (
-                <div className="px-2 py-1.5 flex gap-1 flex-wrap border-b" style={{ borderColor: col.color + "20" }}>
-                  {colTags.map((tag) => (
-                    <span key={tag.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1" style={{ backgroundColor: tag.color + "30", color: tag.color }}>
-                      {tag.name}
-                      <button onClick={() => deleteTag(tag.id)} className="hover:opacity-60">×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                {colLeads.length === 0 ? (
-                  <div className="flex items-center justify-center h-24 text-gray-400 dark:text-gray-500 text-xs">Solte leads aqui</div>
-                ) : (
-                  colLeads.map((lead) => {
-                    const leadTagObjs = (lead.lead_tags || []).filter((lt: any) => lt.tag).map((lt: any) => lt.tag);
-                    return (
-                      <div
-                        key={lead.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, lead.id)}
-                        onDragEnd={() => setDragging(null)}
-                        className={`bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:shadow-md transition border-l-4 cursor-grab active:cursor-grabbing ${dragging === lead.id ? "opacity-40" : ""}`}
-                        style={{ borderLeftColor: getLeadOpColor(lead) || "#9ca3af" }}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <Avatar name={lead.name} size="sm" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{lead.name}</p>
-                            <p className="text-xs text-gray-400 truncate">{lead.phone}</p>
-                          </div>
-                          <button onClick={() => setTagging({ leadId: lead.id, leadName: lead.name })} className="p-0.5 text-gray-400 hover:text-emerald-500 transition" title="Adicionar etiqueta">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
-                          </button>
-                        </div>
-
-                        {leadTagObjs.length > 0 && (
-                          <div className="flex gap-1 flex-wrap mb-2">
-                            {leadTagObjs.map((tag: any) => (
-                              <span key={tag.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: tag.color + "25", color: tag.color }}>{tag.name}</span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium">{sourceLabels[lead.source] || lead.source}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium">{priorityLabels[lead.priority] || lead.priority}</span>
-                        </div>
-
-                        {lead.email && <p className="text-[10px] text-gray-400 mt-1.5 truncate">{lead.email}</p>}
-                        <p className="text-[10px] text-gray-400 mt-1">{new Date(lead.created_at).toLocaleDateString("pt-BR")}</p>
-                        {leadTagObjs.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {leadTagObjs.map((tag: any) => (
-                              <span
-                                key={tag.id}
-                                className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-medium cursor-pointer hover:opacity-80 transition"
-                                style={{ backgroundColor: tag.color + "20", color: tag.color }}
-                                onClick={() => removeTagFromLead(lead.id, tag.id)}
-                                title="Clique para remover"
-                              >
-                                {tag.name}
-                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
+      {/* Painel de Etiquetas */}
+      {showTags && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => setShowTags(false)}>
+          <div className="w-full max-w-sm h-full bg-surface border-l border-bd shadow-pop flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-bd">
+              <div>
+                <h3 className="text-sm font-bold text-tx flex items-center gap-2"><TagsIcon className="w-4 h-4 text-accent" strokeWidth={2} /> Minhas etiquetas</h3>
+                <p className="text-[11px] text-tx3 mt-0.5">{tags.length} etiqueta(s) · arraste no quadro para mover</p>
               </div>
+              <button onClick={() => setShowTags(false)} className="p-1.5 rounded-lg text-tx3 hover:text-tx hover:bg-hover transition"><X className="w-5 h-5" strokeWidth={2} /></button>
             </div>
-          );
-        })}
-      </div>
-
-      {/* New column modal */}
-      {showNewCol && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowNewCol(false)}>
-          <div className="w-full max-w-xs rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Nova coluna</h3>
-            <input type="text" value={newColLabel} onChange={(e) => setNewColLabel(e.target.value)} placeholder="Nome da coluna" className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm mb-3 focus:border-emerald-500 focus:outline-none" autoFocus />
-            <div className="flex items-center gap-2 mb-4"><span className="text-xs text-gray-500">Cor:</span><input type="color" value={newColColor} onChange={(e) => setNewColColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" /></div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowNewCol(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm text-gray-600 dark:text-gray-300">Cancelar</button>
-              <button onClick={createColumn} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">Criar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* New tag modal */}
-      {showNewTag && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowNewTag(false)}>
-          <div className="w-full max-w-xs rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Nova etiqueta</h3>
-            <input type="text" value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Nome da etiqueta" className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm mb-3 focus:border-emerald-500 focus:outline-none" autoFocus />
-            <div className="flex items-center gap-2 mb-3"><span className="text-xs text-gray-500">Cor:</span><input type="color" value={newTagColor} onChange={(e) => setNewTagColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" /></div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Vincular à coluna</label>
-            <select value={newTagColumn} onChange={(e) => setNewTagColumn(e.target.value)} className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm mb-4 focus:border-emerald-500 focus:outline-none">
-              <option value="">Nenhuma (sem coluna)</option>
-              {columns.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-            </select>
-            <div className="flex gap-2">
-              <button onClick={() => setShowNewTag(false)} className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm text-gray-600 dark:text-gray-300">Cancelar</button>
-              <button onClick={createTag} className="flex-1 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500">Criar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tag selector for lead */}
-      {tagging && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setTagging(null)}>
-          <div className="w-full max-w-xs rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1">Adicionar etiqueta</h3>
-            <p className="text-xs text-gray-500 mb-3">{tagging.leadName}</p>
-            <div className="space-y-1 max-h-48 overflow-y-auto">
-              {tags.map((tag) => {
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+              {tags.length === 0 ? (
+                <p className="text-sm text-tx3 text-center py-10">Nenhuma etiqueta criada ainda</p>
+              ) : tags.map((tag) => {
                 const col = columns.find((c) => c.key === tag.column_key);
                 return (
-                  <button key={tag.id} onClick={() => addTagToLead(tagging.leadId, tag.id, tag.column_key)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition text-left">
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{tag.name}</span>
-                    {col && <span className="text-[10px] text-gray-400 ml-auto">{col.label}</span>}
-                  </button>
+                  <div key={tag.id} className="flex items-center gap-2.5 px-3 py-2.5 rounded-control border border-bd bg-surface">
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-bold text-tx truncate">{tag.name}</p>
+                      <p className="text-[11px] text-tx3">{col ? `Coluna: ${col.label}` : "Sem coluna"} · {tagLeadCount(tag.id)} lead(s)</p>
+                    </div>
+                    <button onClick={() => setEditingTag(tag)} className="p-1.5 rounded-lg text-tx3 hover:text-accent hover:bg-hover transition" title="Editar"><Pencil className="w-3.5 h-3.5" strokeWidth={2} /></button>
+                    <button onClick={() => deleteTag(tag.id)} className="p-1.5 rounded-lg text-tx3 hover:text-red-500 hover:bg-hover transition" title="Excluir"><Trash2 className="w-3.5 h-3.5" strokeWidth={2} /></button>
+                  </div>
                 );
               })}
             </div>
+            <div className="p-3 border-t border-bd">
+              <button onClick={() => { setShowTags(false); setShowNewTag(true); setNewTagColumn(columns[0]?.key || ""); }} className="w-full rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition flex items-center justify-center gap-2">
+                <Plus className="w-4 h-4" strokeWidth={2.2} /> Nova etiqueta
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Modal nova coluna */}
+      {showNewCol && (
+        <Modal onClose={() => setShowNewCol(false)} title="Nova coluna">
+          <input type="text" value={newColLabel} onChange={(e) => setNewColLabel(e.target.value)} placeholder="Nome da coluna" autoFocus className="w-full rounded-control border border-bd bg-surface2 px-3 py-2 text-sm text-tx placeholder:text-tx3 mb-3 focus:border-accent focus:outline-none" />
+          <div className="flex items-center gap-2 mb-4"><span className="text-xs text-tx2">Cor:</span><input type="color" value={newColColor} onChange={(e) => setNewColColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent" /></div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowNewCol(false)} className="flex-1 rounded-control border border-bd px-4 py-2 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+            <button onClick={createColumn} className="flex-1 rounded-control bg-accent px-4 py-2 text-sm font-bold text-white hover:bg-accent2 transition">Criar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal nova etiqueta */}
+      {showNewTag && (
+        <Modal onClose={() => setShowNewTag(false)} title="Nova etiqueta">
+          <input type="text" value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Nome da etiqueta" autoFocus className="w-full rounded-control border border-bd bg-surface2 px-3 py-2 text-sm text-tx placeholder:text-tx3 mb-3 focus:border-accent focus:outline-none" />
+          <div className="flex items-center gap-2 mb-3"><span className="text-xs text-tx2">Cor:</span><input type="color" value={newTagColor} onChange={(e) => setNewTagColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent" /></div>
+          <label className="block text-xs font-semibold text-tx2 mb-1">Vincular à coluna</label>
+          <select value={newTagColumn} onChange={(e) => setNewTagColumn(e.target.value)} className="w-full rounded-control border border-bd bg-surface2 px-3 py-2 text-sm text-tx mb-4 focus:border-accent focus:outline-none">
+            <option value="">Nenhuma (sem coluna)</option>
+            {columns.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button onClick={() => setShowNewTag(false)} className="flex-1 rounded-control border border-bd px-4 py-2 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+            <button onClick={createTag} className="flex-1 rounded-control bg-accent px-4 py-2 text-sm font-bold text-white hover:bg-accent2 transition">Criar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal editar etiqueta */}
+      {editingTag && (
+        <Modal onClose={() => setEditingTag(null)} title="Editar etiqueta">
+          <input type="text" value={editingTag.name} onChange={(e) => setEditingTag({ ...editingTag, name: e.target.value })} autoFocus className="w-full rounded-control border border-bd bg-surface2 px-3 py-2 text-sm text-tx mb-3 focus:border-accent focus:outline-none" />
+          <div className="flex items-center gap-2 mb-3"><span className="text-xs text-tx2">Cor:</span><input type="color" value={editingTag.color} onChange={(e) => setEditingTag({ ...editingTag, color: e.target.value })} className="w-8 h-8 rounded cursor-pointer bg-transparent" /></div>
+          <label className="block text-xs font-semibold text-tx2 mb-1">Coluna</label>
+          <select value={editingTag.column_key || ""} onChange={(e) => setEditingTag({ ...editingTag, column_key: e.target.value || null })} className="w-full rounded-control border border-bd bg-surface2 px-3 py-2 text-sm text-tx mb-4 focus:border-accent focus:outline-none">
+            <option value="">Nenhuma (sem coluna)</option>
+            {columns.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button onClick={() => setEditingTag(null)} className="flex-1 rounded-control border border-bd px-4 py-2 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
+            <button onClick={saveTagEdit} className="flex-1 rounded-control bg-accent px-4 py-2 text-sm font-bold text-white hover:bg-accent2 transition">Salvar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Seletor de etiqueta para o lead */}
+      {tagging && (
+        <Modal onClose={() => setTagging(null)} title="Adicionar etiqueta">
+          <p className="text-xs text-tx3 -mt-2 mb-3">{tagging.leadName}</p>
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {tags.length === 0 ? <p className="text-xs text-tx3 text-center py-4">Nenhuma etiqueta. Crie uma primeiro.</p> : tags.map((tag) => {
+              const col = columns.find((c) => c.key === tag.column_key);
+              return (
+                <button key={tag.id} onClick={() => addTagToLead(tagging.leadId, tag.id, tag.column_key)} className="w-full flex items-center gap-2 px-3 py-2 rounded-control hover:bg-hover transition text-left">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                  <span className="text-sm text-tx2">{tag.name}</span>
+                  {col && <span className="text-[10px] text-tx3 ml-auto">{col.label}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-xs rounded-card border border-bd bg-surface shadow-pop p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-bold text-tx mb-3">{title}</h3>
+        {children}
+      </div>
     </div>
   );
 }
