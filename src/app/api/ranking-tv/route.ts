@@ -16,9 +16,9 @@ export async function GET(request: Request) {
 
   const monthStart = brToday().slice(0, 8) + "01";
   const overlay = await avatarOverlay(auth.db);
-  const [periodRes, opRevRes, metasRes, summaryRes] = await Promise.all([
+  const [periodRes, monthRes, metasRes, summaryRes] = await Promise.all([
     multium.rpc("x1_ranking", { p_start: p.startDate, p_end: p.endDate }),
-    multium.rpc("x1_op_revenue", { p_start: monthStart, p_end: brToday() }),
+    multium.rpc("x1_ranking", { p_start: monthStart, p_end: brToday() }),
     multium.rpc("x1_metas"),
     multium.rpc("x1_sales_summary", { p_start: p.startDate, p_end: p.endDate }),
   ]);
@@ -36,9 +36,13 @@ export async function GET(request: Request) {
   const rows = ((periodRes.data as any[]) || []).map(dec).sort((a, b) => b.faturamento - a.faturamento || b.vendas - a.vendas);
   const ranked = rows.map((r, i) => ({ rank: i + 1, ...r }));
 
-  // Faturamento do mês por operação (por nome_expert = operação inteira, inclui vendas sem UTM de vendedor).
+  // Faturamento do mês por operação = soma SÓ das vendas com UTM de vendedor (x1_ranking por operação).
+  // Vendas sem UTM (organic/ads) NÃO contam pra meta coletiva.
   const monthByOp: Record<string, number> = {};
-  for (const r of (opRevRes.data as any[]) || []) monthByOp[r.operacao || "—"] = Number(r.faturamento) || 0;
+  for (const r of (monthRes.data as any[]) || []) {
+    const op = r.expert || "—";
+    monthByOp[op] = (monthByOp[op] || 0) + (Number(r.faturamento) || 0);
+  }
 
   const metasColetivas = ((metasRes.data as any[]) || []).map((m) => {
     const atual = Math.round(monthByOp[m.operacao] || 0);
