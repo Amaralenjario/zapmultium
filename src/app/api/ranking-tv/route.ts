@@ -1,0 +1,67 @@
+import { requireApiKeyOrSession } from "@/lib/tv-auth";
+import { jsonResponse } from "@/lib/api-auth";
+import { resolvePeriod, multiumClient, avatarOverlay, httpAvatar, norm, brToday } from "@/lib/public-metrics";
+
+export const dynamic = "force-dynamic";
+
+// Dados da Ranking TV: pódio por faturamento, ranking, metas coletivas por operação e stats.
+export async function GET(request: Request) {
+  const auth = await requireApiKeyOrSession(request);
+  if (!auth.ok) return auth.res;
+
+  const u = new URL(request.url);
+  const p = resolvePeriod(u.searchParams.get("period") || undefined, u.searchParams.get("start") || undefined, u.searchParams.get("end") || undefined);
+  const multium = multiumClient();
+  if (!multium) return jsonResponse({ error: "Fonte de vendas não configurada" }, 500);
+
+  const monthStart = brToday().slice(0, 8) + "01";
+  const overlay = await avatarOverlay(auth.db);
+  const [periodRes, opRevRes, metasRes, summaryRes] = await Promise.all([
+    multium.rpc("x1_ranking", { p_start: p.startDate, p_end: p.endDate }),
+    multium.rpc("x1_op_revenue", { p_start: monthStart, p_end: brToday() }),
+    multium.rpc("x1_metas"),
+    multium.rpc("x1_sales_summary", { p_start: p.startDate, p_end: p.endDate }),
+  ]);
+
+  const dec = (r: any) => {
+    const vendas = Number(r.vendas) || 0, faturamento = Number(r.faturamento) || 0, meta = Number(r.meta) || 0;
+    return {
+      utm: r.utm, nome: r.nome || r.utm || "Vendedor",
+      avatar: httpAvatar(r.foto_url) || httpAvatar(overlay[norm(r.nome)]),
+      operacao: r.expert || "—", genero: (r.genero || "").toUpperCase(),
+      vendas, faturamento, ticket: vendas > 0 ? Math.round(faturamento / vendas) : 0,
+      meta, pctMeta: meta > 0 ? Math.round((faturamento / meta) * 100) : 0,
+    };
+  };
+  const rows = ((periodRes.data as any[]) || []).map(dec).sort((a, b) => b.faturamento - a.faturamento || b.vendas - a.vendas);
+  const ranked = rows.map((r, i) => ({ rank: i + 1, ...r }));
+
+  // Faturamento do mês por operação (por nome_expert = operação inteira, inclui vendas sem UTM de vendedor).
+  const monthByOp: Record<string, number> = {};
+  for (const r of (opRevRes.data as any[]) || []) monthByOp[r.operacao || "—"] = Number(r.faturamento) || 0;
+
+  const metasColetivas = ((metasRes.data as any[]) || []).map((m) => {
+    const atual = Math.round(monthByOp[m.operacao] || 0);
+    const n1 = Number(m.n1) || 0, n2 = Number(m.n2) || 0, n3 = Number(m.n3) || 0;
+    const nivelAtual = atual >= n3 ? 3 : atual >= n2 ? 2 : atual >= n1 ? 1 : 0;
+    const prox = nivelAtual === 0 ? n1 : nivelAtual === 1 ? n2 : nivelAtual === 2 ? n3 : n3;
+    const faltaPct = (n: number) => (n > 0 ? Math.max(0, Math.round(((n - atual) / n) * 100)) : 0);
+    return {
+      operacao: m.operacao, atual, metaExibida: n3, n1, n2, n3,
+      pct: n3 > 0 ? Math.round((atual / n3) * 100) : 0,
+      nivelAtual, faltaProxNivel: Math.max(0, prox - atual),
+      faltaN1: faltaPct(n1), faltaN2: faltaPct(n2), faltaN3: faltaPct(n3),
+    };
+  });
+
+  const s = (summaryRes.data as any) || {};
+
+  return jsonResponse({
+    now: new Date().toISOString(),
+    periodo: { tipo: p.period, inicio: p.startDate, fim: p.endDate },
+    stats: { faturamento: Math.round(Number(s.faturamento) || 0), vendas: Number(s.aprovadas) || 0, ticket: Math.round(Number(s.ticket_medio) || 0) },
+    podium: ranked.slice(0, 3),
+    ranking: ranked.slice(3),
+    metasColetivas,
+  });
+}
