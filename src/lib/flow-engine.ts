@@ -176,6 +176,8 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
       flow_execution_id: execution.id,
       flow_step_node_id: execution.current_node_id,
       source: "flow",
+      // Legenda vai no metadata (mesma convenção do send-media do chat) pra aparecer no MessageBubble.
+      caption: caption || undefined,
     },
   });
 
@@ -185,7 +187,7 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
   }
 
   await supabase.from("conversations").update({
-    last_message: labels[mediaType] || "📎 Mídia",
+    last_message: (caption && caption.trim()) || labels[mediaType] || "📎 Mídia",
     last_message_sender: "agent",
     last_message_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

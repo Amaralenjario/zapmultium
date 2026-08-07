@@ -224,37 +224,53 @@ export default async function DashboardPage({
   const opSlices = Object.values(opAgg).sort((a, b) => b.value - a.value);
   const opTotal = opSlices.reduce((a, b) => a + b.value, 0);
 
-  // Tabela por vendedor (admin) — agrega canais por vendedor
+  // Tabela por vendedor (admin) — mini ranking por vendas. Só vendedores (admins fora).
   let sellerRows: any[] = [];
   if (isAdmin) {
-    const bySeller: Record<string, { userId: string; novas: number; enviadas: number; recebidas: number; ativas: number; aguardando: number }> = {};
+    // Vendas reais por vendedor no período (banco Multium), casadas por nome normalizado.
+    const norm = (s: string) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
+    const vendasByName: Record<string, number> = {};
+    const mUrl = process.env.MULTIUM_SUPABASE_URL;
+    const mKey = process.env.MULTIUM_SUPABASE_ANON_KEY;
+    if (mUrl && mKey) {
+      try {
+        const m = createAdminClient(mUrl, mKey, { auth: { autoRefreshToken: false, persistSession: false } });
+        const toBrDate = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        const { data: vr } = await m.rpc("x1_ranking", { p_start: toBrDate(startISO), p_end: toBrDate(endISO) });
+        for (const r of (vr as any[]) || []) vendasByName[norm(r.nome)] = Number(r.vendas) || 0;
+      } catch { /* sem fonte de vendas → 0 */ }
+    }
+
+    const bySeller: Record<string, { userId: string; novas: number; enviadas: number; recebidas: number }> = {};
     for (const ch of channels) {
       const uid = phoneToSeller[ch.phone];
-      const key = uid || `canal:${phoneToName[ch.phone] || ch.phone}`;
-      if (!bySeller[key]) bySeller[key] = { userId: uid || "", novas: 0, enviadas: 0, recebidas: 0, ativas: 0, aguardando: 0 };
-      bySeller[key].novas += Number(ch.novas);
-      bySeller[key].enviadas += Number(ch.enviadas);
-      bySeller[key].recebidas += Number(ch.recebidas);
-      bySeller[key].ativas += Number(ch.ativas);
-      bySeller[key].aguardando += Number(ch.aguardando);
+      if (!uid) continue; // só canais ligados a um vendedor
+      if (!bySeller[uid]) bySeller[uid] = { userId: uid, novas: 0, enviadas: 0, recebidas: 0 };
+      bySeller[uid].novas += Number(ch.novas);
+      bySeller[uid].enviadas += Number(ch.enviadas);
+      bySeller[uid].recebidas += Number(ch.recebidas);
     }
-    const userIds = Object.values(bySeller).map((b) => b.userId).filter(Boolean);
+    const userIds = Object.keys(bySeller);
     const names: Record<string, string> = {};
     const avatars: Record<string, string> = {};
+    const roles: Record<string, string> = {};
     if (userIds.length > 0) {
-      const { data: profs } = await admin.from("profiles").select("id, full_name, email, avatar_url").in("id", userIds);
+      const { data: profs } = await admin.from("profiles").select("id, full_name, email, avatar_url, role").in("id", userIds);
       for (const p of profs || []) {
         names[p.id] = (p as any).full_name || (p as any).email || p.id;
         if ((p as any).avatar_url) avatars[p.id] = (p as any).avatar_url;
+        roles[p.id] = (p as any).role || "";
       }
     }
-    sellerRows = Object.entries(bySeller)
-      .map(([key, v]) => ({
-        name: v.userId ? (names[v.userId] || "Vendedor") : key.replace("canal:", ""),
-        avatar: v.userId ? avatars[v.userId] : undefined,
-        novas: v.novas, enviadas: v.enviadas, recebidas: v.recebidas, ativas: v.ativas, aguardando: v.aguardando,
-      }))
-      .sort((a, b) => (b.enviadas + b.recebidas) - (a.enviadas + a.recebidas));
+    sellerRows = Object.values(bySeller)
+      .filter((v) => roles[v.userId] !== "admin" && roles[v.userId] !== "supervisor") // admins não aparecem
+      .map((v) => {
+        const nm = names[v.userId] || "Vendedor";
+        const vendas = vendasByName[norm(nm)] || 0;
+        const taxaConversao = v.novas > 0 ? Math.round((vendas / v.novas) * 100) : 0;
+        return { name: nm, avatar: avatars[v.userId], novas: v.novas, enviadas: v.enviadas, recebidas: v.recebidas, vendas, taxaConversao };
+      })
+      .sort((a, b) => b.vendas - a.vendas || (b.enviadas + b.recebidas) - (a.enviadas + a.recebidas));
   }
 
   const mapConv = (c: any) => {

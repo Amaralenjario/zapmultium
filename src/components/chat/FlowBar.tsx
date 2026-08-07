@@ -117,8 +117,6 @@ export default function FlowBar({
   const [flowSearch, setFlowSearch] = useState("");
   const [showReorder, setShowReorder] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const momentumRef = useRef(0);
-  const animRef = useRef<number>(0);
 
   const isSearching = !!flowSearch.trim();
   const filteredFlows = isSearching
@@ -140,23 +138,18 @@ export default function FlowBar({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // Roda vertical do mouse rola a barra de fluxos na horizontal (sem depender de rAF).
     const handler = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return; // nada a rolar
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (!delta) return;
       e.preventDefault();
-      momentumRef.current += e.deltaY;
-      if (animRef.current) cancelAnimationFrame(animRef.current);
-      const animate = () => {
-        const current = momentumRef.current;
-        const step = current * 0.15;
-        if (Math.abs(current) < 0.5) { momentumRef.current = 0; animRef.current = 0; return; }
-        momentumRef.current -= step;
-        el.scrollLeft += step;
-        animRef.current = requestAnimationFrame(animate);
-      };
-      animRef.current = requestAnimationFrame(animate);
+      el.scrollLeft += delta;
     };
     el.addEventListener("wheel", handler, { passive: false });
-    return () => { el.removeEventListener("wheel", handler); if (animRef.current) cancelAnimationFrame(animRef.current); };
-  }, []);
+    return () => el.removeEventListener("wheel", handler);
+    // Reanexa quando o container de fato existe (fluxos carregam async) e ao alternar busca.
+  }, [flows.length, isSearching]);
 
   useEffect(() => {
     const fetchProgress = async () => {
@@ -309,7 +302,7 @@ export default function FlowBar({
 
         {isSearching ? (
           // Durante a busca: sem arrastar (índices não batem), só disparar
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1">
             {filteredFlows.length === 0 && <span className="text-[11px] text-tx3 py-1.5">Nenhum fluxo encontrado</span>}
             {filteredFlows.map((flow) => (
               <div key={flow.id} className="flex-shrink-0 flex items-center rounded-lg border border-bd bg-surface">
