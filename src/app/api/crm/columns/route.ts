@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
+import { getBoardOwnerId } from "@/lib/crm-board";
 
 const DEFAULT_COLUMNS = [
   { key: "new", label: "Novos", color: "#3b82f6", position: 0 },
@@ -21,15 +22,17 @@ export async function GET() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
+  // Board compartilhado do time: todo mundo lê as colunas do admin (dono do board).
+  const owner = await getBoardOwnerId(adminClient, user.id);
   let { data: columns } = await adminClient
     .from("crm_columns")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", owner)
     .order("position");
 
   // Auto-create defaults if none exist
   if (!columns || columns.length === 0) {
-    const defaults = DEFAULT_COLUMNS.map((c, i) => ({ ...c, user_id: user.id, position: i }));
+    const defaults = DEFAULT_COLUMNS.map((c, i) => ({ ...c, user_id: owner, position: i }));
     await adminClient.from("crm_columns").insert(defaults);
     columns = defaults.map((d, i) => ({ ...d, id: `default-${i}`, created_at: new Date().toISOString() }));
   }
@@ -51,14 +54,15 @@ export async function POST(request: Request) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  // Find max position
-  const { data: existing } = await adminClient.from("crm_columns").select("position").eq("user_id", user.id).order("position", { ascending: false }).limit(1);
+  // Nova coluna vai pro board compartilhado (do admin).
+  const owner = await getBoardOwnerId(adminClient, user.id);
+  const { data: existing } = await adminClient.from("crm_columns").select("position").eq("user_id", owner).order("position", { ascending: false }).limit(1);
   const nextPos = (existing?.[0]?.position ?? -1) + 1;
   const key = `custom_${Date.now()}`;
 
   const { data, error } = await adminClient
     .from("crm_columns")
-    .insert({ user_id: user.id, key, label, color: color || "#6b7280", position: nextPos })
+    .insert({ user_id: owner, key, label, color: color || "#6b7280", position: nextPos })
     .select("*")
     .single();
 

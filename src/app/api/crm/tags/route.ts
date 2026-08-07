@@ -60,11 +60,11 @@ export async function PUT(request: Request) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
+  // Board do CRM é compartilhado: qualquer autenticado gerencia as etiquetas do time.
   const { data, error } = await adminClient
     .from("crm_tags")
     .update(updates)
     .eq("id", id)
-    .eq("user_id", user.id)
     .select("*")
     .single();
 
@@ -88,7 +88,7 @@ export async function DELETE(request: Request) {
   );
 
   await adminClient.from("lead_tags").delete().eq("tag_id", id);
-  await adminClient.from("crm_tags").delete().eq("id", id).eq("user_id", user.id);
+  await adminClient.from("crm_tags").delete().eq("id", id); // board compartilhado
 
   return NextResponse.json({ ok: true });
 }

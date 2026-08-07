@@ -229,9 +229,30 @@ function TagEditor({ config }: { config: any }) {
 }
 
 const nodeTypes = { flowNode: FlowNode };
-interface FlowStep { id: string; type: string; label: string; config: Record<string, any>; }
+interface FlowStep { id: string; type: string; label: string; config: Record<string, any>; position?: { x: number; y: number } }
 
 type EdgeLite = { id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string };
+
+// Fallback de layout: posiciona os nós na ORDEM DE EXECUÇÃO (segue os edges a partir do início).
+// Usado só quando o fluxo não tem posições salvas — garante que a ordem visual bate com a real.
+function layoutByExecution(steps: FlowStep[], edges: EdgeLite[]): Record<string, { x: number; y: number }> {
+  const adj: Record<string, string[]> = {};
+  for (const e of edges) (adj[e.source] = adj[e.source] || []).push(e.target);
+  const start = steps.find((s) => s.type === "start") || steps.find((s) => !edges.some((e) => e.target === s.id)) || steps[0];
+  const pos: Record<string, { x: number; y: number }> = {};
+  const seen = new Set<string>();
+  let order = 0;
+  const visit = (id?: string) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    pos[id] = { x: 300, y: 50 + order * 170 };
+    order++;
+    for (const t of adj[id] || []) visit(t);
+  };
+  if (start) visit(start.id);
+  for (const s of steps) if (!seen.has(s.id)) { pos[s.id] = { x: 300, y: 50 + order * 170 }; order++; }
+  return pos;
+}
 export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps, initialEdges }: {
   onPersist?: (result: { steps: FlowStep[]; edges: EdgeLite[] }) => Promise<void> | void;
   onBack?: () => void;
@@ -246,8 +267,12 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
 
   const buildInitialNodes = useMemo((): any[] => {
     if (initialSteps && initialSteps.length > 0) {
+      const validPos = (s: any) => s.position && typeof s.position.x === "number" && typeof s.position.y === "number";
+      // Sem nenhuma posição salva → calcula layout pela ordem de execução (não pela ordem do array).
+      const fallback = initialSteps.some(validPos) ? null : layoutByExecution(initialSteps, initialEdges || []);
       return initialSteps.map((s, i) => ({
-        id: s.id, type: "flowNode", position: { x: 300, y: 50 + i * 170 },
+        id: s.id, type: "flowNode",
+        position: validPos(s) ? { x: s.position!.x, y: s.position!.y } : (fallback?.[s.id] || { x: 300, y: 50 + i * 170 }),
         data: { type: s.type, label: s.label || s.type, color: s.type === "start" ? START.color : (NODE_CONFIGS[s.type]?.color || "#6b7280"), config: { ...s.config } },
         draggable: s.id !== "start",
       }));
@@ -304,7 +329,7 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
   // ── Auto-save (a cada 1.8s, salva se algo mudou — inclusive edições de texto nos nós) ──
   const lastSavedRef = useRef<string>("");
   const serialize = (flow: any) => JSON.stringify({
-    steps: flow.nodes.map((n: any) => ({ id: n.id, type: n.data.type, label: n.data.label, config: n.data.config })),
+    steps: flow.nodes.map((n: any) => ({ id: n.id, type: n.data.type, label: n.data.label, config: n.data.config, position: n.position })),
     edges: flow.edges.map((e: any) => ({ id: e.id || "", source: e.source, target: e.target, sourceHandle: e.sourceHandle || undefined, targetHandle: e.targetHandle || undefined })),
   });
   useEffect(() => {

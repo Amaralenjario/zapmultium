@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Tag, Plus, X, Trash2, Pencil, GripVertical, TagsIcon, Layers } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "@/components/chat/Avatar";
@@ -153,9 +153,13 @@ export default function CrmKanban() {
     setLoading(false);
   }, [supabase, fetchAllRows]);
 
+  // Ref do drag pra o auto-refresh não interromper o arraste.
+  const dragRef = useRef<DragItem>(null);
+  dragRef.current = dragItem;
+
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => {
-    const i = setInterval(fetchAll, 8000);
+    const i = setInterval(() => { if (!dragRef.current) fetchAll(); }, 8000);
     const onTagged = () => fetchAll();
     window.addEventListener("lead-tagged", onTagged);
     return () => { clearInterval(i); window.removeEventListener("lead-tagged", onTagged); };
@@ -163,16 +167,19 @@ export default function CrmKanban() {
 
   // ── Mover LEAD para uma coluna (cria lead real se for contato ainda não rastreado) ──
   const moveLead = async (lead: Lead, targetKey: string) => {
+    if (lead.status === targetKey) return;
+    // OTIMISTA: move na hora no estado local (o card muda de coluna imediatamente).
+    setLeads((prev) => prev.map((l) => l.id === lead.id ? { ...l, status: targetKey } : l));
     try {
       if (String(lead.id).startsWith("customer_")) {
         const { data: existing } = await supabase.from("leads").select("id").eq("phone", lead.phone).maybeSingle();
         if (existing) await supabase.from("leads").update({ status: targetKey }).eq("id", existing.id);
         else await supabase.from("leads").insert({ name: lead.name, phone: lead.phone, status: targetKey, source: "whatsapp", customer_id: lead._customer_id || null, funnel_stage: "captura", priority: "normal" });
       } else {
-        await supabase.from("leads").update({ status: targetKey }).eq("id", lead.id);
+        const { error } = await supabase.from("leads").update({ status: targetKey }).eq("id", lead.id);
+        if (error) throw error;
       }
-      fetchAll();
-    } catch { toast.error("Erro ao mover lead"); }
+    } catch { toast.error("Erro ao mover lead"); fetchAll(); }
   };
 
   // ── Mover ETIQUETA para outra coluna → os leads com ela vão junto ──
@@ -180,6 +187,7 @@ export default function CrmKanban() {
     const tag = tags.find((t) => t.id === tagId);
     if (!tag || tag.column_key === targetKey) return;
     setTags((prev) => prev.map((t) => t.id === tagId ? { ...t, column_key: targetKey } : t)); // otimista
+    setLeads((prev) => prev.map((l) => (l.lead_tags || []).some((lt) => lt.tag_id === tagId) ? { ...l, status: targetKey } : l)); // move os leads da etiqueta na hora
     try {
       await fetch("/api/crm/tags", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: tagId, column_key: targetKey }) });
       const { data: lt } = await supabase.from("lead_tags").select("lead_id").eq("tag_id", tagId);
@@ -207,7 +215,8 @@ export default function CrmKanban() {
   };
 
   const handleDropOnColumn = (col: Column) => {
-    const item = dragItem;
+    const item = dragRef.current || dragItem; // ref = sempre o valor atual (evita closure defasado)
+    dragRef.current = null;
     setDragItem(null); setDropCol(null);
     if (!item) return;
     if (item.type === "lead") moveLead(item.lead, col.key);
@@ -244,6 +253,8 @@ export default function CrmKanban() {
   const addTagToLead = async (leadId: string, tagId: string, columnKey: string | null) => {
     const lead = leads.find((l) => l.id === leadId);
     const existing = lead?.lead_tags?.find((lt) => lt.tag_id === tagId);
+    // OTIMISTA: aplicar etiqueta com coluna move o lead pra essa coluna na hora.
+    if (!existing && columnKey) setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status: columnKey } : l));
     // resolve id real (cria lead se for contato)
     let realId = leadId;
     if (String(leadId).startsWith("customer_") && lead) {
@@ -318,7 +329,7 @@ export default function CrmKanban() {
             return (
               <div
                 key={col.id}
-                onDragOver={(e) => { e.preventDefault(); if (dropCol !== col.key) setDropCol(col.key); }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dropCol !== col.key) setDropCol(col.key); }}
                 onDragLeave={(e) => { if (e.currentTarget === e.target) setDropCol(null); }}
                 onDrop={(e) => { e.preventDefault(); handleDropOnColumn(col); }}
                 className={`snap-start flex-shrink-0 w-[85vw] lg:flex-1 lg:min-w-[280px] lg:max-w-[360px] rounded-card border flex flex-col transition-all ${isDropTarget ? "border-accent ring-2 ring-accent/30" : "border-bd"}`}
@@ -327,7 +338,7 @@ export default function CrmKanban() {
                 {/* Cabeçalho da coluna (arrastável) */}
                 <div
                   draggable
-                  onDragStart={() => setDragItem({ type: "column", colId: col.id })}
+                  onDragStart={(e) => { const it = { type: "column" as const, colId: col.id }; dragRef.current = it; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", col.id); setDragItem(it); }}
                   onDragEnd={() => { setDragItem(null); setDropCol(null); }}
                   className="px-3 py-2.5 flex items-center justify-between rounded-t-card cursor-grab active:cursor-grabbing"
                   style={{ backgroundColor: col.color + "1a" }}
@@ -353,7 +364,7 @@ export default function CrmKanban() {
                       <span
                         key={tag.id}
                         draggable
-                        onDragStart={(e) => { e.stopPropagation(); setDragItem({ type: "tag", tagId: tag.id }); }}
+                        onDragStart={(e) => { e.stopPropagation(); const it = { type: "tag" as const, tagId: tag.id }; dragRef.current = it; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", tag.id); setDragItem(it); }}
                         onDragEnd={() => { setDragItem(null); setDropCol(null); }}
                         className="text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-grab active:cursor-grabbing"
                         style={{ backgroundColor: tag.color + "26", color: tag.color }}
@@ -379,7 +390,7 @@ export default function CrmKanban() {
                           <div
                             key={lead.id}
                             draggable
-                            onDragStart={() => setDragItem({ type: "lead", lead })}
+                            onDragStart={(e) => { const it = { type: "lead" as const, lead }; dragRef.current = it; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", lead.id); setDragItem(it); }}
                             onDragEnd={() => { setDragItem(null); setDropCol(null); }}
                             className={`bg-surface rounded-control border border-bd p-3 hover:shadow-card transition border-l-[3px] cursor-grab active:cursor-grabbing ${dragItem?.type === "lead" && dragItem.lead.id === lead.id ? "opacity-40" : ""}`}
                             style={{ borderLeftColor: getLeadOpColor(lead) || "var(--tx3)" }}
