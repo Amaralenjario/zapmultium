@@ -288,6 +288,7 @@ export async function processFlowStep(executionId: string): Promise<{
             await supabase.from("flow_executions").update({
               status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
             }).eq("id", executionId);
+            await startNextQueued(execution.conversation_id);
             return { ok: true, completed: true };
           }
 
@@ -338,6 +339,8 @@ export async function processFlowStep(executionId: string): Promise<{
       await supabase.from("flow_execution_logs").insert({
         execution_id: executionId, node_id: currentNode.id, action: "error", result: { error: err.message },
       });
+      // fluxo falhou não pode travar a fila — segue pro próximo enfileirado
+      await startNextQueued(execution.conversation_id);
       return { ok: false, error: err.message };
     }
 
@@ -356,6 +359,7 @@ export async function processFlowStep(executionId: string): Promise<{
       await supabase.from("flow_executions").update({
         status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).eq("id", executionId);
+      await startNextQueued(execution.conversation_id);
       return { ok: true, completed: true };
     }
   }
@@ -364,7 +368,37 @@ export async function processFlowStep(executionId: string): Promise<{
   await getSupabase().from("flow_executions").update({
     status: "error", error: "Limite de 200 passos atingido", updated_at: new Date().toISOString(),
   }).eq("id", executionId);
+  await startNextQueued(execution.conversation_id);
   return { ok: false, error: "limite de passos atingido" };
+}
+
+/**
+ * Fila de fluxos por conversa: quando um fluxo termina (ou falha), dispara o
+ * próximo que estava em "queued" — só 1 fluxo roda por vez, sem sobreposição.
+ */
+async function startNextQueued(conversationId: string): Promise<void> {
+  if (!conversationId) return;
+  const supabase = getSupabase();
+  // Não inicia se ainda houver um fluxo ativo (evita corrida).
+  const { data: active } = await supabase
+    .from("flow_executions").select("id")
+    .eq("conversation_id", conversationId)
+    .in("status", ["running", "paused", "pending"]).limit(1);
+  if (active && active.length > 0) return;
+  // Pega o mais antigo da fila.
+  const { data: queued } = await supabase
+    .from("flow_executions").select("id")
+    .eq("conversation_id", conversationId).eq("status", "queued")
+    .order("started_at", { ascending: true }).limit(1);
+  if (!queued || queued.length === 0) return;
+  // queued → pending de forma atômica (só um promotor ganha), depois processa.
+  const { data: promoted } = await supabase
+    .from("flow_executions")
+    .update({ status: "pending", started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", queued[0].id).eq("status", "queued")
+    .select("id").maybeSingle();
+  if (!promoted) return;
+  try { await processFlowStep(promoted.id); } catch { /* ignora, próximo terminal cuida */ }
 }
 
 /**

@@ -184,8 +184,18 @@ export default function FlowBar({
         body: JSON.stringify({ flow_id: flow.id, conversation_id: conversationId, customer_phone: customerPhone, phone_number_id: phoneNumberId }),
       });
       const result = await res.json();
-      if (!result.ok && result.error) toast.error(result.error);
-      else window.dispatchEvent(new CustomEvent("flow-triggered"));
+      if (!res.ok || result.error) {
+        toast.error(result.error || "Erro ao disparar fluxo");
+      } else if (result.queued) {
+        // Já tinha um fluxo rodando → esse entrou na fila.
+        toast(result.message, { icon: "⏳", duration: 5000 });
+        window.dispatchEvent(new CustomEvent("flow-triggered"));
+      } else if (result.alreadyActive) {
+        toast(result.message, { icon: "ℹ️" });
+      } else {
+        toast.success("Fluxo disparado!");
+        window.dispatchEvent(new CustomEvent("flow-triggered"));
+      }
     } catch { toast.error("Erro"); }
     setTriggering(null);
   };

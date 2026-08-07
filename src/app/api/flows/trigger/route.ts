@@ -21,81 +21,84 @@ export async function POST(request: Request) {
 
     const supabase = getSupabase();
 
-    // Check if there's already an active execution for this flow+conversation
-    const { data: existing } = await supabase
+    // Fluxo precisa existir e ter nó de início (usado tanto pra rodar quanto pra enfileirar).
+    const { data: flow } = await supabase.from("flows").select("config").eq("id", flow_id).single();
+    if (!flow) return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
+    const startNode = (flow.config?.steps || []).find((s: any) => s.type === "start");
+    if (!startNode) return NextResponse.json({ error: "Fluxo não possui nó de início" }, { status: 400 });
+
+    // Não duplica: se ESTE fluxo já está rodando ou na fila desta conversa, ignora.
+    const { data: dup } = await supabase
       .from("flow_executions")
       .select("id, status")
-      .eq("flow_id", flow_id)
       .eq("conversation_id", conversation_id)
-      .in("status", ["running", "paused", "pending"])
-      .maybeSingle();
-
-    if (existing) {
-      return NextResponse.json({
-        error: "Já existe uma execução ativa para este fluxo nesta conversa",
-        execution_id: existing.id,
-        status: existing.status,
-      }, { status: 409 });
-    }
-
-    // Prevent rapid re-triggering: check any execution in the last 30s
-    const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
-    const { data: recent } = await supabase
-      .from("flow_executions")
-      .select("id, status, created_at")
       .eq("flow_id", flow_id)
-      .eq("conversation_id", conversation_id)
-      .gte("created_at", thirtySecondsAgo)
-      .order("created_at", { ascending: false })
+      .in("status", ["running", "paused", "pending", "queued"])
       .limit(1);
-
-    if (recent && recent.length > 0) {
+    if (dup && dup.length > 0) {
       return NextResponse.json({
-        error: "Uma execução recente deste fluxo já foi disparada. Aguarde 30 segundos.",
-        recent_execution_id: recent[0].id,
-        recent_status: recent[0].status,
-      }, { status: 429 });
-    }
-
-    // Get the flow to verify it exists and has a start node
-    const { data: flow } = await supabase
-      .from("flows")
-      .select("config")
-      .eq("id", flow_id)
-      .single();
-
-    if (!flow) {
-      return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
-    }
-
-    const startNode = (flow.config?.steps || []).find((s: any) => s.type === "start");
-    if (!startNode) {
-      return NextResponse.json({ error: "Fluxo não possui nó de início" }, { status: 400 });
+        ok: true, alreadyActive: true,
+        message: dup[0].status === "queued"
+          ? "Este fluxo já está na fila desta conversa."
+          : "Este fluxo já está em andamento nesta conversa.",
+      });
     }
 
     const executionKey = `${flow_id}_${conversation_id}_${randomUUID()}`;
 
-    // Create execution
+    // Só UM fluxo ativo por conversa. Se já houver um rodando/pausado/pendente,
+    // o novo entra na FILA e dispara sozinho quando o atual terminar (evita 2 funis
+    // sobrepostos misturando mensagens, ex.: mandar o 04 e sair o 09 junto).
+    const { data: activeOnConv } = await supabase
+      .from("flow_executions")
+      .select("id, status, flow_id")
+      .eq("conversation_id", conversation_id)
+      .in("status", ["running", "paused", "pending"])
+      .order("started_at", { ascending: false })
+      .limit(1);
+
+    if (activeOnConv && activeOnConv.length > 0) {
+      // Quantos já esperam na fila (pra saber se é "após o atual" ou "após os anteriores").
+      const { count: queuedCount } = await supabase
+        .from("flow_executions")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", conversation_id)
+        .eq("status", "queued");
+
+      const { data: queuedExec, error: qErr } = await supabase
+        .from("flow_executions")
+        .insert({
+          flow_id, conversation_id, customer_phone, phone_number_id,
+          current_node_id: startNode.id, status: "queued", context: {}, execution_key: executionKey,
+        })
+        .select("*")
+        .single();
+      if (qErr) return NextResponse.json({ error: qErr.message }, { status: 500 });
+
+      let nome = "o fluxo atual";
+      const { data: af } = await supabase.from("flows").select("name").eq("id", activeOnConv[0].flow_id).single();
+      if (af?.name) nome = `"${af.name}"`;
+
+      return NextResponse.json({
+        ok: true, queued: true, execution: queuedExec, queuePosition: (queuedCount || 0) + 1,
+        message: (queuedCount || 0) > 0
+          ? "Fluxo adicionado à fila — será disparado após os fluxos anteriores terminarem."
+          : `Fluxo na fila — será disparado automaticamente quando ${nome} terminar.`,
+      });
+    }
+
+    // Nenhum fluxo ativo → roda agora.
     const { data: execution, error: createError } = await supabase
       .from("flow_executions")
       .insert({
-        flow_id,
-        conversation_id,
-        customer_phone,
-        phone_number_id,
-        current_node_id: startNode.id,
-        status: "pending",
-        context: {},
-        execution_key: executionKey,
+        flow_id, conversation_id, customer_phone, phone_number_id,
+        current_node_id: startNode.id, status: "pending", context: {}, execution_key: executionKey,
       })
       .select("*")
       .single();
 
-    if (createError) {
-      return NextResponse.json({ error: createError.message }, { status: 500 });
-    }
+    if (createError) return NextResponse.json({ error: createError.message }, { status: 500 });
 
-    // Process synchronously so errors are returned to client
     const { processFlowStep } = await import("@/lib/flow-engine");
     try {
       const result = await processFlowStep(execution.id);
