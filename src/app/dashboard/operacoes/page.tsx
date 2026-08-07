@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Building2, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { Plus, Pencil, Trash2, Building2, AlertTriangle, Braces } from "lucide-react";
 import CreateOperationModal from "@/components/operations/CreateOperationModal";
 import EditOperationModal from "@/components/operations/EditOperationModal";
 import toast from "react-hot-toast";
@@ -35,9 +36,14 @@ export default function OperacoesPage() {
           <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-tx">Operações</h1>
           <p className="text-tx2 text-sm mt-0.5">{operations.length} {operations.length === 1 ? "operação" : "operações"}</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition flex items-center gap-2">
-          <Plus className="w-4 h-4" strokeWidth={2.2} /> Nova operação
-        </button>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard/operacoes/api" className="rounded-control border border-bd bg-surface px-4 py-2.5 text-sm font-bold text-tx2 hover:text-accent hover:border-accent/40 transition flex items-center gap-2">
+            <Braces className="w-4 h-4" strokeWidth={2.2} /> API
+          </Link>
+          <button onClick={() => setShowCreate(true)} className="rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition flex items-center gap-2">
+            <Plus className="w-4 h-4" strokeWidth={2.2} /> Nova operação
+          </button>
+        </div>
       </div>
 
       {operations.length === 0 ? (
