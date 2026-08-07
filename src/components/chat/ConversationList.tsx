@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "./Avatar";
@@ -38,6 +38,10 @@ export default function ConversationList({
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string }>>({});
   const [activeFlows, setActiveFlows] = useState<Record<string, { count: number; flowNames: string[] }>>({});
   const [sellerPhoneIds, setSellerPhoneIds] = useState<string[] | null>(null);
+  // Ref com o escopo já resolvido (undefined=carregando, null=admin/todos, array=canais do vendedor).
+  // Usado pra FILTRAR a query de conversas por canal, senão o limite de 500 pega o pool GLOBAL
+  // e o vendedor de alto volume só vê as conversas mais recentes (bug do "só até 11h").
+  const sellerPhonesRef = useRef<string[] | null | undefined>(undefined);
   const [filter, setFilter] = useState<"all" | "unread" | "active" | "archived">("all");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
@@ -151,27 +155,38 @@ export default function ConversationList({
 
   useEffect(() => {
     const fetchConversations = async () => {
-      const { data } = await supabase
+      let q = supabase
         .from("conversations")
         .select("id, status, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)")
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(500);
+      // Escopo do vendedor DENTRO da query (não no cliente): o limite de 500 passa a valer
+      // só pras conversas do canal dele, então ele vê TODAS as dele, não só as mais recentes.
+      const phones = sellerPhonesRef.current;
+      if (Array.isArray(phones)) {
+        if (phones.length === 0) q = q.eq("metadata->>phone_number_id", "__none__");
+        else if (phones.length === 1) q = q.eq("metadata->>phone_number_id", phones[0]);
+        else q = q.or(phones.map((p) => `metadata->>phone_number_id.eq.${p}`).join(","));
+      }
+      const { data } = await q;
       setAllConversations(data || []);
       setClickLocked(true);
       setTimeout(() => setClickLocked(false), 150);
     };
 
     const fetchSellerChannels = async () => {
+      // Seta o ref (usado na query) e o estado (usado no filtro do cliente) juntos.
+      const setScope = (v: string[] | null) => { sellerPhonesRef.current = v; setSellerPhoneIds(v); };
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setSellerPhoneIds([]); return; }
+        if (!user) { setScope([]); return; }
         const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
         if (profile?.role === "admin" || profile?.role === "supervisor") {
-          setSellerPhoneIds(null);
+          setScope(null);
           return;
         }
         const { data: sc } = await supabase.from("seller_channels").select("evohub_channel_id").eq("user_id", user.id);
-        if (!sc || sc.length === 0) { setSellerPhoneIds([]); return; }
+        if (!sc || sc.length === 0) { setScope([]); return; }
         const channelIds = sc.map((s) => s.evohub_channel_id);
         const phoneIdMap: Record<string, string> = {
           "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
@@ -184,7 +199,7 @@ export default function ConversationList({
         };
         const { data: oc } = await supabase.from("operations_channels").select("evohub_channel_id, phone_number_id").eq("is_active", true);
         for (const row of oc || []) { if (row.phone_number_id) phoneIdMap[row.evohub_channel_id] = row.phone_number_id; }
-        setSellerPhoneIds(channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean));
+        setScope(channelIds.map((cid) => phoneIdMap[cid]).filter(Boolean));
       } finally {
         setPermReady(true);
       }
@@ -231,8 +246,8 @@ export default function ConversationList({
       }
     };
 
-    fetchConversations();
-    fetchSellerChannels();
+    // Resolve o escopo do vendedor ANTES da 1ª busca de conversas (pra filtrar pelo canal dele).
+    fetchSellerChannels().then(fetchConversations);
     fetchOperations();
     fetchActiveFlows();
     fetchLeadTags();
