@@ -163,3 +163,23 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .queen-aura, .queen-sparkle { animation: none; }
 }
+
+/* ── Ranking TV: destaque premium do 1º lugar ── */
+@keyframes tv-crown {
+  0%, 100% { transform: translateX(-50%) translateY(0) rotate(-7deg); }
+  50%      { transform: translateX(-50%) translateY(-9px) rotate(7deg); }
+}
+.tv-crown { animation: tv-crown 1.9s ease-in-out infinite; transform-origin: bottom center; }
+@keyframes tv-premium-glow {
+  0%, 100% { box-shadow: 0 0 40px 6px rgba(255,201,60,0.45), 0 0 0 0 rgba(255,201,60,0.5); }
+  50%      { box-shadow: 0 0 78px 16px rgba(255,201,60,0.75), 0 0 0 14px rgba(255,201,60,0); }
+}
+.tv-premium-glow { animation: tv-premium-glow 2.6s ease-in-out infinite; }
+@keyframes tv-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.tv-spin { animation: tv-spin 7s linear infinite; }
+@keyframes tv-sparkle {
+  0%, 100% { transform: scale(1) rotate(-8deg); opacity: 0.7; }
+  50%      { transform: scale(1.25) rotate(8deg); opacity: 1; }
+}
+.tv-sparkle { animation: tv-sparkle 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .tv-crown, .tv-premium-glow, .tv-spin, .tv-sparkle { animation: none; } }

@@ -1,6 +1,6 @@
 import { requireApiKeyOrSession } from "@/lib/tv-auth";
 import { jsonResponse } from "@/lib/api-auth";
-import { resolvePeriod, multiumClient, avatarOverlay, httpAvatar, norm, brToday } from "@/lib/public-metrics";
+import { resolvePeriod, multiumClient, avatarOverlay, httpAvatar, norm, brToday, lastMonth } from "@/lib/public-metrics";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +15,14 @@ export async function GET(request: Request) {
   if (!multium) return jsonResponse({ error: "Fonte de vendas não configurada" }, 500);
 
   const monthStart = brToday().slice(0, 8) + "01";
+  const lm = lastMonth();
   const overlay = await avatarOverlay(auth.db);
-  const [periodRes, monthRes, metasRes, summaryRes] = await Promise.all([
+  const [periodRes, monthRes, metasRes, summaryRes, champRes] = await Promise.all([
     multium.rpc("x1_ranking", { p_start: p.startDate, p_end: p.endDate }),
     multium.rpc("x1_ranking", { p_start: monthStart, p_end: brToday() }),
     multium.rpc("x1_metas"),
     multium.rpc("x1_sales_summary", { p_start: p.startDate, p_end: p.endDate }),
+    multium.rpc("x1_ranking", { p_start: lm.start, p_end: lm.end }), // mês passado → Lobo/Rainha
   ]);
 
   const dec = (r: any) => {
@@ -60,9 +62,10 @@ export async function GET(request: Request) {
 
   const s = (summaryRes.data as any) || {};
 
-  // Lobo do X1 = melhor vendedor HOMEM; Rainha do X1 = melhor MULHER (competição entre todos).
-  const lobo = ranked.find((r) => r.genero === "M" && r.faturamento > 0) || null;
-  const rainha = ranked.find((r) => r.genero === "F" && r.faturamento > 0) || null;
+  // Lobo/Rainha do X1 = quem mais faturou no MÊS PASSADO (fixo, mesma regra do ranking normal).
+  const champRows = ((champRes.data as any[]) || []).map(dec).sort((a, b) => b.faturamento - a.faturamento);
+  const lobo = champRows.find((r) => r.genero === "M" && r.faturamento > 0) || null;
+  const rainha = champRows.find((r) => r.genero === "F" && r.faturamento > 0) || null;
 
   return jsonResponse({
     now: new Date().toISOString(),

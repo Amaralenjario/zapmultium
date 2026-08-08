@@ -22,9 +22,17 @@ const PODIUM = [
 function Circle({ s, cfg, crown }: { s: Seller; cfg: typeof PODIUM[number]; crown?: boolean }) {
   return (
     <div className="relative flex-shrink-0" style={{ width: cfg.size, height: cfg.size }}>
-      {crown && <div className="absolute left-1/2 -translate-x-1/2 text-4xl" style={{ top: -40 }}>👑</div>}
-      <div className="w-full h-full rounded-full flex items-center justify-center overflow-hidden"
-        style={{ background: s.avatar ? "#111" : cfg.ring, border: `4px solid ${cfg.ring}`, boxShadow: `0 0 45px 6px ${cfg.glow}` }}>
+      {/* 1º lugar: anel dourado girando + brilhinhos */}
+      {crown && (
+        <>
+          <div className="absolute rounded-full tv-spin pointer-events-none" style={{ inset: -12, background: "conic-gradient(from 0deg, #FFC93C, rgba(255,201,60,0) 35%, #FFE08A 55%, rgba(255,201,60,0) 75%, #FFC93C)", WebkitMaskImage: "radial-gradient(closest-side, transparent 79%, black 81%)", maskImage: "radial-gradient(closest-side, transparent 79%, black 81%)" }} />
+          <div className="absolute text-2xl tv-sparkle pointer-events-none" style={{ top: 2, right: -14 }}>✨</div>
+          <div className="absolute text-xl tv-sparkle pointer-events-none" style={{ bottom: 6, left: -16, animationDelay: "0.5s" }}>✨</div>
+        </>
+      )}
+      {crown && <div className="absolute left-1/2 tv-crown text-5xl z-10" style={{ top: -46 }}>👑</div>}
+      <div className={`w-full h-full rounded-full flex items-center justify-center overflow-hidden ${crown ? "tv-premium-glow" : ""}`}
+        style={{ background: s.avatar ? "#111" : cfg.ring, border: `4px solid ${cfg.ring}`, boxShadow: crown ? undefined : `0 0 45px 6px ${cfg.glow}` }}>
         {s.avatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={s.avatar} alt="" className="w-full h-full object-cover" />
@@ -32,7 +40,7 @@ function Circle({ s, cfg, crown }: { s: Seller; cfg: typeof PODIUM[number]; crow
           <span className="font-black text-black" style={{ fontSize: cfg.size * 0.34 }}>{initials(s.nome)}</span>
         )}
       </div>
-      <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center font-black text-black text-lg"
+      <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center font-black text-black text-lg z-10"
         style={{ background: cfg.ring, border: "3px solid #0b0f0d" }}>{s.rank}</div>
     </div>
   );
@@ -161,6 +169,14 @@ export default function RankingTVPage() {
           <div className="space-y-3">
             {(data?.metasColetivas || []).map((m) => <MetaCard key={m.operacao} m={m} />)}
           </div>
+
+          {/* Lobo / Rainha do X1 (campeões do mês passado) */}
+          {(data?.lobo || data?.rainha) && (
+            <div className="mt-4 space-y-3">
+              {data?.lobo && <HeroX1 s={data.lobo} tipo="lobo" />}
+              {data?.rainha && <HeroX1 s={data.rainha} tipo="rainha" />}
+            </div>
+          )}
         </aside>
 
         {/* ── CENTRO: ranking ── */}
@@ -201,14 +217,6 @@ export default function RankingTVPage() {
             </div>
           ) : (
             <>
-              {/* Lobo / Rainha do X1 — competição entre todos */}
-              {(data?.lobo || data?.rainha) && (
-                <div className="flex gap-4 mt-5">
-                  {data?.lobo && <HeroX1 s={data.lobo} tipo="lobo" />}
-                  {data?.rainha && <HeroX1 s={data.rainha} tipo="rainha" />}
-                </div>
-              )}
-
               {/* pódio */}
               <div className="flex-1 flex items-start justify-center gap-10 mt-8">
                 {order.map((s, i) => s && <PodiumCol key={s.utm} s={s} idx={orderIdx[i]} />)}
