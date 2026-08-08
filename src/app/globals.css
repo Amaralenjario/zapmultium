@@ -183,3 +183,18 @@ html {
 }
 .tv-sparkle { animation: tv-sparkle 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .tv-crown, .tv-premium-glow, .tv-spin, .tv-sparkle { animation: none; } }
+
+/* ── Ranking TV: flash de nova venda ── */
+@keyframes tv-sale-pop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  20%  { transform: translate(-50%, -50%) scale(1); }
+  85%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.12); }
+}
+.tv-sale-pop { animation: tv-sale-pop 3.2s ease-in-out forwards; }
+@keyframes tv-sale-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.tv-sale-blink { animation: tv-sale-blink 0.55s ease-in-out infinite; }
+@keyframes tv-edge-flash { 0%, 100% { opacity: 0; } 15%, 70% { opacity: 1; } }
+.tv-edge-flash { animation: tv-edge-flash 3.2s ease-in-out forwards; }
+@media (prefers-reduced-motion: reduce) { .tv-sale-pop, .tv-sale-blink, .tv-edge-flash { animation-duration: 0.01s; } }

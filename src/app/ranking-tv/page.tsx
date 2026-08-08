@@ -128,7 +128,20 @@ export default function RankingTVPage() {
   const [err, setErr] = useState<string | null>(null);
   const [clock, setClock] = useState("");
   const [dateStr, setDateStr] = useState("");
+  const [soundOn, setSoundOn] = useState(false);
+  const [flash, setFlash] = useState(false);
   const firstLoad = useRef(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const prevVendasRef = useRef<number | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Toca o som de venda (se o áudio já foi liberado) e faz o painel piscar.
+  const playSale = useCallback(() => {
+    try { const a = audioRef.current; if (a) { a.currentTime = 0; a.play().catch(() => {}); } } catch { /* ignore */ }
+    setFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(false), 3200);
+  }, []);
 
   const load = useCallback(async (r: string) => {
     try {
@@ -137,11 +150,16 @@ export default function RankingTVPage() {
       const res = await fetch(`/api/ranking-tv?period=${r}${key ? `&api_key=${encodeURIComponent(key)}` : ""}`, { cache: "no-store" });
       const d = await res.json();
       if (!res.ok) { setErr(d.error || "Erro"); return; }
+      // Nova venda? (contador de vendas subiu desde o último poll do mesmo período)
+      const v = Number(d?.stats?.vendas) || 0;
+      if (prevVendasRef.current !== null && v > prevVendasRef.current) playSale();
+      prevVendasRef.current = v;
       setErr(null); setData(d); firstLoad.current = false;
     } catch { /* mantém */ }
-  }, []);
+  }, [playSale]);
 
-  useEffect(() => { load(range); }, [range, load]);
+  // Ao trocar de período, reseta o contador pra não disparar "venda" falsa.
+  useEffect(() => { prevVendasRef.current = null; load(range); }, [range, load]);
   useEffect(() => { const id = setInterval(() => load(range), 15000); return () => clearInterval(id); }, [range, load]);
   useEffect(() => {
     const tick = () => {
@@ -249,6 +267,38 @@ export default function RankingTVPage() {
           </p>
         </main>
       </div>
+
+      {/* som de venda */}
+      <audio ref={audioRef} src="/sounds/venda.mp3" preload="auto" />
+
+      {/* flash de nova venda: borda verde + banner central */}
+      {flash && (
+        <>
+          <div className="fixed inset-0 pointer-events-none z-40 tv-edge-flash" style={{ boxShadow: `inset 0 0 120px 20px ${GREEN}`, border: `4px solid ${GREEN}` }} />
+          <div className="fixed left-1/2 top-1/2 z-50 pointer-events-none tv-sale-pop text-center">
+            <div className="rounded-3xl px-12 py-8" style={{ background: "rgba(6,20,12,0.92)", border: `3px solid ${GREEN}`, boxShadow: `0 0 60px 10px rgba(46,230,111,0.6)` }}>
+              <div className="text-7xl tv-sale-blink">💰</div>
+              <p className="font-black text-white mt-2" style={{ fontSize: 40, letterSpacing: "-0.02em" }}>NOVA VENDA!</p>
+              <p className="font-black tracking-[0.2em] mt-1" style={{ color: GREEN, fontSize: 18 }}>🎉 CAIXA REGISTRADORA 🎉</p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* botão testar venda / ativar som */}
+      <button
+        onClick={() => { setSoundOn(true); playSale(); }}
+        className="fixed bottom-5 right-6 z-50 flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-black text-sm tracking-wide transition hover:brightness-110"
+        style={{ background: GREEN, boxShadow: "0 0 25px rgba(46,230,111,0.5)" }}
+        title="Toca o som e libera o áudio da TV (clique 1x pra ativar o som)"
+      >
+        {soundOn ? "🔊" : "🔈"} Testar venda
+      </button>
+      {!soundOn && (
+        <div className="fixed bottom-5 left-6 z-50 text-[11px] font-bold px-3 py-2 rounded-lg" style={{ background: "rgba(255,201,60,0.12)", color: "#FFC93C", border: "1px solid rgba(255,201,60,0.3)" }}>
+          🔈 Clique em &ldquo;Testar venda&rdquo; uma vez pra ligar o som da TV
+        </div>
+      )}
     </div>
   );
 }
