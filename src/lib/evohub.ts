@@ -130,7 +130,23 @@ export async function getPhoneNumberFromMeta(channelToken: string, phoneNumberId
   }
 }
 
-export async function enrichChannelsWithPhoneNumbers(channels: EvoHubChannel[]): Promise<(EvoHubChannel & { displayPhone?: string })[]> {
+// Foto de perfil do número (a que o próprio WhatsApp expõe no business profile).
+// A URL é assinada e expira, por isso é buscada fresca a cada listagem.
+export async function getProfilePictureFromMeta(channelToken: string, phoneNumberId: string): Promise<string | null> {
+  if (!channelToken || !phoneNumberId) return null;
+  try {
+    const res = await fetch(`${BASE}/meta/v23.0/${phoneNumberId}/whatsapp_business_profile?fields=profile_picture_url`, {
+      headers: { Authorization: `Bearer ${channelToken}` },
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return data?.data?.[0]?.profile_picture_url || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function enrichChannelsWithPhoneNumbers(channels: EvoHubChannel[]): Promise<(EvoHubChannel & { displayPhone?: string; profilePicture?: string })[]> {
   const KNOWN: Record<string, string> = {
     "5145a0c0-a358-43e5-8269-c5ace26ca023": "897878513398151",
     "effa72d1-47f6-445b-acbc-7693ef21ee24": "976034132269824",
@@ -157,8 +173,11 @@ export async function enrichChannelsWithPhoneNumbers(channels: EvoHubChannel[]):
     channels.map(async (ch) => {
       const phoneId = phoneIdMap[ch.id];
       if (phoneId && ch.token) {
-        const phone = await getPhoneNumberFromMeta(ch.token, phoneId);
-        return { ...ch, displayPhone: phone || undefined };
+        const [phone, picture] = await Promise.all([
+          getPhoneNumberFromMeta(ch.token, phoneId),
+          getProfilePictureFromMeta(ch.token, phoneId),
+        ]);
+        return { ...ch, displayPhone: phone || undefined, profilePicture: picture || undefined };
       }
       return ch;
     })

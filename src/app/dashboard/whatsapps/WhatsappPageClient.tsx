@@ -12,7 +12,24 @@ interface Channel {
   status: string;
   token: string;
   displayPhone?: string;
+  profilePicture?: string;
   created_at: string;
+}
+
+// Avatar do número: mostra a foto de perfil do WhatsApp; se faltar/expirar, cai no ícone.
+function ChannelAvatar({ src, active }: { src?: string; active: boolean }) {
+  const [err, setErr] = useState(false);
+  const show = src && !err;
+  return (
+    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${active ? "bg-success-soft text-success" : "bg-surface2 text-tx3"}`}>
+      {show ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="w-full h-full object-cover" onError={() => setErr(true)} />
+      ) : (
+        <MessageCircle className="w-[1.15rem] h-[1.15rem]" strokeWidth={2} />
+      )}
+    </div>
+  );
 }
 
 const KNOWN_PHONES: Record<string, string> = {
@@ -134,9 +151,7 @@ export default function WhatsappPageClient({
       <div key={ch.id} className="group rounded-card border border-bd bg-surface p-4 hover:shadow-pop transition-all" style={{ borderLeftWidth: "3px", borderLeftColor: opColor }}>
         <div className="flex items-center justify-between mb-3 gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className={`w-9 h-9 rounded-control flex items-center justify-center flex-shrink-0 ${isActive ? "bg-success-soft text-success" : "bg-surface2 text-tx3"}`}>
-              <MessageCircle className="w-[1.15rem] h-[1.15rem]" strokeWidth={2} />
-            </div>
+            <ChannelAvatar src={ch.profilePicture} active={isActive} />
             <p className="font-bold text-sm text-tx truncate">{ch.name}</p>
           </div>
           <span className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 flex-shrink-0 ${st.cls}`}>
