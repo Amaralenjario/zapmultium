@@ -61,6 +61,30 @@ language sql stable security definer set search_path = public as $$
   select utm, nome, expert, genero, foto_url, meta, telefone, comissao_pct, ativo from vendedores order by nome;
 $$;
 
+-- Última venda aprovada do período → alimenta o card "NOVA VENDA" da Ranking TV
+-- (valor, vendedor via UTM→vendedores, operação). Ordena por Data desc, id desc.
+create or replace function x1_last_sale(p_start date, p_end date)
+returns table(id bigint, valor numeric, produto text, utm text, vendedor text, foto_url text, operacao text, genero text, data text)
+language sql stable security definer set search_path = public as $$
+  select v.id,
+    x1_parse_ticket(v."Ticket") as valor,
+    v."Produto" as produto,
+    v."UTM" as utm,
+    vd.nome as vendedor,
+    vd.foto_url,
+    coalesce(nullif(vd.expert,''), nullif(v.nome_expert,''), 'Nao informado') as operacao,
+    vd.genero,
+    v."Data" as data
+  from vendas v
+  left join vendedores vd on vd.utm = v."UTM"
+  where lower(coalesce(v."Evento",'')) = 'purchase_approved'
+    and x1_parse_date(v."Data") is not null
+    and x1_parse_date(v."Data") >= p_start and x1_parse_date(v."Data") <= p_end
+  order by x1_parse_date(v."Data") desc, v.id desc
+  limit 1;
+$$;
+
 grant execute on function x1_sales(date, date, text, text, int, int) to anon, authenticated, service_role;
 grant execute on function x1_sales_summary(date, date) to anon, authenticated, service_role;
 grant execute on function x1_team() to anon, authenticated, service_role;
+grant execute on function x1_last_sale(date, date) to anon, authenticated, service_role;
