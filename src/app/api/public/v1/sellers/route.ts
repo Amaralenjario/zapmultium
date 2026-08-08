@@ -1,57 +1,71 @@
 import { requireApiKey, jsonResponse } from "@/lib/api-auth";
-import { resolvePeriod, vendasByName, norm, httpAvatar } from "@/lib/public-metrics";
+import { resolvePeriod, multiumClient, avatarOverlay, httpAvatar, norm } from "@/lib/public-metrics";
 import { resolveChannelMaps } from "@/lib/attribution";
 
 export const dynamic = "force-dynamic";
 
-// Desempenho por vendedor: atendimento (novas/enviadas/recebidas) + vendas + faturamento + conversão.
+// Desempenho por vendedor: cadastro (nome completo, operação, foto, utm, código) +
+// vendas/faturamento no período + atendimento (novas/enviadas/recebidas) + conversão.
+// A LISTA vem da tabela de vendedores do Multium (TODOS os cadastrados), não do
+// atendimento do CRM — assim nenhum vendedor fica de fora e nome/operação/utm são canônicos.
+// Query params: period|start|end (janela) e inativos=1 (inclui vendedores inativos).
 export async function GET(request: Request) {
   const auth = await requireApiKey(request);
   if (!auth.ok) return auth.res;
   const db = auth.db;
   const u = new URL(request.url);
   const p = resolvePeriod(u.searchParams.get("period") || undefined, u.searchParams.get("start") || undefined, u.searchParams.get("end") || undefined);
+  const incluirInativos = ["1", "true", "sim"].includes((u.searchParams.get("inativos") || "").toLowerCase());
 
-  const { phoneToSeller } = await resolveChannelMaps(db);
-  const [byChanRes, vmap] = await Promise.all([
+  const multium = multiumClient();
+  if (!multium) return jsonResponse({ error: "Fonte de vendas não configurada" }, 500);
+
+  const [sellersRes, rankRes, overlay, maps, byChanRes] = await Promise.all([
+    multium.rpc("x1_sellers"),
+    multium.rpc("x1_ranking", { p_start: p.startDate, p_end: p.endDate }),
+    avatarOverlay(db),
+    resolveChannelMaps(db),
     db.rpc("dashboard_by_channel", { p_start: p.startISO, p_end: p.endISO, p_phones: null }),
-    vendasByName(p.startDate, p.endDate),
   ]);
 
-  // Agrega atendimento por vendedor (só canais ligados a um vendedor).
-  const bySeller: Record<string, { novas: number; enviadas: number; recebidas: number }> = {};
+  // Vendas por utm do vendedor no período.
+  const salesByUtm: Record<string, { vendas: number; faturamento: number }> = {};
+  for (const r of ((rankRes.data as any[]) || [])) {
+    salesByUtm[r.utm] = { vendas: Number(r.vendas) || 0, faturamento: Number(r.faturamento) || 0 };
+  }
+
+  // Atendimento por phone_number_id (canal de WhatsApp).
+  const attByPhone: Record<string, { novas: number; enviadas: number; recebidas: number }> = {};
   for (const ch of ((byChanRes.data as any[]) || [])) {
-    const uid = phoneToSeller[ch.phone];
-    if (!uid) continue;
-    const b = (bySeller[uid] = bySeller[uid] || { novas: 0, enviadas: 0, recebidas: 0 });
-    b.novas += Number(ch.novas); b.enviadas += Number(ch.enviadas); b.recebidas += Number(ch.recebidas);
+    attByPhone[ch.phone] = { novas: Number(ch.novas) || 0, enviadas: Number(ch.enviadas) || 0, recebidas: Number(ch.recebidas) || 0 };
   }
+  const { channelToPhone } = maps;
 
-  const userIds = Object.keys(bySeller);
-  const names: Record<string, string> = {}, roles: Record<string, string> = {}, avatars: Record<string, string> = {};
-  if (userIds.length) {
-    const { data: profs } = await db.from("profiles").select("id, full_name, email, avatar_url, role").in("id", userIds);
-    for (const pr of (profs as any[]) || []) {
-      names[pr.id] = pr.full_name || pr.email || pr.id;
-      roles[pr.id] = pr.role || "";
-      if (pr.avatar_url) avatars[pr.id] = pr.avatar_url;
-    }
-  }
-
-  const vendedores = Object.entries(bySeller)
-    .filter(([uid]) => roles[uid] !== "admin" && roles[uid] !== "supervisor")
-    .map(([uid, v]) => {
-      const nm = names[uid] || "Vendedor";
-      const sale = vmap[norm(nm)];
-      const vendas = sale?.vendas || 0;
+  const vendedores = ((sellersRes.data as any[]) || [])
+    .filter((v) => incluirInativos || v.ativo !== false)
+    .map((v) => {
+      const s = salesByUtm[v.utm] || { vendas: 0, faturamento: 0 };
+      // Soma o atendimento de todos os canais ligados ao vendedor (wa_channel_ids -> phone).
+      let novas = 0, enviadas = 0, recebidas = 0;
+      for (const cid of (v.wa_channel_ids || [])) {
+        const a = attByPhone[channelToPhone[cid]];
+        if (a) { novas += a.novas; enviadas += a.enviadas; recebidas += a.recebidas; }
+      }
       return {
-        vendedor: nm, operacao: sale?.operation || null, avatar: httpAvatar(avatars[uid]),
-        novas: v.novas, enviadas: v.enviadas, recebidas: v.recebidas,
-        vendas, faturamento: Number((sale?.faturamento || 0).toFixed(2)),
-        taxa_conversao_pct: v.novas > 0 ? Math.round((vendas / v.novas) * 100) : 0,
+        utm: v.utm,
+        codigo: v.codigo || null,
+        vendedor: v.nome,
+        operacao: v.operacao || null,
+        genero: (v.genero || "").toUpperCase() || null,
+        avatar: httpAvatar(v.foto_url) || httpAvatar(overlay[norm(v.nome)]),
+        ativo: v.ativo !== false,
+        novas, enviadas, recebidas,
+        vendas: s.vendas,
+        faturamento: Number(s.faturamento.toFixed(2)),
+        taxa_conversao_pct: novas > 0 ? Math.round((s.vendas / novas) * 100) : 0,
       };
     })
-    .sort((a, b) => b.vendas - a.vendas || (b.enviadas + b.recebidas) - (a.enviadas + a.recebidas));
+    .sort((a, b) => b.vendas - a.vendas || b.faturamento - a.faturamento || a.vendedor.localeCompare(b.vendedor));
 
   return jsonResponse({
     periodo: { tipo: p.period, inicio: p.startDate, fim: p.endDate },

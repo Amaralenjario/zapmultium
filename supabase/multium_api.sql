@@ -61,6 +61,17 @@ language sql stable security definer set search_path = public as $$
   select utm, nome, expert, genero, foto_url, meta, telefone, comissao_pct, ativo from vendedores order by nome;
 $$;
 
+-- Vendedores para a API pública /sellers: master data + codigo + canais de WhatsApp
+-- (wa_channel_ids, pra cruzar com o atendimento do CRM por canal). Sem segredos (pix/permissoes).
+create or replace function x1_sellers()
+returns table(utm text, codigo text, nome text, operacao text, genero text, foto_url text, meta numeric, telefone text, comissao_pct numeric, ativo boolean, wa_channel_ids text[])
+language sql stable security definer set search_path = public as $$
+  select utm, codigo::text, nome, expert, genero, foto_url, meta, telefone, comissao_pct, ativo,
+         coalesce(wa_channel_ids::text[], '{}'::text[])
+  from vendedores
+  order by ativo desc, nome;
+$$;
+
 -- Última venda aprovada do período → alimenta o card "NOVA VENDA" da Ranking TV
 -- (valor, vendedor via UTM→vendedores, operação). Ordena por Data desc, id desc.
 create or replace function x1_last_sale(p_start date, p_end date)
@@ -88,3 +99,4 @@ grant execute on function x1_sales(date, date, text, text, int, int) to anon, au
 grant execute on function x1_sales_summary(date, date) to anon, authenticated, service_role;
 grant execute on function x1_team() to anon, authenticated, service_role;
 grant execute on function x1_last_sale(date, date) to anon, authenticated, service_role;
+grant execute on function x1_sellers() to anon, authenticated, service_role;
