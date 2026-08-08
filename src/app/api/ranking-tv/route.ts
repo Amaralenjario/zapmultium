@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     monthByOp[op] = (monthByOp[op] || 0) + (Number(r.faturamento) || 0);
   }
 
-  const metasColetivas = ((metasRes.data as any[]) || []).map((m) => {
+  const metasColetivas = ((metasRes.data as any[]) || []).filter((m) => Number(m.n3) > 0).map((m) => {
     const atual = Math.round(monthByOp[m.operacao] || 0);
     const n1 = Number(m.n1) || 0, n2 = Number(m.n2) || 0, n3 = Number(m.n3) || 0;
     const nivelAtual = atual >= n3 ? 3 : atual >= n2 ? 2 : atual >= n1 ? 1 : 0;
@@ -60,10 +60,15 @@ export async function GET(request: Request) {
 
   const s = (summaryRes.data as any) || {};
 
+  // Lobo do X1 = melhor vendedor HOMEM; Rainha do X1 = melhor MULHER (competição entre todos).
+  const lobo = ranked.find((r) => r.genero === "M" && r.faturamento > 0) || null;
+  const rainha = ranked.find((r) => r.genero === "F" && r.faturamento > 0) || null;
+
   return jsonResponse({
     now: new Date().toISOString(),
     periodo: { tipo: p.period, inicio: p.startDate, fim: p.endDate },
     stats: { faturamento: Math.round(Number(s.faturamento) || 0), vendas: Number(s.aprovadas) || 0, ticket: Math.round(Number(s.ticket_medio) || 0) },
+    lobo, rainha,
     podium: ranked.slice(0, 3),
     ranking: ranked.slice(3),
     metasColetivas,

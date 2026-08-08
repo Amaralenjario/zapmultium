@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 
 interface Seller { rank: number; utm: string; nome: string; avatar: string | null; operacao: string; genero: string; vendas: number; faturamento: number; ticket: number; meta: number; pctMeta: number; }
 interface Meta { operacao: string; atual: number; metaExibida: number; n1: number; n2: number; n3: number; pct: number; nivelAtual: number; faltaProxNivel: number; faltaN1: number; faltaN2: number; faltaN3: number; }
-interface TVData { now: string; periodo: { tipo: string; inicio: string; fim: string }; stats: { faturamento: number; vendas: number; ticket: number }; podium: Seller[]; ranking: Seller[]; metasColetivas: Meta[]; }
+interface TVData { now: string; periodo: { tipo: string; inicio: string; fim: string }; stats: { faturamento: number; vendas: number; ticket: number }; lobo: Seller | null; rainha: Seller | null; podium: Seller[]; ranking: Seller[]; metasColetivas: Meta[]; }
 
 const RANGES = [{ k: "hoje", l: "HOJE" }, { k: "ontem", l: "ONTEM" }, { k: "7d", l: "7 DIAS" }, { k: "30d", l: "30 DIAS" }];
 const GREEN = "#2ee66f";
@@ -51,6 +51,28 @@ function PodiumCol({ s, idx }: { s: Seller; idx: number }) {
         <div className="h-full rounded-full" style={{ width: `${Math.min(100, s.pctMeta)}%`, background: cfg.ring }} />
       </div>
       <p className="text-[11px] font-bold tracking-wider mt-1.5" style={{ color: cfg.ring }}>{s.pctMeta}% DA META</p>
+    </div>
+  );
+}
+
+function HeroX1({ s, tipo }: { s: Seller; tipo: "lobo" | "rainha" }) {
+  const cfg = tipo === "lobo"
+    ? { grad: "linear-gradient(135deg, #2b6ef0 0%, #7C3AED 100%)", emoji: "🐺", label: "LOBO DO X1" }
+    : { grad: "linear-gradient(135deg, #EC4899 0%, #A855F7 100%)", emoji: "👑", label: "RAINHA DO X1" };
+  return (
+    <div className="flex-1 rounded-2xl p-4 flex items-center gap-4 relative overflow-hidden" style={{ background: cfg.grad, boxShadow: "0 0 30px rgba(0,0,0,0.4)" }}>
+      <div className="absolute -top-8 -right-6 text-7xl opacity-15 select-none">{cfg.emoji}</div>
+      <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0" style={{ border: "3px solid rgba(255,255,255,0.9)", background: "rgba(0,0,0,0.2)" }}>
+        {s.avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={s.avatar} alt="" className="w-full h-full object-cover" />
+        ) : <span className="text-white font-black text-lg">{initials(s.nome)}</span>}
+      </div>
+      <div className="min-w-0 flex-1 relative">
+        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-lg">{cfg.emoji}</span><span className="text-[10px] font-black tracking-[0.15em] text-white/90">{cfg.label}</span></div>
+        <p className="font-black text-white text-[19px] truncate leading-tight">{s.nome}</p>
+        <p className="text-[11px] font-bold text-white/75">{(s.operacao || "").toUpperCase()} · {fmt(s.faturamento)} · {s.vendas}V</p>
+      </div>
     </div>
   );
 }
@@ -128,7 +150,7 @@ export default function RankingTVPage() {
 
   return (
     <div className="fixed inset-0 overflow-hidden font-sans" style={{ background: "radial-gradient(120% 90% at 50% 30%, #0f1a14 0%, #080b09 55%, #060807 100%)", color: "#e6ecea" }}>
-      <div className="h-full grid" style={{ gridTemplateColumns: "300px 1fr 330px" }}>
+      <div className="h-full grid" style={{ gridTemplateColumns: "300px 1fr" }}>
 
         {/* ── ESQUERDA: metas coletivas ── */}
         <aside className="h-full overflow-y-auto p-4 border-r" style={{ borderColor: "#131b17" }}>
@@ -179,6 +201,14 @@ export default function RankingTVPage() {
             </div>
           ) : (
             <>
+              {/* Lobo / Rainha do X1 — competição entre todos */}
+              {(data?.lobo || data?.rainha) && (
+                <div className="flex gap-4 mt-5">
+                  {data?.lobo && <HeroX1 s={data.lobo} tipo="lobo" />}
+                  {data?.rainha && <HeroX1 s={data.rainha} tipo="rainha" />}
+                </div>
+              )}
+
               {/* pódio */}
               <div className="flex-1 flex items-start justify-center gap-10 mt-8">
                 {order.map((s, i) => s && <PodiumCol key={s.utm} s={s} idx={orderIdx[i]} />)}
@@ -186,7 +216,7 @@ export default function RankingTVPage() {
 
               {/* ranking 4+ */}
               <div className="space-y-2 mt-4 pb-2">
-                {(data?.ranking || []).filter((r) => r.faturamento > 0).slice(0, 8).map((s) => (
+                {(data?.ranking || []).filter((r) => r.faturamento > 0).slice(0, 12).map((s) => (
                   <div key={s.utm} className="flex items-center gap-3 rounded-xl px-4 py-2.5" style={{ background: "#0d1310", border: "1px solid #151d18" }}>
                     <span className="w-6 text-center font-black" style={{ color: "#5b6670" }}>{s.rank}</span>
                     <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0" style={{ background: "#1a2420" }}>
@@ -210,28 +240,6 @@ export default function RankingTVPage() {
             MULTIUM OS V2.0 — RANKING ENGINE · <span style={{ color: GREEN }}>● SINCRONIZADO</span>
           </p>
         </main>
-
-        {/* ── DIREITA: balões ── */}
-        <aside className="h-full overflow-y-auto p-4 border-l" style={{ borderColor: "#131b17" }}>
-          <div className="flex items-center gap-2.5 mb-2">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "rgba(241,154,182,0.14)" }}>📍</div>
-            <div><p className="font-black text-white text-[14px] leading-none">META DOS BALÕES</p><p className="text-[10px] font-bold tracking-widest mt-1" style={{ color: "#6b7683" }}>PREMIAÇÃO DA CAMPANHA</p></div>
-          </div>
-          <p className="text-[11px] mb-3" style={{ color: "#7a8791" }}>Bateu a meta? <b style={{ color: GREEN }}>Estoure um balão</b> e descubra seu prêmio! 🎉</p>
-          <div className="space-y-1.5">
-            {Array.from({ length: 15 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2" style={{ background: "#0d1310", border: "1px solid #151d18", opacity: 0.55 }}>
-                <span className="w-5 text-center text-[11px] font-black" style={{ color: "#4b5560" }}>{i + 1}</span>
-                <span className="text-base">🎈</span>
-                <div className="min-w-0"><p className="text-[10px] font-black tracking-wider" style={{ color: "#6b7683" }}>BLOQUEADO</p><p className="text-[9px]" style={{ color: "#3b4640" }}>Bata mais metas para abrir</p></div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 rounded-xl px-3 py-2.5 flex items-center justify-around" style={{ background: "#0d1310", border: "1px solid #172019" }}>
-            <div className="text-center"><p className="font-black text-white">0×</p><p className="text-[9px] font-bold" style={{ color: "#5b6670" }}>PRÊMIO</p></div>
-            <div className="text-center"><p className="font-black" style={{ color: GREEN }}>0×</p><p className="text-[9px] font-bold" style={{ color: "#5b6670" }}>PIX</p></div>
-          </div>
-        </aside>
       </div>
     </div>
   );
