@@ -48,7 +48,12 @@ export function lastMonth(): { start: string; end: string; label: string } {
 
 export function multiumClient(): SupabaseClient | null {
   const url = process.env.MULTIUM_SUPABASE_URL, key = process.env.MULTIUM_SUPABASE_ANON_KEY;
-  return url && key ? createSb(url, key, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
+  // cache: "no-store" impede o Next.js Data Cache de congelar as respostas das RPCs
+  // (vendas ao vivo tem que vir sempre fresco; senão a TV mostra ranking desatualizado).
+  return url && key ? createSb(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: (input, init) => fetch(input as RequestInfo, { ...init, cache: "no-store" }) },
+  }) : null;
 }
 
 // Mapa nome-normalizado -> foto do perfil ZapMultium (fallback quando o vendedor não tem foto no banco de vendas).

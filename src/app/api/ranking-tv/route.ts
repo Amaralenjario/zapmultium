@@ -3,6 +3,8 @@ import { jsonResponse } from "@/lib/api-auth";
 import { resolvePeriod, multiumClient, avatarOverlay, httpAvatar, norm, brToday, lastMonth } from "@/lib/public-metrics";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
 
 // Dados da Ranking TV: pódio por faturamento, ranking, metas coletivas por operação e stats.
 export async function GET(request: Request) {
