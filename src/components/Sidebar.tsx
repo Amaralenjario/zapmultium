@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, MessagesSquare, Contact, Workflow, Smartphone, Building2, Headset, MessageCircle, X, User, LogOut, Swords, Zap, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, MessagesSquare, Contact, Workflow, Smartphone, Building2, Headset, MessageCircle, X, User, LogOut, Swords, Zap, Bell, type LucideIcon } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import InstallApp from "@/components/pwa/InstallApp";
 import { createClient } from "@/lib/supabase/client";
@@ -17,6 +17,7 @@ const menuItems: { label: string; href: string; icon: LucideIcon; section: strin
   { label: "Ranking", href: "/dashboard/ranking", icon: Swords, section: "main" },
   { label: "Meu WhatsApp", href: "/dashboard/meu-numero", icon: Smartphone, section: "main" },
   { label: "Meu perfil", href: "/dashboard/perfil", icon: User, section: "main" },
+  { label: "Notificações", href: "/dashboard/notificacoes", icon: Bell, section: "main", novo: true },
   { label: "WhatsApps", href: "/dashboard/whatsapps", icon: Smartphone, section: "admin", adminOnly: true },
   { label: "Operações", href: "/dashboard/operacoes", icon: Building2, section: "admin", adminOnly: true },
   { label: "Vendedores", href: "/dashboard/vendedores", icon: Headset, section: "admin", adminOnly: true },

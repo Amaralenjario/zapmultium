@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { friendlyWaError } from "@/lib/wa-errors";
+import { notifyNewMessage } from "@/lib/web-push";
 
 let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
 
@@ -199,6 +200,14 @@ async function processMessages(payload: any) {
         last_message_at: new Date().toISOString(),
         last_message_sender: "customer",
       } as any).eq("id", convId);
+
+      // Notificação push pro(s) vendedor(es) do canal (best effort — nunca quebra a ingestão).
+      await notifyNewMessage(supabase, {
+        phoneNumberId,
+        conversationId: convId,
+        customerName,
+        content: lastContent,
+      });
     }
   }
 }

@@ -1,12 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MessagesSquare } from "lucide-react";
 import ConversationList, { type Conversation } from "@/components/chat/ConversationList";
 import ChatWindow from "@/components/chat/ChatWindow";
+import { createClient } from "@/lib/supabase/client";
+
+const CONV_SELECT = "id, status, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)";
 
 export default function ChatPageClient() {
   const [selected, setSelected] = useState<Conversation | null>(null);
+
+  // Deep link vindo da notificação push: /dashboard/chat-ao-vivo?c=<conversationId>
+  // abre direto a conversa do lead. (client.navigate no SW recarrega a rota → roda no mount.)
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("c");
+    if (!c) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase.from("conversations").select(CONV_SELECT).eq("id", c).single();
+      if (!cancelled && data) setSelected(data as unknown as Conversation);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="absolute inset-0 flex overflow-hidden bg-bg">
