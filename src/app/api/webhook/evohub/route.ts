@@ -20,6 +20,28 @@ function getSupabaseAdmin() {
 
 const WEBHOOK_SECRET = process.env.EVOHUB_WEBHOOK_SECRET || "zapmultium-webhook-secret";
 
+// Insere a mensagem com retry. O insert do supabase-js NÃO lança em erro de banco —
+// ele devolve { error }. Antes a gente ignorava esse retorno: se o insert falhasse
+// (timeout / pool esgotado sob carga), a mensagem do lead sumia SILENCIOSAMENTE e a
+// gente ainda respondia 200 (a Meta achava que entregou). Agora tenta de novo e, se
+// mesmo assim falhar, grava um log gritante pra termos rastro.
+async function insertMessageWithRetry(supabase: any, row: any, attempts = 4): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    const { error } = await supabase.from("messages").insert(row);
+    if (!error) return true;
+    if (error.code === "23505") return true; // duplicata (retry) → já está lá, ok
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, 200 * (i + 1))); // 200/400/600ms
+    } else {
+      console.error(
+        "[EvoHub] PERDA DE MENSAGEM — insert falhou após", attempts, "tentativas:",
+        error.message, "| conv:", row.conversation_id, "| wa_id:", row?.metadata?.wa_message_id
+      );
+    }
+  }
+  return false;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const mode = searchParams.get("hub.mode");
@@ -167,14 +189,14 @@ async function processMessages(payload: any) {
             }
           }
 
-          await supabase.from("messages").insert({
+          await insertMessageWithRetry(supabase, {
             conversation_id: convId,
             sender_type: "customer",
             content,
             content_type: contentType,
             metadata: { wa_message_id: msg.id, phone_number_id: phoneNumberId, context },
             created_at: msg.timestamp ? new Date(parseInt(msg.timestamp) * 1000).toISOString() : new Date().toISOString(),
-          } as any);
+          });
         }
       }
 
