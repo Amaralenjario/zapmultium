@@ -8,7 +8,6 @@ import SellerPerformanceTable from "@/components/dashboard/SellerPerformanceTabl
 import RecentConversations from "@/components/dashboard/RecentConversations";
 import DashboardFilter from "@/components/dashboard/DashboardFilter";
 import WolfTeaser from "@/components/dashboard/WolfTeaser";
-import AutoFlowPanel from "@/components/dashboard/AutoFlowPanel";
 import { MessageSquarePlus, Clock, MessagesSquare, Timer, Inbox, Send, Workflow, Hourglass } from "lucide-react";
 
 const kpiIcon = "w-[1.15rem] h-[1.15rem]";
@@ -338,13 +337,6 @@ export default async function DashboardPage({
         </div>
         <OperationDonut data={opSlices} total={opTotal} subtitle={`${fmtNum(opTotal)} novas no período`} />
       </div>
-
-      {/* Atendimento automático (admin) — vincular fluxo a dia/horário/canal/condição */}
-      {isAdmin && (
-        <div className="mb-6">
-          <AutoFlowPanel />
-        </div>
-      )}
 
       {/* Performance por vendedor (admin) */}
       {isAdmin && (

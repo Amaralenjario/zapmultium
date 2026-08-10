@@ -3,15 +3,16 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, MessagesSquare, Contact, Workflow, Smartphone, Building2, Headset, MessageCircle, X, User, LogOut, Swords, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, MessagesSquare, Contact, Workflow, Smartphone, Building2, Headset, MessageCircle, X, User, LogOut, Swords, Zap, type LucideIcon } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import { createClient } from "@/lib/supabase/client";
 
-const menuItems: { label: string; href: string; icon: LucideIcon; section: string; adminOnly?: boolean; beta?: boolean }[] = [
+const menuItems: { label: string; href: string; icon: LucideIcon; section: string; adminOnly?: boolean; beta?: boolean; novo?: boolean }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, section: "main" },
   { label: "Chat ao vivo", href: "/dashboard/chat-ao-vivo", icon: MessagesSquare, section: "main" },
   { label: "CRM Leads", href: "/dashboard/crm-leads", icon: Contact, section: "main" },
   { label: "Fluxos", href: "/dashboard/fluxos", icon: Workflow, section: "main" },
+  { label: "Automações", href: "/dashboard/automacoes", icon: Zap, section: "main", novo: true },
   { label: "Ranking", href: "/dashboard/ranking", icon: Swords, section: "main" },
   { label: "Meu WhatsApp", href: "/dashboard/meu-numero", icon: Smartphone, section: "main" },
   { label: "Meu perfil", href: "/dashboard/perfil", icon: User, section: "main" },
@@ -37,8 +38,11 @@ function MenuItem({ item, isActive, onClose }: { item: typeof menuItems[number];
       )}
       <Icon className="w-[1.15rem] h-[1.15rem] flex-shrink-0" strokeWidth={isActive ? 2.1 : 1.9} />
       {item.label}
+      {item.novo && (
+        <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wider text-white bg-gradient-to-r from-emerald-500 to-accent rounded-full px-1.5 py-0.5">Novo</span>
+      )}
       {item.beta && (
-        <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wider text-white bg-gradient-to-r from-accent to-violet-500 rounded-full px-1.5 py-0.5">Beta</span>
+        <span className={`text-[9px] font-extrabold uppercase tracking-wider text-white bg-gradient-to-r from-accent to-violet-500 rounded-full px-1.5 py-0.5 ${item.novo ? "" : "ml-auto"}`}>Beta</span>
       )}
     </Link>
   );
