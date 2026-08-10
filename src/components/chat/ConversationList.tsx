@@ -26,6 +26,24 @@ export interface Conversation {
   customer: Customer | Customer[];
 }
 
+// Colunas buscadas (reusado na sincronização "ao vivo" e no "carregar mais antigas").
+const CONV_SELECT = "id, status, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)";
+const LIVE_LIMIT = 500; // janela ao vivo (as mais recentes)
+const PAGE = 200;       // cada página de "mais antigas" (carrega conforme rola)
+
+// Une listas por id (a versão nova sobrescreve a antiga) e reordena por atividade.
+// Assim o polling/realtime atualiza as recentes SEM apagar as páginas antigas já carregadas.
+function mergeConvs(prev: Conversation[], incoming: Conversation[]): Conversation[] {
+  const map = new Map<string, Conversation>();
+  for (const c of prev) map.set(c.id, c);
+  for (const c of incoming) map.set(c.id, c);
+  return Array.from(map.values()).sort((a, b) => {
+    const ta = a.last_message_at ? Date.parse(a.last_message_at) : 0;
+    const tb = b.last_message_at ? Date.parse(b.last_message_at) : 0;
+    return tb - ta;
+  });
+}
+
 export default function ConversationList({
   selectedId,
   onSelect,
@@ -50,7 +68,52 @@ export default function ConversationList({
   const [leadTagsMap, setLeadTagsMap] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
   const [clickLocked, setClickLocked] = useState(false);
   const [permReady, setPermReady] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [reachedEnd, setReachedEnd] = useState(false);
   const supabase = createClient();
+
+  // Espelho do estado pra ler a conversa mais antiga já carregada sem re-render.
+  const allConvsRef = useRef<Conversation[]>([]);
+  useEffect(() => { allConvsRef.current = allConversations; }, [allConversations]);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Aplica o escopo do vendedor (por canal) numa query. Admin/supervisor → sem filtro.
+  const applyScope = useCallback((q: any) => {
+    const phones = sellerPhonesRef.current;
+    if (Array.isArray(phones)) {
+      if (phones.length === 0) return q.eq("metadata->>phone_number_id", "__none__");
+      if (phones.length === 1) return q.eq("metadata->>phone_number_id", phones[0]);
+      return q.or(phones.map((p) => `metadata->>phone_number_id.eq.${p}`).join(","));
+    }
+    return q;
+  }, []);
+
+  // Carrega a próxima página de conversas MAIS ANTIGAS (cursor por last_message_at).
+  // Resolve o teto de 500 pra canais de alto volume (o vendedor via "só até tal horário").
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder || reachedEnd) return;
+    const cur = allConvsRef.current;
+    const oldest = cur.length ? cur[cur.length - 1].last_message_at : null;
+    if (!oldest) return;
+    setLoadingOlder(true);
+    try {
+      let q = supabase
+        .from("conversations")
+        .select(CONV_SELECT)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .lt("last_message_at", oldest)
+        .limit(PAGE);
+      q = applyScope(q);
+      const { data } = await q;
+      if (!data || data.length === 0) setReachedEnd(true);
+      else {
+        setAllConversations((prev) => mergeConvs(prev, data as Conversation[]));
+        if (data.length < PAGE) setReachedEnd(true);
+      }
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [loadingOlder, reachedEnd, applyScope, supabase]);
 
   // Conversas dentro do escopo do vendedor (admin vê todas)
   const scopedConversations = useMemo(() => {
@@ -157,10 +220,10 @@ export default function ConversationList({
     const fetchConversations = async () => {
       let q = supabase
         .from("conversations")
-        .select("id, status, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)")
+        .select(CONV_SELECT)
         .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(500);
-      // Escopo do vendedor DENTRO da query (não no cliente): o limite de 500 passa a valer
+        .limit(LIVE_LIMIT);
+      // Escopo do vendedor DENTRO da query (não no cliente): o limite passa a valer
       // só pras conversas do canal dele, então ele vê TODAS as dele, não só as mais recentes.
       const phones = sellerPhonesRef.current;
       if (Array.isArray(phones)) {
@@ -169,7 +232,9 @@ export default function ConversationList({
         else q = q.or(phones.map((p) => `metadata->>phone_number_id.eq.${p}`).join(","));
       }
       const { data } = await q;
-      setAllConversations(data || []);
+      // MESCLA (não substitui): mantém as páginas antigas já carregadas via "carregar mais",
+      // e só atualiza/insere as recentes. Sem isso, o polling apagava o que foi paginado.
+      setAllConversations((prev) => mergeConvs(prev, (data as Conversation[]) || []));
       setClickLocked(true);
       setTimeout(() => setClickLocked(false), 150);
     };
@@ -397,7 +462,17 @@ export default function ConversationList({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div
+        ref={listRef}
+        onScroll={() => {
+          // Perto do fim → carrega a próxima página de antigas (só na lista completa, sem busca).
+          if (searchResults !== null || search.trim()) return;
+          const el = listRef.current;
+          if (!el) return;
+          if (el.scrollHeight - el.scrollTop - el.clientHeight < 350) loadOlder();
+        }}
+        className="flex-1 overflow-y-auto"
+      >
         {!permReady ? (
           // Enquanto a permissão não carregou, não mostra conversa nenhuma (evita vazar as de outros)
           <div className="p-4 space-y-3">
@@ -495,6 +570,24 @@ export default function ConversationList({
               </div>
             );
           })
+        )}
+
+        {/* Rodapé de paginação: carrega mais antigas conforme rola (e botão manual de reserva) */}
+        {permReady && searchResults === null && !search.trim() && conversations.length > 0 && (
+          <div className="py-3 flex items-center justify-center">
+            {loadingOlder ? (
+              <span className="flex items-center gap-2 text-[12px] text-tx3">
+                <span className="w-3.5 h-3.5 border-[1.5px] border-accent/40 border-t-accent rounded-full animate-spin" />
+                Carregando mais…
+              </span>
+            ) : reachedEnd ? (
+              <span className="text-[11px] text-tx3">Você chegou ao fim ✓</span>
+            ) : (
+              <button onClick={loadOlder} className="text-[12px] font-semibold text-accent hover:underline">
+                Carregar conversas mais antigas
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
