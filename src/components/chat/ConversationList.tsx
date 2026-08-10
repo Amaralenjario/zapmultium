@@ -330,12 +330,20 @@ export default function ConversationList({
     window.addEventListener("flow-triggered", onFlowTriggered);
     window.addEventListener("lead-tagged", onLeadTagged);
 
+    // Aba em segundo plano → o navegador estrangula o timer de 3s e o realtime pode cair,
+    // então leads novos "não aparecem" até mexer. Ao voltar o foco/visibilidade, recarrega na hora.
+    const onVisible = () => { if (document.visibilityState === "visible") { fetchConversations(); fetchActiveFlows(); } };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
       clearInterval(flowInterval);
       window.removeEventListener("flow-triggered", onFlowTriggered);
       window.removeEventListener("lead-tagged", onLeadTagged);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, []);
 
