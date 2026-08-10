@@ -15,9 +15,9 @@ const initials = (s: string) => (s || "?").split(" ").map((x) => x[0]).join("").
 
 // Cores do pódio: 1º ouro, 2º prata, 3º rosé.
 const PODIUM = [
-  { ring: "#FFC93C", glow: "rgba(255,201,60,0.55)", size: 150 },
-  { ring: "#9aa6b2", glow: "rgba(154,166,178,0.35)", size: 118 },
-  { ring: "#F19AB6", glow: "rgba(241,154,182,0.4)", size: 118 },
+  { ring: "#FFC93C", glow: "rgba(255,201,60,0.55)", size: 208 },
+  { ring: "#9aa6b2", glow: "rgba(154,166,178,0.35)", size: 164 },
+  { ring: "#F19AB6", glow: "rgba(241,154,182,0.4)", size: 164 },
 ];
 
 function Circle({ s, cfg, crown }: { s: Seller; cfg: typeof PODIUM[number]; crown?: boolean }) {
@@ -31,9 +31,9 @@ function Circle({ s, cfg, crown }: { s: Seller; cfg: typeof PODIUM[number]; crow
           <div className="absolute text-xl tv-sparkle pointer-events-none" style={{ bottom: 6, left: -16, animationDelay: "0.5s" }}>✨</div>
         </>
       )}
-      {crown && <div className="absolute left-1/2 tv-crown text-5xl z-10" style={{ top: -46 }}>👑</div>}
+      {crown && <div className="absolute left-1/2 tv-crown text-7xl z-10" style={{ top: -62 }}>👑</div>}
       <div className={`w-full h-full rounded-full flex items-center justify-center overflow-hidden ${crown ? "tv-premium-glow" : ""}`}
-        style={{ background: s.avatar ? "#111" : cfg.ring, border: `4px solid ${cfg.ring}`, boxShadow: crown ? undefined : `0 0 45px 6px ${cfg.glow}` }}>
+        style={{ background: s.avatar ? "#111" : cfg.ring, border: `5px solid ${cfg.ring}`, boxShadow: crown ? undefined : `0 0 55px 7px ${cfg.glow}` }}>
         {s.avatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={s.avatar} alt="" className="w-full h-full object-cover" />
@@ -41,46 +41,45 @@ function Circle({ s, cfg, crown }: { s: Seller; cfg: typeof PODIUM[number]; crow
           <span className="font-black text-black" style={{ fontSize: cfg.size * 0.34 }}>{initials(s.nome)}</span>
         )}
       </div>
-      <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center font-black text-black text-lg z-10"
-        style={{ background: cfg.ring, border: "3px solid #0b0f0d" }}>{s.rank}</div>
+      <div className="absolute -bottom-1 -right-1 rounded-full flex items-center justify-center font-black text-black z-10"
+        style={{ width: cfg.size * 0.2, height: cfg.size * 0.2, fontSize: cfg.size * 0.11, background: cfg.ring, border: "3px solid #0b0f0d" }}>{s.rank}</div>
     </div>
   );
 }
 
 function PodiumCol({ s, idx }: { s: Seller; idx: number }) {
   const cfg = PODIUM[idx];
+  const first = idx === 0;
   return (
-    <div className="flex flex-col items-center" style={{ marginTop: idx === 0 ? 0 : 60 }}>
-      <Circle s={s} cfg={cfg} crown={idx === 0} />
-      <p className="mt-4 font-black text-white tracking-tight" style={{ fontSize: idx === 0 ? 30 : 22 }}>{s.nome}</p>
-      <p className="text-[11px] font-bold tracking-[0.15em] mt-0.5" style={{ color: "#6b7683" }}>{(s.operacao || "").toUpperCase()}</p>
-      <p className="font-black mt-2" style={{ color: GREEN, fontSize: idx === 0 ? 30 : 22 }}>{fmt(s.faturamento)}</p>
-      <p className="text-[12px] font-semibold mt-1" style={{ color: "#8b95a3" }}>{s.vendas} vendas · TM {fmt(s.ticket)}</p>
-      <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ width: idx === 0 ? 190 : 150, background: "#1b2420" }}>
+    <div className="flex flex-col items-center" style={{ marginTop: first ? 0 : 84 }}>
+      <Circle s={s} cfg={cfg} crown={first} />
+      <p className="mt-5 font-black text-white tracking-tight text-center" style={{ fontSize: first ? 46 : 34, lineHeight: 1.05 }}>{s.nome}</p>
+      <p className="font-bold tracking-[0.15em] mt-1" style={{ color: "#8b95a3", fontSize: first ? 15 : 13 }}>{(s.operacao || "").toUpperCase()}</p>
+      <p className="font-black mt-2.5" style={{ color: GREEN, fontSize: first ? 44 : 32 }}>{fmt(s.faturamento)}</p>
+      <p className="font-semibold mt-1.5" style={{ color: "#9aa6b2", fontSize: first ? 16 : 14 }}>{s.vendas} vendas · TM {fmt(s.ticket)}</p>
+      <div className="mt-3.5 rounded-full overflow-hidden" style={{ width: first ? 250 : 200, height: 8, background: "#1b2420" }}>
         <div className="h-full rounded-full" style={{ width: `${Math.min(100, s.pctMeta)}%`, background: cfg.ring }} />
       </div>
-      <p className="text-[11px] font-bold tracking-wider mt-1.5" style={{ color: cfg.ring }}>{s.pctMeta}% DA META</p>
+      <p className="font-bold tracking-wider mt-2" style={{ color: cfg.ring, fontSize: first ? 15 : 13 }}>{s.pctMeta}% DA META</p>
     </div>
   );
 }
 
 function HeroX1({ s, tipo }: { s: Seller; tipo: "lobo" | "rainha" }) {
-  const cfg = tipo === "lobo"
-    ? { grad: "linear-gradient(135deg, #2b6ef0 0%, #7C3AED 100%)", emoji: "🐺", label: "LOBO DO X1" }
-    : { grad: "linear-gradient(135deg, #EC4899 0%, #A855F7 100%)", emoji: "👑", label: "RAINHA DO X1" };
+  const accent = tipo === "lobo" ? "#6b9bf0" : "#e28bb4"; // azul-aço / rosé, discreto
+  const label = tipo === "lobo" ? "LOBO DO X1" : "RAINHA DO X1";
   return (
-    <div className="flex-1 rounded-2xl p-4 flex items-center gap-4 relative overflow-hidden" style={{ background: cfg.grad, boxShadow: "0 0 30px rgba(0,0,0,0.4)" }}>
-      <div className="absolute -top-8 -right-6 text-7xl opacity-15 select-none">{cfg.emoji}</div>
-      <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0" style={{ border: "3px solid rgba(255,255,255,0.9)", background: "rgba(0,0,0,0.2)" }}>
+    <div className="rounded-xl p-3.5 flex items-center gap-3.5" style={{ background: "#0d1310", border: "1px solid #1c2622" }}>
+      <div className="w-14 h-14 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${accent}`, background: "#1a2420" }}>
         {s.avatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={s.avatar} alt="" className="w-full h-full object-cover" />
-        ) : <span className="text-white font-black text-lg">{initials(s.nome)}</span>}
+        ) : <span className="font-black text-[16px]" style={{ color: accent }}>{initials(s.nome)}</span>}
       </div>
-      <div className="min-w-0 flex-1 relative">
-        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-lg">{cfg.emoji}</span><span className="text-[10px] font-black tracking-[0.15em] text-white/90">{cfg.label}</span></div>
-        <p className="font-black text-white text-[19px] truncate leading-tight">{s.nome}</p>
-        <p className="text-[11px] font-bold text-white/75">{(s.operacao || "").toUpperCase()} · {fmt(s.faturamento)} · {s.vendas}V</p>
+      <div className="min-w-0 flex-1">
+        <p className="font-black tracking-[0.18em]" style={{ color: accent, fontSize: 10 }}>{label}</p>
+        <p className="font-black text-white text-[17px] truncate leading-tight mt-0.5">{s.nome}</p>
+        <p className="font-semibold mt-0.5" style={{ color: "#8b95a3", fontSize: 11 }}>{(s.operacao || "").toUpperCase()} · {fmt(s.faturamento)}</p>
       </div>
     </div>
   );
@@ -125,6 +124,8 @@ function MetaCard({ m }: { m: Meta }) {
 
 export default function RankingTVPage() {
   const [range, setRange] = useState("hoje");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [data, setData] = useState<TVData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [clock, setClock] = useState("");
@@ -154,11 +155,14 @@ export default function RankingTVPage() {
     flashTimer.current = setTimeout(() => setFlash(false), 5000);
   }, []);
 
-  const load = useCallback(async (r: string) => {
+  const load = useCallback(async () => {
     try {
+      const isCustom = range === "custom" && !!customStart && !!customEnd;
+      if (range === "custom" && !isCustom) return; // aguarda escolher as duas datas
+      const qp = isCustom ? `period=custom&start=${customStart}&end=${customEnd}` : `period=${range}`;
       // Encaminha a chave de API da URL da TV (?api_key=) pro endpoint, se houver.
       const key = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("api_key") : null;
-      const res = await fetch(`/api/ranking-tv?period=${r}${key ? `&api_key=${encodeURIComponent(key)}` : ""}`, { cache: "no-store" });
+      const res = await fetch(`/api/ranking-tv?${qp}${key ? `&api_key=${encodeURIComponent(key)}` : ""}`, { cache: "no-store" });
       const d = await res.json();
       if (!res.ok) { setErr(d.error || "Erro"); return; }
       // Nova venda? (id da última venda mudou pra um maior desde o último poll do mesmo período)
@@ -167,11 +171,11 @@ export default function RankingTVPage() {
       prevSaleIdRef.current = id;
       setErr(null); setData(d); firstLoad.current = false;
     } catch { /* mantém */ }
-  }, [playSale]);
+  }, [range, customStart, customEnd, playSale]);
 
-  // Ao trocar de período, reseta o contador pra não disparar "venda" falsa.
-  useEffect(() => { prevSaleIdRef.current = null; load(range); }, [range, load]);
-  useEffect(() => { const id = setInterval(() => load(range), 15000); return () => clearInterval(id); }, [range, load]);
+  // Ao trocar de período/datas, reseta o contador pra não disparar "venda" falsa.
+  useEffect(() => { prevSaleIdRef.current = null; load(); }, [load]);
+  useEffect(() => { const id = setInterval(() => load(), 15000); return () => clearInterval(id); }, [load]);
   useEffect(() => {
     const tick = () => {
       const now = new Date();
@@ -226,12 +230,24 @@ export default function RankingTVPage() {
 
           {/* tabs + stats */}
           <div className="flex items-center justify-between mt-5">
-            <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: "#0d1310", border: "1px solid #172019" }}>
+            <div className="flex items-center gap-1.5 p-1 rounded-xl flex-wrap" style={{ background: "#0d1310", border: "1px solid #172019" }}>
               {RANGES.map((r) => (
-                <button key={r.k} onClick={() => setRange(r.k)}
+                <button key={r.k} onClick={() => { setCustomStart(""); setCustomEnd(""); setRange(r.k); }}
                   className="px-3.5 py-1.5 rounded-lg text-[11px] font-black tracking-wider transition"
                   style={range === r.k ? { background: "#FFC93C", color: "#000" } : { color: "#7a8791" }}>{r.l}</button>
               ))}
+              <span className="w-px h-5 mx-0.5" style={{ background: "#233029" }} />
+              <div className="flex items-center gap-1">
+                <input type="date" value={customStart} max={customEnd || undefined}
+                  onChange={(e) => { const v = e.target.value; setCustomStart(v); if (v && customEnd) setRange("custom"); }}
+                  className="rounded-lg text-[11px] font-bold px-2 py-1 outline-none"
+                  style={{ background: range === "custom" ? "#FFC93C" : "#141c17", color: range === "custom" ? "#000" : "#c8d2cc", colorScheme: range === "custom" ? "light" : "dark", border: "1px solid #233029" }} />
+                <span className="text-[11px] font-bold" style={{ color: "#5b6670" }}>–</span>
+                <input type="date" value={customEnd} min={customStart || undefined}
+                  onChange={(e) => { const v = e.target.value; setCustomEnd(v); if (customStart && v) setRange("custom"); }}
+                  className="rounded-lg text-[11px] font-bold px-2 py-1 outline-none"
+                  style={{ background: range === "custom" ? "#FFC93C" : "#141c17", color: range === "custom" ? "#000" : "#c8d2cc", colorScheme: range === "custom" ? "light" : "dark", border: "1px solid #233029" }} />
+              </div>
             </div>
             <div className="flex items-center gap-6 rounded-xl px-5 py-2.5" style={{ background: "#0d1310", border: "1px solid #172019" }}>
               {[["FATURAMENTO", fmt(data?.stats.faturamento || 0)], ["VENDAS", fmtK(data?.stats.vendas || 0)], ["TICKET", fmt(data?.stats.ticket || 0)]].map(([l, v]) => (
@@ -247,7 +263,7 @@ export default function RankingTVPage() {
           ) : (
             <>
               {/* pódio */}
-              <div className="flex-1 flex items-start justify-center gap-10 mt-8">
+              <div className="flex-1 flex items-start justify-center gap-16 mt-12">
                 {order.map((s, i) => s && <PodiumCol key={s.utm} s={s} idx={orderIdx[i]} />)}
               </div>
 

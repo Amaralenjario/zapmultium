@@ -65,8 +65,12 @@ export async function GET(request: Request) {
 
   const s = (summaryRes.data as any) || {};
 
-  // Lobo/Rainha do X1 = quem mais faturou no MÊS PASSADO (fixo, mesma regra do ranking normal).
-  const champRows = ((champRes.data as any[]) || []).map(dec).sort((a, b) => b.faturamento - a.faturamento);
+  // Lobo/Rainha do X1 = quem mais faturou no MÊS PASSADO — SÓ das operações Caio e Jéssica
+  // (Gustavo fica de fora do X1).
+  const OPS_X1 = new Set(["caio", "jessica"]);
+  const champRows = ((champRes.data as any[]) || []).map(dec)
+    .filter((r) => OPS_X1.has(norm(r.operacao)))
+    .sort((a, b) => b.faturamento - a.faturamento);
   const lobo = champRows.find((r) => r.genero === "M" && r.faturamento > 0) || null;
   const rainha = champRows.find((r) => r.genero === "F" && r.faturamento > 0) || null;
 
