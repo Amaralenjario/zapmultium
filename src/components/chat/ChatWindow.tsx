@@ -286,7 +286,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
       <QuickLinksBar phoneNumberId={phoneNumberId} customerPhone={customerPhone} conversationId={conversation.id} customerName={customer?.name || customer?.phone || "Desconhecido"} />
 
       {/* Mensagens */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col">
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin w-8 h-8 border-[3px] border-bd border-t-accent rounded-full" />

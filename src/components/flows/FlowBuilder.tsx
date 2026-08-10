@@ -5,12 +5,12 @@ import toast from "react-hot-toast";
 import { createClient } from "@/lib/supabase/client";
 import {
   Play, MessageSquare, Image as ImageIcon, Video, Music, Clock, GitBranch, Tag, Tags,
-  Copy, Trash2, Download, Upload, Loader2, ArrowLeft, Undo2, Check, MessageCircleReply, type LucideIcon,
+  Copy, Trash2, Download, Upload, Loader2, ArrowLeft, Undo2, Check, MessageCircleReply, Plus, X, type LucideIcon,
 } from "lucide-react";
 import ReactFlow, {
   Background, addEdge, useNodesState, useEdgesState, Connection,
   BackgroundVariant, ReactFlowProvider, ReactFlowInstance, Handle, Position,
-  getBezierPath, EdgeProps, BaseEdge, EdgeLabelRenderer,
+  getBezierPath, EdgeProps, BaseEdge, EdgeLabelRenderer, Controls,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -30,7 +30,7 @@ const START = { label: "Início", color: "#0EA5E9", icon: Play };
 let idCounter = 0;
 function uid() { idCounter++; return `node-${idCounter}`; }
 
-const inputCls = "w-full rounded-lg border border-bd bg-surface2 px-2 py-1 text-xs text-tx placeholder:text-tx3 focus:border-accent focus:outline-none";
+const inputCls = "nodrag w-full rounded-lg border border-bd bg-surface2 px-2 py-1 text-xs text-tx placeholder:text-tx3 focus:border-accent focus:outline-none";
 
 // ── Aresta com botão de excluir ──
 function DeletableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, style }: EdgeProps) {
@@ -285,6 +285,7 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const [canUndo, setCanUndo] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false); // paleta de blocos no mobile
 
   const buildInitialNodes = useMemo((): any[] => {
     if (initialSteps && initialSteps.length > 0) {
@@ -432,6 +433,22 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
     setNodes((nds) => [...nds, { id: uid(), type: "flowNode", position, data: { type, label: cfg.label, color: cfg.color, config: { ...cfg.defaultData } } }]);
   }, [rfInstance, setNodes]);
 
+  // Adiciona um bloco TOCANDO (sem arrastar) — essencial no mobile, onde drag não funciona.
+  // Posiciona no centro da área visível do canvas.
+  const addNode = useCallback((type: string) => {
+    snapshot();
+    const cfg = NODE_CONFIGS[type];
+    let position = { x: 300, y: 160 };
+    if (rfInstance && reactFlowWrapper.current) {
+      const b = reactFlowWrapper.current.getBoundingClientRect();
+      position = rfInstance.project({ x: b.width / 2 - 115, y: b.height / 2 - 40 });
+    }
+    position.x += Math.floor(Math.random() * 50) - 25;
+    position.y += Math.floor(Math.random() * 40) - 20;
+    setNodes((nds) => [...nds, { id: uid(), type: "flowNode", position, data: { type, label: cfg.label, color: cfg.color, config: { ...cfg.defaultData } } }]);
+    setSheetOpen(false);
+  }, [rfInstance, setNodes, snapshot]);
+
   const handleExport = async () => {
     if (!rfInstance) return;
     const flow = rfInstance.toObject();
@@ -444,9 +461,22 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
   const types = Object.keys(NODE_CONFIGS).filter((t) => t !== "condition");
 
   return (
-    <div className="flex h-full w-full bg-bg">
-      {/* Sidebar */}
-      <div className="w-56 flex-shrink-0 border-r border-bd bg-surface flex flex-col">
+    <div className="flex flex-col lg:flex-row h-full w-full bg-bg">
+      {/* Barra de topo — MOBILE (voltar, nome, salvar, desfazer) */}
+      <div className="lg:hidden flex items-center gap-2 px-3 py-2 border-b border-bd bg-surface flex-shrink-0">
+        <button onClick={handleBack} className="p-1.5 -ml-1 rounded-lg text-tx2 hover:bg-hover" title="Voltar"><ArrowLeft className="w-5 h-5" strokeWidth={2.2} /></button>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-extrabold text-tx truncate leading-none">{flowName || "Fluxo"}</p>
+          <span className="text-[10px] font-semibold flex items-center gap-1 mt-0.5">
+            {saveStatus === "saving" ? <><Loader2 className="w-2.5 h-2.5 animate-spin text-tx3" strokeWidth={2.5} /><span className="text-tx3">Salvando...</span></> : <><Check className="w-2.5 h-2.5 text-success" strokeWidth={3} /><span className="text-success">Salvo</span></>}
+          </span>
+        </div>
+        <button onClick={undo} disabled={!canUndo} className="p-1.5 rounded-lg text-tx2 hover:bg-hover disabled:opacity-30" title="Desfazer"><Undo2 className="w-5 h-5" strokeWidth={2} /></button>
+        <button onClick={handleExport} className="p-1.5 rounded-lg text-tx2 hover:bg-hover" title="Exportar FLOWV1"><Download className="w-5 h-5" strokeWidth={2} /></button>
+      </div>
+
+      {/* Sidebar — só DESKTOP */}
+      <div className="hidden lg:flex w-56 flex-shrink-0 border-r border-bd bg-surface flex-col">
         {/* Cabeçalho: voltar + nome + status de salvamento */}
         <div className="px-3 py-3 border-b border-bd">
           <button onClick={handleBack} className="flex items-center gap-1.5 text-sm font-bold text-tx2 hover:text-tx transition mb-2">
@@ -471,12 +501,13 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
 
         {/* Blocos */}
         <div className="p-3 overflow-y-auto flex-1 space-y-1.5">
-          <h3 className="text-[10px] font-bold text-tx3 uppercase tracking-wider mb-1 px-1">Blocos · arraste pro canvas</h3>
+          <h3 className="text-[10px] font-bold text-tx3 uppercase tracking-wider mb-1 px-1">Blocos · arraste ou clique</h3>
           {types.map((type) => {
             const cfg = NODE_CONFIGS[type];
             const Icon = cfg.icon;
             return (
               <div key={type} draggable onDragStart={(e) => { e.dataTransfer.setData("application/reactflow", type); e.dataTransfer.effectAllowed = "move"; }}
+                onClick={() => addNode(type)}
                 className="flex items-center gap-2.5 px-2.5 py-2 rounded-control border border-bd bg-surface cursor-grab active:cursor-grabbing hover:border-accent hover:shadow-card transition">
                 <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cfg.color + "1f" }}>
                   <Icon className="w-4 h-4" strokeWidth={2} style={{ color: cfg.color }} />
@@ -494,7 +525,7 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 h-full" ref={reactFlowWrapper}>
+      <div className="flex-1 min-h-0 relative" ref={reactFlowWrapper}>
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodesWithCallbacks} edges={edges}
@@ -503,12 +534,51 @@ export default function FlowBuilder({ onPersist, onBack, flowName, initialSteps,
             onInit={setRfInstance} onDrop={onDrop} onDragOver={(e) => e.preventDefault()}
             nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView
             deleteKeyCode={["Backspace", "Delete"]} style={{ width: "100%", height: "100%" }}
+            minZoom={0.2}
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="var(--bd)" />
+            <Controls showInteractive={false} />
           </ReactFlow>
         </ReactFlowProvider>
+
+        {/* Botão flutuante MOBILE: adicionar bloco */}
+        <button onClick={() => setSheetOpen(true)}
+          className="lg:hidden absolute bottom-5 right-5 z-20 flex items-center gap-2 pl-4 pr-5 py-3 rounded-full bg-accent text-white font-bold text-sm shadow-glow active:scale-95 transition">
+          <Plus className="w-5 h-5" strokeWidth={2.5} /> Bloco
+        </button>
       </div>
+
+      {/* Bottom-sheet MOBILE: paleta de blocos (toque pra adicionar) */}
+      {sheetOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setSheetOpen(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative bg-surface rounded-t-2xl border-t border-bd max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-bd flex-shrink-0">
+              <div>
+                <h3 className="text-sm font-extrabold text-tx">Adicionar bloco</h3>
+                <p className="text-[11px] text-tx3">Toque num bloco pra adicionar no fluxo</p>
+              </div>
+              <button onClick={() => setSheetOpen(false)} className="p-1.5 rounded-lg text-tx3 hover:bg-hover"><X className="w-5 h-5" strokeWidth={2} /></button>
+            </div>
+            <div className="p-3 overflow-y-auto grid grid-cols-2 gap-2">
+              {types.map((type) => {
+                const cfg = NODE_CONFIGS[type];
+                const Icon = cfg.icon;
+                return (
+                  <button key={type} onClick={() => addNode(type)}
+                    className="flex items-center gap-2.5 px-3 py-3 rounded-control border border-bd bg-surface active:bg-hover active:border-accent transition text-left">
+                    <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cfg.color + "1f" }}>
+                      <Icon className="w-5 h-5" strokeWidth={2} style={{ color: cfg.color }} />
+                    </span>
+                    <span className="text-[13px] font-bold text-tx leading-tight">{cfg.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

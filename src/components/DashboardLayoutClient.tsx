@@ -11,12 +11,12 @@ export default function DashboardLayoutClient({ children }: { children: React.Re
 
   return (
     <GlobalAudioProvider>
-    <div className="flex bg-bg h-screen overflow-hidden">
+    <div className="flex bg-bg h-[100dvh] overflow-hidden">
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col min-w-0 h-screen">
+      <div className="flex-1 flex flex-col min-w-0 h-full">
         <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-surface border-b border-bd flex-shrink-0">
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 text-tx2 hover:bg-hover rounded-lg">
             <Menu className="w-6 h-6" strokeWidth={2} />

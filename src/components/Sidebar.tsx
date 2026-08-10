@@ -119,7 +119,7 @@ export default function Sidebar({ open, onClose }: { open?: boolean; onClose?: (
 
   return (
     <aside
-      className={`w-64 h-screen border-r border-bd bg-surface flex flex-col flex-shrink-0 lg:flex ${
+      className={`w-64 h-[100dvh] border-r border-bd bg-surface flex flex-col flex-shrink-0 lg:flex ${
         open !== undefined
           ? (isSidebarOpen ? "fixed inset-y-0 left-0 z-50 flex" : "hidden lg:flex")
           : "hidden lg:flex"
