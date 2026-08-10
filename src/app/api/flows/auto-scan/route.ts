@@ -51,13 +51,14 @@ export async function GET() {
         startNodeId: startNode?.id as string | undefined,
       };
     })
-    .filter((f) => f.days.includes(weekday) && f.startNodeId && inTimeWindow(nowHHMM, f.timeStart, f.timeEnd));
+    // SEGURANÇA (fail-closed): sem canal escolhido → NÃO dispara em lugar nenhum.
+    // Isso impede um funil de uma operação vazar pro número de outra ("todos os canais").
+    .filter((f) => f.days.includes(weekday) && f.startNodeId && inTimeWindow(nowHHMM, f.timeStart, f.timeEnd) && Array.isArray(f.channels) && f.channels.length > 0);
 
   if (autoFlows.length === 0) return NextResponse.json({ ok: true, weekday, nowHHMM, triggered: 0, reason: "nenhum fluxo válido agora" });
 
-  const anyAllChannels = autoFlows.some((f) => f.channels === null);
   const channelSet = new Set<string>();
-  autoFlows.forEach((f) => f.channels?.forEach((c: string) => channelSet.add(c)));
+  autoFlows.forEach((f) => f.channels!.forEach((c: string) => channelSet.add(c)));
 
   // Mensagens recentes de clientes (últimos 15 min).
   const { data: recent } = await supabase
@@ -74,7 +75,7 @@ export async function GET() {
   for (const m of (recent as any[]) || []) {
     const pid = m.metadata?.phone_number_id || "";
     if (!pid) continue;
-    if (!anyAllChannels && !channelSet.has(pid)) continue;
+    if (!channelSet.has(pid)) continue;
     const key = `${m.conversation_id}|${pid}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -96,7 +97,7 @@ export async function GET() {
     const customerPhone = phoneByConv[cand.conversation_id];
     if (!customerPhone) continue;
     for (const f of autoFlows) {
-      if (f.channels && !f.channels.includes(cand.phone_number_id)) continue;
+      if (!f.channels!.includes(cand.phone_number_id)) continue;
 
       // Condição "primeira mensagem" (boas-vindas): só dispara pra lead NOVO, que ainda
       // não está em atendimento. Se a conversa já tem qualquer mensagem de agente
