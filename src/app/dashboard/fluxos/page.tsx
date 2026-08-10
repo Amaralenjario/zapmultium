@@ -65,53 +65,6 @@ export default function FluxosPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [search, setSearch] = useState("");
-  const [linkingFlow, setLinkingFlow] = useState<Flow | null>(null);
-  const [channels, setChannels] = useState<{ phoneId: string; label: string }[]>([]);
-  const [linkEnabled, setLinkEnabled] = useState(false);
-  const [linkDays, setLinkDays] = useState<Set<number>>(new Set([0]));
-  const [linkAllChannels, setLinkAllChannels] = useState(true);
-  const [linkChannels, setLinkChannels] = useState<Set<string>>(new Set());
-
-  // Lista de canais (pra escolher em quais o fluxo dispara sozinho).
-  useEffect(() => {
-    fetch("/api/evohub/channels").then((r) => r.json()).then((d) => {
-      const map = d.phoneMap || {};
-      const list: { phoneId: string; label: string }[] = [];
-      for (const ch of d.channels || []) {
-        const m = map[ch.id];
-        const phoneId = m?.phoneId || "";
-        if (!phoneId) continue;
-        list.push({ phoneId, label: `${ch.name}${m?.opName ? ` · ${m.opName}` : ""}` });
-      }
-      setChannels(list);
-    }).catch(() => {});
-  }, []);
-
-  const openLink = (flow: Flow) => {
-    let cfg: any = {};
-    try { cfg = flow.trigger_value ? JSON.parse(flow.trigger_value) : {}; } catch { /* ignore */ }
-    const enabled = flow.trigger_type === "schedule";
-    setLinkEnabled(enabled);
-    setLinkDays(new Set(Array.isArray(cfg.days) && cfg.days.length ? cfg.days.map(Number) : [0]));
-    const chans: string[] = Array.isArray(cfg.channels) ? cfg.channels.map(String) : [];
-    setLinkAllChannels(chans.length === 0);
-    setLinkChannels(new Set(chans));
-    setLinkingFlow(flow);
-  };
-
-  const saveLink = async () => {
-    if (!linkingFlow) return;
-    const body = linkEnabled
-      ? { trigger_type: "schedule", trigger_value: JSON.stringify({ days: Array.from(linkDays).sort(), channels: linkAllChannels ? null : Array.from(linkChannels) }) }
-      : { trigger_type: "manual", trigger_value: null };
-    if (linkEnabled && linkDays.size === 0) { toast.error("Escolha ao menos um dia"); return; }
-    if (linkEnabled && !linkAllChannels && linkChannels.size === 0) { toast.error("Escolha ao menos um canal (ou marque Todos)"); return; }
-    const res = await fetch(`/api/flows/${linkingFlow.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) { toast.error("Erro ao salvar vínculo"); return; }
-    setFlows((prev) => prev.map((f) => f.id === linkingFlow.id ? { ...f, ...body } as Flow : f));
-    setLinkingFlow(null);
-    toast.success(linkEnabled ? "Fluxo vinculado!" : "Vínculo removido");
-  };
 
   const handleCreate = async () => {
     if (!newFlowName.trim()) return;
@@ -341,7 +294,6 @@ export default function FluxosPage() {
                     </div>
                     <div className="flex gap-3 pt-3 mt-3 border-t border-line">
                       <button onClick={(e) => { e.stopPropagation(); setEditing(flow); }} className="text-xs font-bold text-tx2 hover:text-accent transition flex items-center gap-1"><Pencil className="w-3.5 h-3.5" strokeWidth={2} /> Editar</button>
-                      <button onClick={(e) => { e.stopPropagation(); openLink(flow); }} className="text-xs font-bold text-tx2 hover:text-accent transition flex items-center gap-1" title="Vincular disparo automático"><CalendarClock className="w-3.5 h-3.5" strokeWidth={2} /> Vincular</button>
                       <button onClick={(e) => { e.stopPropagation(); handleExportFlow(flow); }} className="text-xs font-bold text-accent hover:text-accent2 transition flex items-center gap-1"><Copy className="w-3.5 h-3.5" strokeWidth={2} /> Exportar</button>
                       <button onClick={(e) => { e.stopPropagation(); handleDelete(flow); }} className="text-xs font-bold text-red-400 hover:text-red-500 transition ml-auto flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" strokeWidth={2} /> Excluir</button>
                     </div>
@@ -422,57 +374,6 @@ export default function FluxosPage() {
           <div className="flex gap-3 mt-5">
             <button onClick={() => setBulkImportModal(false)} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
             <button onClick={handleBulkImport} disabled={!bulkImportText.trim() || bulkImporting} className="flex-1 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 transition">{bulkImporting ? "Importando..." : "Importar todos"}</button>
-          </div>
-        </Modal>
-      )}
-
-      {linkingFlow && (
-        <Modal onClose={() => setLinkingFlow(null)} title="Vincular disparo automático" width="max-w-md">
-          <p className="text-xs text-tx3 mb-4 -mt-2">Quando um cliente mandar mensagem nos dias/canais escolhidos, o fluxo <span className="font-bold text-tx2">&ldquo;{linkingFlow.name}&rdquo;</span> dispara sozinho (1x por conversa por dia).</p>
-
-          <label className="flex items-center gap-2.5 cursor-pointer select-none mb-4">
-            <input type="checkbox" checked={linkEnabled} onChange={(e) => setLinkEnabled(e.target.checked)} className="accent-[color:var(--accent)] w-4 h-4" />
-            <span className="text-sm font-bold text-tx">Disparar automaticamente</span>
-          </label>
-
-          <div className={linkEnabled ? "" : "opacity-40 pointer-events-none"}>
-            <p className="text-xs font-bold text-tx2 mb-1.5">Dias</p>
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {WEEKDAYS.map((d) => {
-                const on = linkDays.has(d.n);
-                return (
-                  <button key={d.n} onClick={() => { const next = new Set(linkDays); on ? next.delete(d.n) : next.add(d.n); setLinkDays(next); }}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition ${on ? "bg-accent text-white shadow-glow" : "bg-surface2 text-tx2 hover:bg-hover"}`}>
-                    {d.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <p className="text-xs font-bold text-tx2 mb-1.5">Canais</p>
-            <label className="flex items-center gap-2 cursor-pointer select-none mb-2">
-              <input type="checkbox" checked={linkAllChannels} onChange={(e) => setLinkAllChannels(e.target.checked)} className="accent-[color:var(--accent)] w-4 h-4" />
-              <span className="text-sm font-semibold text-tx2">Todos os canais</span>
-            </label>
-            {!linkAllChannels && (
-              <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg border border-bd p-2">
-                {channels.length === 0 && <p className="text-xs text-tx3 py-1">Nenhum canal encontrado</p>}
-                {channels.map((c) => {
-                  const on = linkChannels.has(c.phoneId);
-                  return (
-                    <label key={c.phoneId} className="flex items-center gap-2 cursor-pointer select-none px-1 py-1 rounded hover:bg-hover">
-                      <input type="checkbox" checked={on} onChange={() => { const next = new Set(linkChannels); on ? next.delete(c.phoneId) : next.add(c.phoneId); setLinkChannels(next); }} className="accent-[color:var(--accent)] w-4 h-4" />
-                      <span className="text-xs font-semibold text-tx truncate">{c.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-3 mt-5">
-            <button onClick={() => setLinkingFlow(null)} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
-            <button onClick={saveLink} className="flex-1 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition">Salvar</button>
           </div>
         </Modal>
       )}

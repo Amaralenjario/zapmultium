@@ -4,6 +4,13 @@ import { saoPauloWeekday, processFlowStep } from "@/lib/flow-engine";
 
 export const dynamic = "force-dynamic";
 
+// Está dentro da janela de horário? (start/end no formato "HH:MM", fuso SP). Sem janela = sempre.
+function inTimeWindow(now: string, start?: string | null, end?: string | null): boolean {
+  if (!start || !end) return true;
+  if (start <= end) return now >= start && now <= end;      // mesma data (ex.: 12:00–13:00)
+  return now >= start || now <= end;                        // cruza a meia-noite (ex.: 22:00–02:00)
+}
+
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,9 +30,10 @@ export async function GET() {
   const supabase = getSupabase();
   const weekday = saoPauloWeekday();
   const dayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const nowHHMM = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   const lookbackISO = new Date(Date.now() - 15 * 60000).toISOString();
 
-  // Fluxos automáticos que valem PRA HOJE.
+  // Fluxos automáticos que valem PRA AGORA (dia + janela de horário).
   const { data: flows } = await supabase.from("flows").select("id, config, trigger_value").eq("trigger_type", "schedule");
   const autoFlows = ((flows as any[]) || [])
     .map((f) => {
@@ -33,11 +41,19 @@ export async function GET() {
       try { cfg = f.trigger_value ? JSON.parse(f.trigger_value) : {}; } catch { /* ignore */ }
       const channels = Array.isArray(cfg.channels) && cfg.channels.length ? cfg.channels.map((c: any) => String(c)) : null;
       const startNode = ((f.config as any)?.steps || []).find((s: any) => s.type === "start");
-      return { id: f.id as string, days: Array.isArray(cfg.days) ? cfg.days.map(Number) : [], channels, startNodeId: startNode?.id as string | undefined };
+      return {
+        id: f.id as string,
+        days: Array.isArray(cfg.days) ? cfg.days.map(Number) : [],
+        timeStart: typeof cfg.timeStart === "string" && cfg.timeStart ? cfg.timeStart : null,
+        timeEnd: typeof cfg.timeEnd === "string" && cfg.timeEnd ? cfg.timeEnd : null,
+        condition: cfg.condition === "first_message" ? "first_message" : "any",
+        channels,
+        startNodeId: startNode?.id as string | undefined,
+      };
     })
-    .filter((f) => f.days.includes(weekday) && f.startNodeId);
+    .filter((f) => f.days.includes(weekday) && f.startNodeId && inTimeWindow(nowHHMM, f.timeStart, f.timeEnd));
 
-  if (autoFlows.length === 0) return NextResponse.json({ ok: true, weekday, triggered: 0, reason: "nenhum fluxo vinculado hoje" });
+  if (autoFlows.length === 0) return NextResponse.json({ ok: true, weekday, nowHHMM, triggered: 0, reason: "nenhum fluxo válido agora" });
 
   const anyAllChannels = autoFlows.some((f) => f.channels === null);
   const channelSet = new Set<string>();
@@ -81,6 +97,17 @@ export async function GET() {
     if (!customerPhone) continue;
     for (const f of autoFlows) {
       if (f.channels && !f.channels.includes(cand.phone_number_id)) continue;
+
+      // Condição "primeira mensagem" (boas-vindas): só dispara pra lead NOVO, que ainda
+      // não está em atendimento. Se a conversa já tem qualquer mensagem de agente
+      // (vendedor ou fluxo anterior respondeu), NÃO dispara.
+      if (f.condition === "first_message") {
+        const { data: agentMsgs } = await supabase
+          .from("messages").select("id")
+          .eq("conversation_id", cand.conversation_id)
+          .eq("sender_type", "agent").limit(1);
+        if (agentMsgs && agentMsgs.length > 0) continue;
+      }
 
       // Dedup ATÔMICO 1x/conversa/dia: chave determinística + índice único.
       // Se dois pollers rodarem ao mesmo tempo, só um insere; o outro colide e é ignorado.
