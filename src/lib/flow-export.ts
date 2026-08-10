@@ -17,6 +17,7 @@ function b64Decode(b64: string): string {
 const TO_FLOWV1: Record<string, string> = {
   start: "trigger",
   wait: "delay",
+  wait_reply: "wait_reply",
   message: "send_text",
   image: "send_image",
   audio: "send_audio",
@@ -28,6 +29,7 @@ const TO_FLOWV1: Record<string, string> = {
 const FROM_FLOWV1: Record<string, string> = {
   trigger: "start",
   delay: "wait",
+  wait_reply: "wait_reply",
   send_text: "message",
   send_image: "image",
   send_audio: "audio",
@@ -61,6 +63,10 @@ export function exportFlowV1(
           break;
         case "wait":
           nodeData.seconds = n.config?.delay || 5;
+          break;
+        case "wait_reply":
+          nodeData.variable = n.config?.variable || "resposta";
+          nodeData.timeoutMinutes = n.config?.timeoutMinutes ?? "";
           break;
         case "message":
           nodeData.text = n.config?.text || "";
@@ -144,6 +150,10 @@ export function importFlowV1(code: string): {
           break;
         case "wait":
           config.delay = n.data?.seconds || 5;
+          break;
+        case "wait_reply":
+          config.variable = n.data?.variable || "resposta";
+          config.timeoutMinutes = n.data?.timeoutMinutes ?? "";
           break;
         case "start":
           break;

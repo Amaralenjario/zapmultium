@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     .from("flow_executions")
     .select("id, flow_id, status, current_node_id, next_step_at, flow:flow_id(name, config)")
     .eq("conversation_id", conversationId)
-    .in("status", ["running", "paused"])
+    .in("status", ["running", "paused", "awaiting_reply"])
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();

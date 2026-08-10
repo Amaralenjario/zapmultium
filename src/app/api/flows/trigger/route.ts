@@ -6,7 +6,10 @@ function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { fetch: (input, init) => fetch(input as RequestInfo, { ...init, cache: "no-store" }) },
+    }
   );
 }
 
@@ -22,10 +25,30 @@ export async function POST(request: Request) {
     const supabase = getSupabase();
 
     // Fluxo precisa existir e ter nó de início (usado tanto pra rodar quanto pra enfileirar).
-    const { data: flow } = await supabase.from("flows").select("config").eq("id", flow_id).single();
+    const { data: flow } = await supabase.from("flows").select("config, trigger_type, trigger_value").eq("id", flow_id).single();
     if (!flow) return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
     const startNode = (flow.config?.steps || []).find((s: any) => s.type === "start");
     if (!startNode) return NextResponse.json({ error: "Fluxo não possui nó de início" }, { status: 400 });
+
+    // Trava de dia: fluxo vinculado a dias específicos (ex.: domingo) só roda nesses dias.
+    if (flow.trigger_type === "schedule" && flow.trigger_value) {
+      try {
+        const cfg = JSON.parse(flow.trigger_value);
+        const days: number[] = Array.isArray(cfg.days) ? cfg.days.map(Number) : [];
+        if (days.length > 0) {
+          const { saoPauloWeekday } = await import("@/lib/flow-engine");
+          const wd = saoPauloWeekday();
+          if (!days.includes(wd)) {
+            const nomes = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+            const permitidos = days.map((d) => nomes[d]).join(", ");
+            return NextResponse.json({
+              ok: true, blocked: true,
+              message: `Este fluxo só roda em: ${permitidos}. Hoje é ${nomes[wd]}.`,
+            });
+          }
+        }
+      } catch { /* trigger_value inválido → não trava */ }
+    }
 
     // Não duplica: se ESTE fluxo já está rodando ou na fila desta conversa, ignora.
     const { data: dup } = await supabase
@@ -33,7 +56,7 @@ export async function POST(request: Request) {
       .select("id, status")
       .eq("conversation_id", conversation_id)
       .eq("flow_id", flow_id)
-      .in("status", ["running", "paused", "pending", "queued"])
+      .in("status", ["running", "paused", "pending", "queued", "awaiting_reply"])
       .limit(1);
     if (dup && dup.length > 0) {
       return NextResponse.json({
@@ -53,7 +76,7 @@ export async function POST(request: Request) {
       .from("flow_executions")
       .select("id, status, flow_id")
       .eq("conversation_id", conversation_id)
-      .in("status", ["running", "paused", "pending"])
+      .in("status", ["running", "paused", "pending", "awaiting_reply"])
       .order("started_at", { ascending: false })
       .limit(1);
 

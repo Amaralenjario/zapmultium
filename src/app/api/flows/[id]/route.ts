@@ -10,11 +10,13 @@ function getSupabase() {
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  const { name, config, sort_order } = await request.json();
+  const { name, config, sort_order, trigger_type, trigger_value } = await request.json();
   const updates: Record<string, any> = {};
   if (name) updates.name = name;
   if (config) updates.config = config;
   if (sort_order !== undefined) updates.sort_order = sort_order;
+  if (trigger_type !== undefined) updates.trigger_type = trigger_type;
+  if (trigger_value !== undefined) updates.trigger_value = trigger_value;
 
   const { data, error } = await getSupabase()
     .from("flows")

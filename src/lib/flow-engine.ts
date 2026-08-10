@@ -1,12 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
+
+// no-store: fluxos leem/escrevem estado que muda a cada segundo; o Next.js Data Cache não pode congelar.
+const noStoreFetch = { fetch: (input: any, init?: any) => fetch(input, { ...init, cache: "no-store" as RequestCache }) };
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (serviceKey) {
-    return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false }, global: noStoreFetch });
   }
-  return createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
+  return createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false }, global: noStoreFetch });
 }
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
@@ -21,11 +25,24 @@ function findNextNodeByHandle(nodeId: string, edges: any[], handle: string): str
   return edge?.target || null;
 }
 
+// Casa SÓ pelo handle exato (usado no wait_reply, que tem 2 saídas nomeadas: "reply" e "timeout").
+function findEdgeByHandleStrict(nodeId: string, edges: any[], handle: string): string | null {
+  const edge = edges.find((e: any) => e.source === nodeId && e.sourceHandle === handle);
+  return edge?.target || null;
+}
+
+// Dia da semana no fuso de São Paulo. 0 = domingo … 6 = sábado.
+export function saoPauloWeekday(when: Date = new Date()): number {
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", weekday: "short" }).format(when);
+  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[wd] ?? new Date().getDay();
+}
+
 function getServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    { auth: { autoRefreshToken: false, persistSession: false }, global: noStoreFetch }
   );
 }
 
@@ -308,6 +325,40 @@ export async function processFlowStep(executionId: string): Promise<{
           return { ok: true, paused: true, nextStepAt, currentStep: currentNode.id };
         }
 
+        case "wait_reply": {
+          // Aguarda o cliente RESPONDER. Duas saídas: "reply" (respondeu) e "timeout" (sem resposta em X min).
+          const replyTarget = findEdgeByHandleStrict(currentNode.id, edges, "reply");
+          const timeoutMin = Math.max(0, parseFloat(currentNode.config?.timeoutMinutes) || 0);
+
+          // Sem saída de "respondeu" conectada e sem timeout → não há o que aguardar, encerra.
+          if (!replyTarget && timeoutMin <= 0) {
+            await supabase.from("flow_executions").update({
+              status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            }).eq("id", executionId);
+            await startNextQueued(execution.conversation_id);
+            return { ok: true, completed: true };
+          }
+
+          const varName = (String(currentNode.config?.variable || "").trim()) || "resposta";
+          const nextStepAt = timeoutMin > 0 ? new Date(Date.now() + timeoutMin * 60000).toISOString() : null;
+          const newContext = {
+            ...(execution.context || {}),
+            __await: { node: currentNode.id, since: new Date().toISOString(), var: varName },
+          };
+
+          await supabase.from("flow_executions").update({
+            status: "awaiting_reply", current_node_id: currentNode.id,
+            next_step_at: nextStepAt, context: newContext, updated_at: new Date().toISOString(),
+          }).eq("id", executionId);
+
+          await supabase.from("flow_execution_logs").insert({
+            execution_id: executionId, node_id: currentNode.id, action: "wait_reply_start",
+            result: { timeoutMin, nextStepAt, var: varName },
+          });
+
+          return { ok: true, paused: true, currentStep: currentNode.id };
+        }
+
         case "condition": {
           const variable = currentNode.config?.variable || "";
           const expectedValue = currentNode.config?.value || "";
@@ -373,6 +424,54 @@ export async function processFlowStep(executionId: string): Promise<{
 }
 
 /**
+ * Inicia um fluxo numa conversa (ou enfileira, se já houver outro ativo).
+ * Reaproveitado pelo disparo manual e pelo automático. Devolve o que aconteceu.
+ */
+export async function startFlow(params: {
+  flow_id: string; conversation_id: string; customer_phone: string; phone_number_id: string;
+}): Promise<"started" | "queued" | "already_active" | "no_start" | "not_found"> {
+  const { flow_id, conversation_id, customer_phone, phone_number_id } = params;
+  const supabase = getSupabase();
+
+  const { data: flow } = await supabase.from("flows").select("config").eq("id", flow_id).single();
+  if (!flow) return "not_found";
+  const startNode = ((flow.config as any)?.steps || []).find((s: any) => s.type === "start");
+  if (!startNode) return "no_start";
+
+  // Já rodando/na fila esse mesmo fluxo nessa conversa? não duplica.
+  const { data: dup } = await supabase
+    .from("flow_executions").select("id")
+    .eq("conversation_id", conversation_id).eq("flow_id", flow_id)
+    .in("status", ["running", "paused", "pending", "queued", "awaiting_reply"]).limit(1);
+  if (dup && dup.length > 0) return "already_active";
+
+  const executionKey = `${flow_id}_${conversation_id}_${randomUUID()}`;
+
+  // Outro fluxo ativo na conversa → entra na fila (1 por vez).
+  const { data: active } = await supabase
+    .from("flow_executions").select("id")
+    .eq("conversation_id", conversation_id)
+    .in("status", ["running", "paused", "pending", "awaiting_reply"]).limit(1);
+
+  if (active && active.length > 0) {
+    await supabase.from("flow_executions").insert({
+      flow_id, conversation_id, customer_phone, phone_number_id,
+      current_node_id: startNode.id, status: "queued", context: {}, execution_key: executionKey,
+    });
+    return "queued";
+  }
+
+  const { data: exec, error } = await supabase.from("flow_executions").insert({
+    flow_id, conversation_id, customer_phone, phone_number_id,
+    current_node_id: startNode.id, status: "pending", context: {}, execution_key: executionKey,
+  }).select("id").single();
+  if (error || !exec) return "not_found";
+
+  try { await processFlowStep(exec.id); } catch { /* fila cuida */ }
+  return "started";
+}
+
+/**
  * Fila de fluxos por conversa: quando um fluxo termina (ou falha), dispara o
  * próximo que estava em "queued" — só 1 fluxo roda por vez, sem sobreposição.
  */
@@ -383,7 +482,7 @@ async function startNextQueued(conversationId: string): Promise<void> {
   const { data: active } = await supabase
     .from("flow_executions").select("id")
     .eq("conversation_id", conversationId)
-    .in("status", ["running", "paused", "pending"]).limit(1);
+    .in("status", ["running", "paused", "pending", "awaiting_reply"]).limit(1);
   if (active && active.length > 0) return;
   // Pega o mais antigo da fila.
   const { data: queued } = await supabase
@@ -402,7 +501,88 @@ async function startNextQueued(conversationId: string): Promise<void> {
 }
 
 /**
+ * Retoma execuções paradas em "aguardar resposta": segue pela saída "reply" quando o
+ * cliente respondeu (mensagem nova depois do 'since'), ou pela saída "timeout" quando
+ * o tempo limite estourou sem resposta.
+ */
+async function advanceAwaitingReplies(): Promise<number> {
+  const supabase = getSupabase();
+  const { data: awaiting } = await supabase
+    .from("flow_executions")
+    .select("*")
+    .eq("status", "awaiting_reply")
+    .limit(50);
+
+  if (!awaiting || awaiting.length === 0) return 0;
+
+  let advanced = 0;
+  for (const exec of awaiting) {
+    try {
+      const aw = (exec.context as any)?.__await;
+      if (!aw?.node || !aw?.since) continue;
+
+      // O cliente respondeu? (qualquer mensagem do cliente depois que entramos na espera)
+      const { data: replies } = await supabase
+        .from("messages")
+        .select("content, content_type, created_at")
+        .eq("conversation_id", exec.conversation_id)
+        .eq("sender_type", "customer")
+        .gt("created_at", aw.since)
+        .order("created_at", { ascending: true })
+        .limit(1);
+      const reply = replies?.[0] as any;
+
+      let path: "reply" | "timeout" | null = null;
+      if (reply) path = "reply";
+      else if (exec.next_step_at && new Date(exec.next_step_at) <= new Date()) path = "timeout";
+      if (!path) continue;
+
+      const { data: flow } = await supabase.from("flows").select("config").eq("id", exec.flow_id).single();
+      const edges: any[] = (flow?.config as any)?.edges || [];
+      const target = findEdgeByHandleStrict(aw.node, edges, path);
+
+      const ctx: any = { ...(exec.context || {}) };
+      if (path === "reply" && reply) {
+        ctx[aw.var || "resposta"] = reply.content;
+        ctx.ultima_resposta = reply.content;
+      }
+      delete ctx.__await;
+
+      // awaiting_reply → pending, de forma atômica (só um vencedor), já apontando pro próximo nó.
+      const { data: promoted } = await supabase
+        .from("flow_executions")
+        .update({ status: "pending", current_node_id: target, next_step_at: null, context: ctx, updated_at: new Date().toISOString() })
+        .eq("id", exec.id).eq("status", "awaiting_reply")
+        .select("id").maybeSingle();
+      if (!promoted) continue;
+
+      await supabase.from("flow_execution_logs").insert({
+        execution_id: exec.id, node_id: aw.node,
+        action: path === "reply" ? "reply_received" : "reply_timeout", result: { path, hasTarget: !!target },
+      });
+
+      if (!target) {
+        // Caminho escolhido não está conectado a nada → encerra o fluxo.
+        await supabase.from("flow_executions").update({
+          status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }).eq("id", exec.id);
+        await startNextQueued(exec.conversation_id);
+        advanced++;
+        continue;
+      }
+
+      await processFlowStep(exec.id);
+      advanced++;
+    } catch {
+      // continue com o próximo
+    }
+  }
+  return advanced;
+}
+
+/**
  * Poll all paused executions with expired next_step_at and advance them.
+ * Também retoma as execuções que estavam aguardando resposta do cliente.
  */
 export async function advanceExpiredExecutions(): Promise<number> {
   const supabase = getSupabase();
@@ -413,10 +593,8 @@ export async function advanceExpiredExecutions(): Promise<number> {
     .lte("next_step_at", new Date().toISOString())
     .limit(50);
 
-  if (!expired || expired.length === 0) return 0;
-
   let advanced = 0;
-  for (const exec of expired) {
+  for (const exec of (expired || [])) {
     try {
       await processFlowStep(exec.id);
       advanced++;
@@ -424,5 +602,7 @@ export async function advanceExpiredExecutions(): Promise<number> {
       // continue with next
     }
   }
+
+  advanced += await advanceAwaitingReplies();
   return advanced;
 }

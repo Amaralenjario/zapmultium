@@ -186,6 +186,8 @@ export default function FlowBar({
       const result = await res.json();
       if (!res.ok || result.error) {
         toast.error(result.error || "Erro ao disparar fluxo");
+      } else if (result.blocked) {
+        toast(result.message, { icon: "📅", duration: 5000 });
       } else if (result.queued) {
         // Já tinha um fluxo rodando → esse entrou na fila.
         toast(result.message, { icon: "⏳", duration: 5000 });

@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { createClient } from "@/lib/supabase/client";
 import {
   Play, MessageSquare, Image as ImageIcon, Video, Music, Clock, GitBranch, Tag, Tags,
-  Copy, Trash2, Download, Upload, Loader2, ArrowLeft, Undo2, Check, type LucideIcon,
+  Copy, Trash2, Download, Upload, Loader2, ArrowLeft, Undo2, Check, MessageCircleReply, type LucideIcon,
 } from "lucide-react";
 import ReactFlow, {
   Background, addEdge, useNodesState, useEdgesState, Connection,
@@ -20,6 +20,7 @@ const NODE_CONFIGS: Record<string, { label: string; color: string; icon: LucideI
   video: { label: "Vídeo", color: "#EF4444", icon: Video, defaultData: { url: "" } },
   audio: { label: "Áudio", color: "#14B8A6", icon: Music, defaultData: { url: "" } },
   wait: { label: "Aguardar", color: "#F59E0B", icon: Clock, defaultData: { delay: 5 } },
+  wait_reply: { label: "Aguardar resposta", color: "#0891B2", icon: MessageCircleReply, defaultData: { variable: "resposta", timeoutMinutes: "" } },
   condition: { label: "Condição", color: "#8B5CF6", icon: GitBranch, defaultData: { variable: "", value: "" } },
   add_tag: { label: "Adicionar etiqueta", color: "#22C55E", icon: Tag, defaultData: { tagName: "" } },
   remove_tag: { label: "Remover etiqueta", color: "#D946EF", icon: Tags, defaultData: { tagName: "" } },
@@ -89,6 +90,21 @@ function FlowNode({ data }: any) {
           <span className="text-xs text-tx2 font-semibold">seg</span>
         </div>
       )}
+      {data.type === "wait_reply" && (
+        <div className="p-2.5 space-y-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-tx2 font-semibold whitespace-nowrap">Salvar em</span>
+            <input defaultValue={cfg.variable ?? "resposta"} onChange={(e) => { data.config.variable = e.target.value; }} placeholder="resposta" className={inputCls} />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-tx2 font-semibold whitespace-nowrap">Tempo limite</span>
+            <input type="number" min={0} defaultValue={cfg.timeoutMinutes ?? ""} onChange={(e) => { data.config.timeoutMinutes = e.target.value; }} placeholder="∞" className={`${inputCls} w-16 text-center`} />
+            <span className="text-[11px] text-tx2 font-semibold">min</span>
+          </div>
+          <p className="text-[9px] text-tx3 leading-tight">Em branco = espera pra sempre.</p>
+          <div className="flex justify-between text-[9px] font-bold pt-0.5"><span className="text-success">↙ Respondeu</span><span className="text-amber-500">Sem resposta ↘</span></div>
+        </div>
+      )}
       {data.type === "condition" && (
         <div className="p-2.5 space-y-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           <input placeholder="Variável" defaultValue={cfg.variable || ""} onChange={(e) => { data.config.variable = e.target.value; }} className={inputCls} />
@@ -104,6 +120,11 @@ function FlowNode({ data }: any) {
         <>
           <Handle type="source" position={Position.Bottom} id="true" className="!w-3 !h-3 !bg-success !border-2 !border-surface !left-[30%]" />
           <Handle type="source" position={Position.Bottom} id="false" className="!w-3 !h-3 !bg-red-500 !border-2 !border-surface !left-[70%]" />
+        </>
+      ) : data.type === "wait_reply" ? (
+        <>
+          <Handle type="source" position={Position.Bottom} id="reply" className="!w-3 !h-3 !bg-success !border-2 !border-surface !left-[30%]" />
+          <Handle type="source" position={Position.Bottom} id="timeout" className="!w-3 !h-3 !bg-amber-500 !border-2 !border-surface !left-[70%]" />
         </>
       ) : (
         <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !border-2 !border-surface" style={{ background: "var(--accent)" }} />
