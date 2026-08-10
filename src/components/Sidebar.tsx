@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, MessagesSquare, Contact, Workflow, Smartphone, Building2, Headset, MessageCircle, X, User, LogOut, Swords, Zap, type LucideIcon } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
+import InstallApp from "@/components/pwa/InstallApp";
 import { createClient } from "@/lib/supabase/client";
 
 const menuItems: { label: string; href: string; icon: LucideIcon; section: string; adminOnly?: boolean; beta?: boolean; novo?: boolean }[] = [
@@ -167,6 +168,11 @@ export default function Sidebar({ open, onClose }: { open?: boolean; onClose?: (
           </div>
         )}
       </nav>
+
+      {/* Instalar app (some sozinho quando já instalado / no desktop) */}
+      <div className="px-3 pb-1 lg:hidden">
+        <InstallApp />
+      </div>
 
       {/* Footer - perfil do usuário (clica pra editar) + sair */}
       <div className="px-3 py-3 border-t border-bd">
