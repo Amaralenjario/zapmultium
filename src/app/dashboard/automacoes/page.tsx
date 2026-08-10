@@ -46,6 +46,30 @@ function ChannelPicker({ channels, all, setAll, picked, setPicked }: { channels:
   );
 }
 
+// Interruptor estilo iOS.
+function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button" role="switch" aria-checked={on} disabled={disabled}
+      onClick={() => onChange(!on)}
+      className={`relative inline-flex h-7 w-[52px] flex-shrink-0 items-center rounded-full transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed ${on ? "bg-accent" : "bg-tx3/35"}`}
+    >
+      <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition-transform duration-200 ${on ? "translate-x-[23px]" : "translate-x-0.5"}`} />
+    </button>
+  );
+}
+
+function minutesOf(hhmm: string): number { const [h, m] = (hhmm || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); }
+
+// Valida a faixa de almoço (máx 2h). Devolve mensagem de erro ou null.
+function lunchProblem(start: string, end: string): string | null {
+  if (!start || !end) return "Defina o horário do almoço.";
+  const s = minutesOf(start), e = minutesOf(end);
+  if (e <= s) return "O fim do almoço tem que ser depois do início.";
+  if (e - s > 120) return "Tá almoçando ou tá de férias? 🤨 O almoço pode ser no máximo 2h.";
+  return null;
+}
+
 function CondPicker({ value, onChange }: { value: string; onChange: (v: "first_message" | "any") => void }) {
   return (
     <div className="space-y-1.5">
@@ -146,7 +170,8 @@ export default function AutomacoesPage() {
   const saveLunch = async () => {
     if (luOn && !luFlow) { toast.error("Escolha um fluxo pro almoço"); return; }
     if (luOn && luDays.size === 0) { toast.error("Escolha ao menos um dia"); return; }
-    if (luOn && (!luStart || !luEnd)) { toast.error("Defina o horário do almoço"); return; }
+    const prob = luOn ? lunchProblem(luStart, luEnd) : null;
+    if (prob) { toast.error(prob); return; }
     if (luOn && !luAllCh && luCh.size === 0) { toast.error("Escolha um canal ou marque Todos"); return; }
     setLuSaving(true);
     const ok = await saveSchedule(luFlow, luOn ? { days: Array.from(luDays).sort(), timeStart: luStart, timeEnd: luEnd, channels: luAllCh ? null : Array.from(luCh), condition: luCond } : null);
@@ -165,9 +190,10 @@ export default function AutomacoesPage() {
   }, [sunOn, sunFlow, sunCond, luOn, luFlow, luDays, luStart, luEnd, luCond]);
 
   const noFlows = loaded && flows.length === 0;
+  const luProblem = luOn ? lunchProblem(luStart, luEnd) : null;
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl mx-auto">
       {/* Cabeçalho */}
       <div className="flex items-center gap-3 mb-1">
         <span className="w-10 h-10 rounded-xl flex items-center justify-center bg-accentsoft"><Zap className="w-5 h-5 text-accent" strokeWidth={2.2} /></span>
@@ -196,8 +222,9 @@ export default function AutomacoesPage() {
         </div>
       )}
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5 items-start">
       {/* ── Card: Domingo ── */}
-      <div className="mt-5 rounded-card border border-bd bg-surface p-5">
+      <div className="rounded-card border border-bd bg-surface p-5">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2.5">
             <span className="w-9 h-9 rounded-control flex items-center justify-center" style={{ background: "rgba(245,158,11,0.14)" }}><Sun className="w-[1.15rem] h-[1.15rem] text-amber-500" strokeWidth={2} /></span>
@@ -206,10 +233,7 @@ export default function AutomacoesPage() {
               <p className="text-[11px] text-tx3 mt-1">Atende sozinho aos domingos</p>
             </div>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" checked={sunOn} onChange={(e) => setSunOn(e.target.checked)} disabled={noFlows} className="accent-[color:var(--accent)] w-4 h-4" />
-            <span className="text-xs font-bold text-tx2">Ativar</span>
-          </label>
+          <Toggle on={sunOn} onChange={setSunOn} disabled={noFlows} />
         </div>
         <div className={sunOn ? "space-y-3.5" : "space-y-3.5 opacity-40 pointer-events-none"}>
           <div>
@@ -228,7 +252,7 @@ export default function AutomacoesPage() {
       </div>
 
       {/* ── Card: Almoço ── */}
-      <div className="mt-5 rounded-card border border-bd bg-surface p-5">
+      <div className="rounded-card border border-bd bg-surface p-5">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2.5">
             <span className="w-9 h-9 rounded-control flex items-center justify-center" style={{ background: "rgba(46,230,111,0.14)" }}><UtensilsCrossed className="w-[1.15rem] h-[1.15rem] text-emerald-500" strokeWidth={2} /></span>
@@ -237,10 +261,7 @@ export default function AutomacoesPage() {
               <p className="text-[11px] text-tx3 mt-1">Atende sozinho no horário de almoço</p>
             </div>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" checked={luOn} onChange={(e) => setLuOn(e.target.checked)} disabled={noFlows} className="accent-[color:var(--accent)] w-4 h-4" />
-            <span className="text-xs font-bold text-tx2">Ativar</span>
-          </label>
+          <Toggle on={luOn} onChange={setLuOn} disabled={noFlows} />
         </div>
         <div className={luOn ? "space-y-3.5" : "space-y-3.5 opacity-40 pointer-events-none"}>
           <div>
@@ -253,10 +274,12 @@ export default function AutomacoesPage() {
           <div>
             <p className="text-xs font-bold text-tx2 mb-1.5 flex items-center gap-1"><Clock className="w-3.5 h-3.5" strokeWidth={2} /> Horário do almoço</p>
             <div className="flex items-center gap-2">
-              <input type="time" value={luStart} onChange={(e) => setLuStart(e.target.value)} className="rounded-control border border-bd bg-surface2 px-2 py-1.5 text-sm text-tx focus:border-accent focus:outline-none" />
+              <input type="time" value={luStart} onChange={(e) => setLuStart(e.target.value)} className={`rounded-control border bg-surface2 px-2 py-1.5 text-sm text-tx focus:outline-none ${luProblem ? "border-red-400 focus:border-red-400" : "border-bd focus:border-accent"}`} />
               <span className="text-tx3 text-sm">até</span>
-              <input type="time" value={luEnd} onChange={(e) => setLuEnd(e.target.value)} className="rounded-control border border-bd bg-surface2 px-2 py-1.5 text-sm text-tx focus:border-accent focus:outline-none" />
+              <input type="time" value={luEnd} onChange={(e) => setLuEnd(e.target.value)} className={`rounded-control border bg-surface2 px-2 py-1.5 text-sm text-tx focus:outline-none ${luProblem ? "border-red-400 focus:border-red-400" : "border-bd focus:border-accent"}`} />
+              <span className="text-[11px] text-tx3 font-semibold hidden sm:inline">(máx 2h)</span>
             </div>
+            {luProblem && <p className="text-[12px] font-semibold text-red-500 mt-1.5">{luProblem}</p>}
           </div>
           <div>
             <p className="text-xs font-bold text-tx2 mb-1.5">Dias</p>
@@ -269,9 +292,10 @@ export default function AutomacoesPage() {
           <div><p className="text-xs font-bold text-tx2 mb-1.5">Condição</p><CondPicker value={luCond} onChange={setLuCond} /></div>
           <ChannelPicker channels={channels} all={luAllCh} setAll={setLuAllCh} picked={luCh} setPicked={setLuCh} />
         </div>
-        <button onClick={saveLunch} disabled={luSaving || noFlows} className="mt-4 w-full rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 transition flex items-center justify-center gap-1.5">
+        <button onClick={saveLunch} disabled={luSaving || noFlows || !!luProblem} className="mt-4 w-full rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5">
           {luSaving ? "Salvando…" : <><Check className="w-4 h-4" strokeWidth={2.5} /> Salvar automação do almoço</>}
         </button>
+      </div>
       </div>
     </div>
   );
