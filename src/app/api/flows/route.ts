@@ -14,11 +14,12 @@ export async function POST(request: Request) {
   const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   const dbClient = createAdmin(adminUrl, adminKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
-  // Check for duplicate name
-  let finalName = name.trim();
-  const { data: existing } = await dbClient.from("flows").select("name").eq("name", finalName).limit(1);
+  // Nome duplicado: checa só entre os fluxos DO PRÓPRIO usuário (cada um tem seu namespace).
+  // Antes era global — bloqueava o vendedor de usar um nome que outro já tinha (até fluxo invisível pra ele).
+  const finalName = name.trim();
+  const { data: existing } = await dbClient.from("flows").select("id").eq("name", finalName).eq("user_id", user.id).limit(1);
   if (existing && existing.length > 0) {
-    return NextResponse.json({ error: `Já existe um fluxo com o nome "${finalName}"` }, { status: 409 });
+    return NextResponse.json({ error: `Você já tem um fluxo com o nome "${finalName}"` }, { status: 409 });
   }
 
   const { data, error } = await dbClient

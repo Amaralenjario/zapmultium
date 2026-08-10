@@ -68,21 +68,6 @@ function lunchProblem(start: string, end: string): string | null {
   return null;
 }
 
-function CondPicker({ value, onChange }: { value: string; onChange: (v: "first_message" | "any") => void }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="flex items-start gap-2 cursor-pointer select-none">
-        <input type="radio" checked={value === "first_message"} onChange={() => onChange("first_message")} className="accent-[color:var(--accent)] w-4 h-4 mt-0.5" />
-        <span className="text-[13px] text-tx"><b>Só quando o lead chega pela 1ª vez</b> <span className="text-tx3">(boas-vindas — não dispara pra quem já está em atendimento)</span></span>
-      </label>
-      <label className="flex items-start gap-2 cursor-pointer select-none">
-        <input type="radio" checked={value === "any"} onChange={() => onChange("any")} className="accent-[color:var(--accent)] w-4 h-4 mt-0.5" />
-        <span className="text-[13px] text-tx">Toda mensagem de cliente no período</span>
-      </label>
-    </div>
-  );
-}
-
 export default function AutomacoesPage() {
   const [flows, setFlows] = useState<Flow[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -91,7 +76,6 @@ export default function AutomacoesPage() {
   // Domingo
   const [sunOn, setSunOn] = useState(false);
   const [sunFlow, setSunFlow] = useState("");
-  const [sunCond, setSunCond] = useState<"first_message" | "any">("first_message");
   const [sunCh, setSunCh] = useState<Set<string>>(new Set());
   const [sunSaving, setSunSaving] = useState(false);
 
@@ -101,7 +85,6 @@ export default function AutomacoesPage() {
   const [luDays, setLuDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]));
   const [luStart, setLuStart] = useState("12:00");
   const [luEnd, setLuEnd] = useState("13:00");
-  const [luCond, setLuCond] = useState<"first_message" | "any">("any");
   const [luCh, setLuCh] = useState<Set<string>>(new Set());
   const [luSaving, setLuSaving] = useState(false);
 
@@ -128,16 +111,14 @@ export default function AutomacoesPage() {
         const days: number[] = Array.isArray(c.days) ? c.days.map(Number) : [];
         const chans: string[] = Array.isArray(c.channels) ? c.channels.map(String) : [];
         if (c.timeStart && c.timeEnd) {
-          // Fluxo do almoço (tem janela de horário)
+          // Fluxo do almoço (tem janela de horário) — nunca domingo.
           setLuOn(true); setLuFlow(f.id);
-          setLuDays(new Set(days.length ? days : [1, 2, 3, 4, 5]));
+          setLuDays(new Set((days.length ? days : [1, 2, 3, 4, 5]).filter((d: number) => d !== 0)));
           setLuStart(c.timeStart); setLuEnd(c.timeEnd);
-          setLuCond(c.condition === "first_message" ? "first_message" : "any");
           setLuCh(new Set(chans));
         } else if (days.includes(0)) {
           // Fluxo de domingo
           setSunOn(true); setSunFlow(f.id);
-          setSunCond(c.condition === "first_message" ? "first_message" : "any");
           setSunCh(new Set(chans));
         }
       }
@@ -158,7 +139,7 @@ export default function AutomacoesPage() {
     if (sunOn && !sunFlow) { toast.error("Escolha um fluxo pro domingo"); return; }
     if (sunOn && sunCh.size === 0) { toast.error("Escolha ao menos um número onde o fluxo vai rodar"); return; }
     setSunSaving(true);
-    const ok = await saveSchedule(sunFlow, sunOn ? { days: [0], timeStart: null, timeEnd: null, channels: Array.from(sunCh), condition: sunCond } : null);
+    const ok = await saveSchedule(sunFlow, sunOn ? { days: [0], timeStart: null, timeEnd: null, channels: Array.from(sunCh), condition: "first_message" } : null);
     setSunSaving(false);
     toast[ok ? "success" : "error"](ok ? (sunOn ? "Automação de domingo salva!" : "Automação de domingo desligada") : "Erro ao salvar");
   };
@@ -170,20 +151,19 @@ export default function AutomacoesPage() {
     if (prob) { toast.error(prob); return; }
     if (luOn && luCh.size === 0) { toast.error("Escolha ao menos um número onde o fluxo vai rodar"); return; }
     setLuSaving(true);
-    const ok = await saveSchedule(luFlow, luOn ? { days: Array.from(luDays).sort(), timeStart: luStart, timeEnd: luEnd, channels: Array.from(luCh), condition: luCond } : null);
+    const diasSemDomingo = Array.from(luDays).filter((d) => d !== 0).sort();
+    const ok = await saveSchedule(luFlow, luOn ? { days: diasSemDomingo, timeStart: luStart, timeEnd: luEnd, channels: Array.from(luCh), condition: "first_message" } : null);
     setLuSaving(false);
     toast[ok ? "success" : "error"](ok ? (luOn ? "Automação do almoço salva!" : "Automação do almoço desligada") : "Erro ao salvar");
   };
 
-  const condLabel = (c: string) => c === "first_message" ? "só para leads novos (boas-vindas)" : "em toda mensagem de cliente";
-
-  // Resumo "quando vão funcionar"
+  // Resumo "quando vão funcionar" — sempre boas-vindas (dispara 1x por lead novo).
   const resumo = useMemo(() => {
     const linhas: string[] = [];
-    if (sunOn && sunFlow) linhas.push(`🟢 Domingo: o fluxo dispara aos domingos, o dia todo — ${condLabel(sunCond)}.`);
-    if (luOn && luFlow) linhas.push(`🍽️ Almoço: dispara ${daysLabel(Array.from(luDays))}, das ${luStart} às ${luEnd} — ${condLabel(luCond)}.`);
+    if (sunOn && sunFlow) linhas.push("🟢 Domingo: dispara aos domingos, o dia todo — 1x por lead novo (boas-vindas).");
+    if (luOn && luFlow) linhas.push(`🍽️ Almoço: dispara ${daysLabel(Array.from(luDays).filter((d) => d !== 0))}, das ${luStart} às ${luEnd} — 1x por lead novo (boas-vindas).`);
     return linhas;
-  }, [sunOn, sunFlow, sunCond, luOn, luFlow, luDays, luStart, luEnd, luCond]);
+  }, [sunOn, sunFlow, luOn, luFlow, luDays, luStart, luEnd]);
 
   const noFlows = loaded && flows.length === 0;
   const luProblem = luOn ? lunchProblem(luStart, luEnd) : null;
@@ -239,7 +219,7 @@ export default function AutomacoesPage() {
               {flows.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
-          <div><p className="text-xs font-bold text-tx2 mb-1.5">Condição</p><CondPicker value={sunCond} onChange={setSunCond} /></div>
+          <p className="text-[11px] text-tx3 flex items-start gap-1.5"><Info className="w-3.5 h-3.5 text-accent mt-px flex-shrink-0" strokeWidth={2} /> Dispara <b className="text-tx2">1x pra cada lead novo</b> (não atrapalha quem já está em atendimento).</p>
           <ChannelPicker channels={channels} picked={sunCh} setPicked={setSunCh} />
         </div>
         <button onClick={saveSunday} disabled={sunSaving || noFlows} className="mt-4 w-full rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 transition flex items-center justify-center gap-1.5">
@@ -278,14 +258,14 @@ export default function AutomacoesPage() {
             {luProblem && <p className="text-[12px] font-semibold text-red-500 mt-1.5">{luProblem}</p>}
           </div>
           <div>
-            <p className="text-xs font-bold text-tx2 mb-1.5">Dias</p>
+            <p className="text-xs font-bold text-tx2 mb-1.5">Dias <span className="text-tx3 font-semibold">(sem domingo)</span></p>
             <div className="flex flex-wrap gap-1.5">
-              {WEEKDAYS.map((d) => (
+              {WEEKDAYS.filter((d) => d.n !== 0).map((d) => (
                 <button key={d.n} onClick={() => { const s = new Set(luDays); s.has(d.n) ? s.delete(d.n) : s.add(d.n); setLuDays(s); }} className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition ${luDays.has(d.n) ? "bg-accent text-white shadow-glow" : "bg-surface2 text-tx2 hover:bg-hover"}`}>{d.label}</button>
               ))}
             </div>
           </div>
-          <div><p className="text-xs font-bold text-tx2 mb-1.5">Condição</p><CondPicker value={luCond} onChange={setLuCond} /></div>
+          <p className="text-[11px] text-tx3 flex items-start gap-1.5"><Info className="w-3.5 h-3.5 text-accent mt-px flex-shrink-0" strokeWidth={2} /> Dispara <b className="text-tx2">1x pra cada lead novo</b> (não atrapalha quem já está em atendimento).</p>
           <ChannelPicker channels={channels} picked={luCh} setPicked={setLuCh} />
         </div>
         <button onClick={saveLunch} disabled={luSaving || noFlows || !!luProblem} className="mt-4 w-full rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5">
