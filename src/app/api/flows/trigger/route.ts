@@ -16,7 +16,7 @@ function getSupabase() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { flow_id, conversation_id, customer_phone, phone_number_id } = body;
+    const { flow_id, conversation_id, customer_phone, phone_number_id, start_step_id } = body;
 
     if (!flow_id || !conversation_id || !customer_phone || !phone_number_id) {
       return NextResponse.json({ error: "Campos obrigatórios: flow_id, conversation_id, customer_phone, phone_number_id" }, { status: 400 });
@@ -27,8 +27,18 @@ export async function POST(request: Request) {
     // Fluxo precisa existir e ter nó de início (usado tanto pra rodar quanto pra enfileirar).
     const { data: flow } = await supabase.from("flows").select("config, trigger_type, trigger_value").eq("id", flow_id).single();
     if (!flow) return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
-    const startNode = (flow.config?.steps || []).find((s: any) => s.type === "start");
+    const steps: any[] = flow.config?.steps || [];
+    const startNode = steps.find((s: any) => s.type === "start");
     if (!startNode) return NextResponse.json({ error: "Fluxo não possui nó de início" }, { status: 400 });
+
+    // Disparo pode começar do início OU de uma etapa específica (o atendente escolhe).
+    // O motor executa o nó em current_node_id e segue pelas edges — então basta apontar pra etapa.
+    let entryNodeId = startNode.id;
+    if (start_step_id) {
+      const chosen = steps.find((s: any) => s.id === start_step_id);
+      if (!chosen) return NextResponse.json({ error: "Etapa escolhida não existe neste fluxo" }, { status: 400 });
+      entryNodeId = chosen.id;
+    }
 
     // OBS: a trava de dia/horário vale só pro disparo AUTOMÁTICO (auto-scan).
     // O disparo MANUAL (atendente clicando) roda o fluxo a qualquer momento — é ação deliberada.
@@ -75,7 +85,7 @@ export async function POST(request: Request) {
         .from("flow_executions")
         .insert({
           flow_id, conversation_id, customer_phone, phone_number_id,
-          current_node_id: startNode.id, status: "queued", context: {}, execution_key: executionKey,
+          current_node_id: entryNodeId, status: "queued", context: {}, execution_key: executionKey,
         })
         .select("*")
         .single();
@@ -98,7 +108,7 @@ export async function POST(request: Request) {
       .from("flow_executions")
       .insert({
         flow_id, conversation_id, customer_phone, phone_number_id,
-        current_node_id: startNode.id, status: "pending", context: {}, execution_key: executionKey,
+        current_node_id: entryNodeId, status: "pending", context: {}, execution_key: executionKey,
       })
       .select("*")
       .single();

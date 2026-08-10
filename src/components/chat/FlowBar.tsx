@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { ChevronLeft, ChevronRight, Play, Search, X, AlertTriangle, GripVertical, ListOrdered, ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, Play, Search, X, AlertTriangle, GripVertical, ListOrdered, ChevronUp, ChevronDown, CornerDownRight } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors,
   type DragEndEvent,
@@ -29,6 +29,32 @@ interface FlowCard {
   name: string;
   status: string;
   config: any;
+}
+
+const STEP_LABEL: Record<string, string> = { message: "Mensagem", wait: "Aguardar", wait_reply: "Aguardar resposta", condition: "Condição", start: "Início" };
+const STEP_COLOR: Record<string, string> = { start: "#22c55e", message: "#3b82f6", wait: "#f59e0b", wait_reply: "#f59e0b", condition: "#8b5cf6" };
+
+// Ordena as etapas na ordem do fluxo (seguindo as edges a partir do início).
+// Exclui o nó "start" — "do início" é a opção padrão. Ramos soltos entram no fim.
+function orderedSteps(config: any): { id: string; label: string; type: string }[] {
+  const steps: any[] = config?.steps || [];
+  const edges: any[] = config?.edges || [];
+  const byId = new Map<string, any>(steps.map((s) => [s.id, s]));
+  const start = steps.find((s) => s.type === "start");
+  const out: any[] = [];
+  const seen = new Set<string>();
+  let cur: string | null = start?.id ?? steps[0]?.id ?? null;
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const node = byId.get(cur);
+    if (node && node.type !== "start") out.push(node);
+    const edge = edges.find((e) => e.source === cur);
+    cur = edge ? edge.target : null;
+  }
+  for (const s of steps) {
+    if (s.type !== "start" && !seen.has(s.id)) { out.push(s); seen.add(s.id); }
+  }
+  return out.map((s) => ({ id: s.id, label: s.label || STEP_LABEL[s.type] || "Etapa", type: s.type }));
 }
 
 // ── Chip sortável (barra horizontal) ──
@@ -114,6 +140,8 @@ export default function FlowBar({
   const [progress, setProgress] = useState<FlowProgress | null>(null);
   const [triggering, setTriggering] = useState<string | null>(null);
   const [confirmFlow, setConfirmFlow] = useState<FlowCard | null>(null);
+  const [pickStep, setPickStep] = useState(false);          // mostrando a lista de etapas?
+  const [startStepId, setStartStepId] = useState<string | null>(null); // etapa escolhida (null = do início)
   const [flowSearch, setFlowSearch] = useState("");
   const [showReorder, setShowReorder] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -164,7 +192,8 @@ export default function FlowBar({
     return () => clearInterval(interval);
   }, [conversationId]);
 
-  const handleTrigger = (flow: FlowCard) => setConfirmFlow(flow);
+  const handleTrigger = (flow: FlowCard) => { setStartStepId(null); setPickStep(false); setConfirmFlow(flow); };
+  const closeConfirm = () => { setConfirmFlow(null); setPickStep(false); setStartStepId(null); };
 
   const cancelExecution = async (execId: string) => {
     await fetch("/api/flows/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ execution_id: execId }) });
@@ -175,13 +204,14 @@ export default function FlowBar({
   const doTrigger = async () => {
     if (!confirmFlow) return;
     const flow = confirmFlow;
+    const fromStep = startStepId;
     setTriggering(flow.id);
-    setConfirmFlow(null);
+    closeConfirm();
     if (!phoneNumberId || !customerPhone) { toast.error("Canal não configurado"); setTriggering(null); return; }
     try {
       const res = await fetch("/api/flows/trigger", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flow_id: flow.id, conversation_id: conversationId, customer_phone: customerPhone, phone_number_id: phoneNumberId }),
+        body: JSON.stringify({ flow_id: flow.id, conversation_id: conversationId, customer_phone: customerPhone, phone_number_id: phoneNumberId, start_step_id: fromStep || undefined }),
       });
       const result = await res.json();
       if (!res.ok || result.error) {
@@ -384,21 +414,74 @@ export default function FlowBar({
         </div>
       )}
 
-      {confirmFlow && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setConfirmFlow(null)}>
-          <div className="w-full max-w-sm rounded-card border border-bd bg-surface shadow-pop p-5 mb-4" onClick={(e) => e.stopPropagation()}>
-            <div className="w-11 h-11 mx-auto mb-3 rounded-full bg-amber-500/15 flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6 text-amber-500" strokeWidth={1.8} />
-            </div>
-            <p className="text-center text-sm text-tx2 mb-1">Tem certeza que deseja disparar o fluxo</p>
-            <p className="text-center text-base font-bold text-tx mb-4">&ldquo;{confirmFlow.name}&rdquo;?</p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmFlow(null)} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Cancelar</button>
-              <button onClick={doTrigger} className="flex-1 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition">Sim, disparar</button>
-            </div>
+      {confirmFlow && (() => {
+        const steps = orderedSteps(confirmFlow.config);
+        return (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={closeConfirm}>
+          <div className="w-full max-w-sm rounded-card border border-bd bg-surface shadow-pop mb-4 sm:mb-0 flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+
+            {!pickStep ? (
+              // ── Passo 1: do início ou escolher etapa ──
+              <div className="p-5">
+                <div className="w-11 h-11 mx-auto mb-3 rounded-full bg-amber-500/15 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-amber-500" strokeWidth={1.8} />
+                </div>
+                <p className="text-center text-sm text-tx2 mb-1">Disparar o fluxo</p>
+                <p className="text-center text-base font-bold text-tx mb-4">&ldquo;{confirmFlow.name}&rdquo;</p>
+                <div className="space-y-2">
+                  <button onClick={() => { setStartStepId(null); doTrigger(); }} className="w-full flex items-center justify-center gap-2 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition">
+                    <Play className="w-4 h-4" fill="currentColor" strokeWidth={0} /> Disparar do início
+                  </button>
+                  {steps.length > 0 && (
+                    <button onClick={() => setPickStep(true)} className="w-full flex items-center justify-center gap-2 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover hover:border-accent/60 transition">
+                      <CornerDownRight className="w-4 h-4 text-accent" strokeWidth={2} /> A partir de uma etapa…
+                    </button>
+                  )}
+                  <button onClick={closeConfirm} className="w-full rounded-control px-4 py-2 text-[13px] font-semibold text-tx3 hover:text-tx hover:bg-hover transition">Cancelar</button>
+                </div>
+              </div>
+            ) : (
+              // ── Passo 2: escolher de qual etapa começar ──
+              <>
+                <div className="flex items-center gap-2 px-5 py-4 border-b border-bd flex-shrink-0">
+                  <button onClick={() => { setPickStep(false); setStartStepId(null); }} className="p-1.5 -ml-1.5 rounded-lg text-tx3 hover:text-tx hover:bg-hover transition"><ChevronLeft className="w-5 h-5" strokeWidth={2} /></button>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-tx truncate">Começar a partir de…</h3>
+                    <p className="text-[11px] text-tx3 truncate">{confirmFlow.name}</p>
+                  </div>
+                </div>
+                <div className="p-3 overflow-y-auto space-y-1.5">
+                  {steps.map((s, i) => {
+                    const sel = startStepId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => setStartStepId(s.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-control border text-left transition ${sel ? "border-accent bg-accentsoft" : "border-bd hover:bg-hover"}`}
+                      >
+                        <span className="w-6 h-6 rounded-full bg-surface2 flex items-center justify-center text-[10px] font-bold text-tx3 flex-shrink-0">{i + 1}</span>
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: STEP_COLOR[s.type] || "#6b7280" }} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px] font-semibold text-tx truncate">{s.label}</span>
+                          <span className="block text-[10px] text-tx3">{STEP_LABEL[s.type] || s.type}</span>
+                        </span>
+                        {sel && <CornerDownRight className="w-4 h-4 text-accent flex-shrink-0" strokeWidth={2.2} />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="px-5 py-3 border-t border-bd flex-shrink-0 flex gap-2">
+                  <button onClick={() => { setPickStep(false); setStartStepId(null); }} className="flex-1 rounded-control border border-bd px-4 py-2.5 text-sm font-semibold text-tx2 hover:bg-hover transition">Voltar</button>
+                  <button onClick={doTrigger} disabled={!startStepId} className="flex-1 flex items-center justify-center gap-1.5 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition disabled:opacity-40 disabled:shadow-none">
+                    <Play className="w-3.5 h-3.5" fill="currentColor" strokeWidth={0} /> Disparar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
