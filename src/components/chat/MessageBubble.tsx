@@ -223,7 +223,7 @@ function MediaContent({ messageId, content, type, metadata, isAgent }: { message
       {metadata?.caption && <p className={`px-3.5 pb-2 text-[13px] ${captionColor}`}>{metadata.caption}</p>}
     </div>
   );
-  if (type === "audio") return <AudioPlayer src={mediaUrl} onAccent={isAgent} />;
+  if (type === "audio") return <AudioPlayer src={mediaUrl} onAccent={isAgent} title={isAgent ? "Áudio enviado" : "Áudio do cliente"} />;
   if (type === "document") return <DocumentPreview src={mediaUrl} name={content} />;
   return null;
 }

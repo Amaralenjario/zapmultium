@@ -4,11 +4,13 @@ import { useState } from "react";
 import { Menu } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import FlowScheduler from "@/components/flows/FlowScheduler";
+import GlobalAudioProvider from "@/components/audio/GlobalAudioProvider";
 
 export default function DashboardLayoutClient({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
+    <GlobalAudioProvider>
     <div className="flex bg-bg h-screen overflow-hidden">
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -25,5 +27,6 @@ export default function DashboardLayoutClient({ children }: { children: React.Re
       </div>
       <FlowScheduler />
     </div>
+    </GlobalAudioProvider>
   );
 }

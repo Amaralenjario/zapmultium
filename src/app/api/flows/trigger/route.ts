@@ -30,34 +30,8 @@ export async function POST(request: Request) {
     const startNode = (flow.config?.steps || []).find((s: any) => s.type === "start");
     if (!startNode) return NextResponse.json({ error: "Fluxo não possui nó de início" }, { status: 400 });
 
-    // Trava de dia/horário: fluxo agendado (ex.: domingo, almoço) só roda no dia e faixa certos.
-    if (flow.trigger_type === "schedule" && flow.trigger_value) {
-      try {
-        const cfg = JSON.parse(flow.trigger_value);
-        const days: number[] = Array.isArray(cfg.days) ? cfg.days.map(Number) : [];
-        const nomes = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
-        const { saoPauloWeekday } = await import("@/lib/flow-engine");
-        const wd = saoPauloWeekday();
-        if (days.length > 0 && !days.includes(wd)) {
-          return NextResponse.json({
-            ok: true, blocked: true,
-            message: `Este fluxo só roda em: ${days.map((d) => nomes[d]).join(", ")}. Hoje é ${nomes[wd]}.`,
-          });
-        }
-        const tStart: string | null = typeof cfg.timeStart === "string" && cfg.timeStart ? cfg.timeStart : null;
-        const tEnd: string | null = typeof cfg.timeEnd === "string" && cfg.timeEnd ? cfg.timeEnd : null;
-        if (tStart && tEnd) {
-          const nowHHMM = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-          const inWin = tStart <= tEnd ? (nowHHMM >= tStart && nowHHMM <= tEnd) : (nowHHMM >= tStart || nowHHMM <= tEnd);
-          if (!inWin) {
-            return NextResponse.json({
-              ok: true, blocked: true,
-              message: `Este fluxo só roda entre ${tStart} e ${tEnd}. Agora são ${nowHHMM}.`,
-            });
-          }
-        }
-      } catch { /* trigger_value inválido → não trava */ }
-    }
+    // OBS: a trava de dia/horário vale só pro disparo AUTOMÁTICO (auto-scan).
+    // O disparo MANUAL (atendente clicando) roda o fluxo a qualquer momento — é ação deliberada.
 
     // Não duplica: se ESTE fluxo já está rodando ou na fila desta conversa, ignora.
     const { data: dup } = await supabase
