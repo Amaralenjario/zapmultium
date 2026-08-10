@@ -41,7 +41,8 @@ end;
 $$;
 
 -- Ranking agregado por vendedor no período [p_start, p_end] (datas inclusivas).
--- Venda = linha com Evento purchase_approved (case-insensitive). Refund/chargeback não contam.
+-- LÍQUIDO: reembolso e chargeback DESCONTAM (abatem 1 na contagem e o valor negativo do
+-- Ticket abate no faturamento/caixa). Cada estorno é contado pela sua própria data.
 create or replace function x1_ranking(p_start date, p_end date)
 returns table(
   utm text, nome text, foto_url text, expert text, genero text, meta numeric,
@@ -51,12 +52,15 @@ language sql stable security definer set search_path = public as $$
   with sd as (
     select v."UTM" as utm,
            x1_parse_date(v."Data") as dt,
-           x1_parse_ticket(v."Ticket") as val
+           x1_parse_ticket(v."Ticket") as val,
+           lower(coalesce(v."Evento",'')) as ev
     from vendas v
-    where lower(coalesce(v."Evento",'')) = 'purchase_approved'
+    where lower(coalesce(v."Evento",'')) in ('purchase_approved','refund','chargeback')
   ),
   agg as (
-    select utm, count(*)::bigint as vendas, coalesce(sum(val),0)::numeric as faturamento
+    select utm,
+           sum(case when ev = 'purchase_approved' then 1 else -1 end)::bigint as vendas,
+           coalesce(sum(val),0)::numeric as faturamento
     from sd
     where dt is not null and dt >= p_start and dt <= p_end
     group by utm

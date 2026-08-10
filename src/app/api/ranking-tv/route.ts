@@ -91,7 +91,8 @@ export async function GET(request: Request) {
   return jsonResponse({
     now: new Date().toISOString(),
     periodo: { tipo: p.period, inicio: p.startDate, fim: p.endDate },
-    stats: { faturamento: Math.round(Number(s.faturamento) || 0), vendas: Number(s.aprovadas) || 0, ticket: Math.round(Number(s.ticket_medio) || 0) },
+    // vendas e faturamento JÁ vêm líquidos (reembolso/chargeback descontados) do x1_sales_summary.
+    stats: { faturamento: Math.round(Number(s.faturamento) || 0), vendas: Number(s.vendas_liquidas ?? s.aprovadas) || 0, ticket: Math.round(Number(s.ticket_medio) || 0) },
     lobo, rainha,
     ultimaVenda,
     podium: ranked.slice(0, 3),

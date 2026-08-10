@@ -29,6 +29,8 @@ create or replace function x1_sales(
 $$;
 
 -- Resumo de vendas: eventos, faturamento, ticket médio, top produtos/plataforma/campanha/operação, por dia.
+-- faturamento e vendas_liquidas são LÍQUIDOS (reembolso/chargeback descontados = caixa real).
+-- faturamento_bruto e aprovadas ficam como referência (só purchase_approved).
 create or replace function x1_sales_summary(p_start date, p_end date)
 returns json language sql stable security definer set search_path = public as $$
   with base as (
@@ -38,14 +40,23 @@ returns json language sql stable security definer set search_path = public as $$
     from vendas v
     where x1_parse_date(v."Data") is not null
       and x1_parse_date(v."Data") >= p_start and x1_parse_date(v."Data") <= p_end
-  ), aprov as (select * from base where evento = 'purchase_approved')
+  ),
+  aprov as (select * from base where evento = 'purchase_approved'),
+  liq as (select * from base where evento in ('purchase_approved','refund','chargeback'))
   select json_build_object(
     'por_evento', (select coalesce(json_object_agg(evento, c), '{}'::json) from (select evento, count(*) c from base group by evento) t),
     'aprovadas', (select count(*) from aprov),
     'reembolsos', (select count(*) from base where evento = 'refund'),
     'chargebacks', (select count(*) from base where evento = 'chargeback'),
-    'faturamento', (select coalesce(round(sum(valor), 2), 0) from aprov),
-    'ticket_medio', (select coalesce(round(avg(valor), 2), 0) from aprov),
+    'vendas_liquidas', ((select count(*) from aprov) - (select count(*) from base where evento in ('refund','chargeback'))),
+    'faturamento', (select coalesce(round(sum(valor), 2), 0) from liq),
+    'faturamento_bruto', (select coalesce(round(sum(valor), 2), 0) from aprov),
+    'estornos_valor', (select coalesce(round(sum(valor), 2), 0) from base where evento in ('refund','chargeback')),
+    'ticket_medio', (
+      select case when v > 0 then round(f / v, 2) else 0 end
+      from (select (select coalesce(sum(valor), 0) from liq) as f,
+                   ((select count(*) from aprov) - (select count(*) from base where evento in ('refund','chargeback'))) as v) tt
+    ),
     'top_produtos', (select coalesce(json_agg(row_to_json(t)), '[]'::json) from (select produto, count(*) vendas, round(sum(valor), 2) faturamento from aprov group by produto order by count(*) desc limit 20) t),
     'por_plataforma', (select coalesce(json_agg(row_to_json(t)), '[]'::json) from (select coalesce(nullif(plataforma, ''), 'Não informado') plataforma, count(*) vendas, round(sum(valor), 2) faturamento from aprov group by 1 order by count(*) desc) t),
     'por_campanha', (select coalesce(json_agg(row_to_json(t)), '[]'::json) from (select coalesce(nullif(campanha, ''), 'Não informado') campanha, count(*) vendas, round(sum(valor), 2) faturamento from aprov group by 1 order by count(*) desc limit 20) t),
