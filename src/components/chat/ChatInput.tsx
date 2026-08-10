@@ -30,6 +30,8 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Fila de envio: manda em background e EM ORDEM, sem travar o botão.
+  const sendQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -89,32 +91,37 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
     }
 
     const trimmed = message.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed) return;
     if (!phoneNumberId || !customerPhone) {
       toast.error("Canal não configurado para envio");
       return;
     }
 
+    // Limpa o campo na hora e enfileira o envio em BACKGROUND (em ordem) — o atendente
+    // pode mandar uma atrás da outra sem esperar o botão "liberar".
+    const ctx = (replyTo as any)?.metadata?.wa_message_id || undefined;
     setMessage("");
-    setSending(true);
     if (onCancelReply) onCancelReply();
     inputRef.current?.focus();
 
-    try {
-      const res = await fetch("/api/evohub/send-message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, phoneNumberId, to: customerPhone, message: trimmed, context: (replyTo as any)?.metadata?.wa_message_id || undefined }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const msg = data.detail
-          ? `Erro: campos faltando (phoneId:${data.detail.hasPhoneId}, to:${data.detail.hasTo}, msg:${data.detail.hasMessage})`
-          : (typeof data.error === "string" ? data.error : (data.error?.message || data.error?.error || "Erro ao enviar"));
-        toast.error(msg);
-      } else onMessageSent();
-    } catch { toast.error("Erro de conexão"); }
-    setSending(false);
+    const doSend = async () => {
+      try {
+        const res = await fetch("/api/evohub/send-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId, phoneNumberId, to: customerPhone, message: trimmed, context: ctx }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const msg = data.detail
+            ? `Erro: campos faltando (phoneId:${data.detail.hasPhoneId}, to:${data.detail.hasTo}, msg:${data.detail.hasMessage})`
+            : (typeof data.error === "string" ? data.error : (data.error?.message || data.error?.error || "Erro ao enviar"));
+          toast.error(msg);
+        }
+        onMessageSent();
+      } catch { toast.error("Erro de conexão"); }
+    };
+    sendQueue.current = sendQueue.current.then(doSend, doSend);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -340,7 +347,7 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
         {(message.trim() || pendingImage) ? (
           <button
             onClick={handleSend}
-            disabled={sending || uploading}
+            disabled={uploading}
             className="p-2.5 rounded-full bg-accent text-white shadow-glow hover:bg-accent2 transition disabled:opacity-50"
             title="Enviar"
           >

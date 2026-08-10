@@ -16,7 +16,13 @@ export function getInstanceName(phoneNumberId: string): string | null {
   return instanceMap[phoneNumberId]?.name || null;
 }
 
+// Cache do token por canal (evita bater no Supabase + EvoHub a cada mensagem enviada).
+const tokenCache = new Map<string, { token: string; exp: number }>();
+const TOKEN_TTL_MS = 10 * 60 * 1000; // 10 min
+
 export async function getRealChannelToken(channelId: string): Promise<string | null> {
+  const cached = tokenCache.get(channelId);
+  if (cached && cached.exp > Date.now()) return cached.token;
   try {
     // Tenta pegar token real via API da EvoHub
     const { createClient } = await import("@supabase/supabase-js");
@@ -48,7 +54,9 @@ export async function getRealChannelToken(channelId: string): Promise<string | n
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     });
     const data = await res.json();
-    return data?.token || null;
+    const token = data?.token || null;
+    if (token) tokenCache.set(channelId, { token, exp: Date.now() + TOKEN_TTL_MS });
+    return token;
   } catch {
     // Fallback: usa o token do instanceMap
     const entry = Object.values(instanceMap).find(i => i.channelId === channelId);
