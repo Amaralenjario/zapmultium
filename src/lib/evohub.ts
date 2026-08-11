@@ -4,37 +4,27 @@ const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 const KEY = process.env.EVOHUB_API_KEY;
 const CONNECT_BASE = "https://app.evohub.evolutionfoundation.com.br";
 
-interface MetaConnection {
-  waba_id?: string;
-  phone_number_id?: string;
-  display_name?: string;
-  phone_numbers?: { id?: string; status?: string; display_phone_number?: string; verified_name?: string }[];
-}
-
 export interface EvoHubChannel {
   id: string;
   name: string;
   type: string;
+  // status vem direto do EvoHub e é a fonte da verdade: "active" só quando o número
+  // está REALMENTE conectado à Meta. NÃO confiar em meta_connection.phone_numbers[].status
+  // ("CONNECTED" fica de resquício do OAuth mesmo com o canal desconectado da Meta —
+  // o proxy /meta responde "Channel not connected to Meta" nesses casos).
   status: string;
   token: string;
   external_id: string | null;
-  // A API do EvoHub devolve meta_connection no TOPO do objeto (não dentro de metadata).
-  meta_connection?: MetaConnection;
-  metadata?: { meta_connection?: MetaConnection };
+  metadata: {
+    meta_connection?: {
+      phone_number?: string;
+      phone_number_id?: string;
+      waba_id?: string;
+      display_name?: string;
+    };
+  };
   created_at: string;
   updated_at: string;
-}
-
-// Um canal está de fato conectado se tem um número com status CONNECTED no meta_connection —
-// mesmo que o status de cima do EvoHub esteja "inactive" (bug conhecido do EvoHub).
-export function connectedPhoneOf(ch: EvoHubChannel): { display_phone_number?: string; id?: string } | null {
-  const mc = ch.meta_connection || ch.metadata?.meta_connection;
-  const p = mc?.phone_numbers?.find((n) => n.status === "CONNECTED");
-  return p || null;
-}
-export function effectiveStatus(ch: EvoHubChannel): string {
-  if (ch.status === "active") return "active";
-  return connectedPhoneOf(ch) ? "active" : ch.status;
 }
 
 export async function listAllChannels(): Promise<EvoHubChannel[]> {
@@ -64,26 +54,7 @@ export async function listAllChannels(): Promise<EvoHubChannel[]> {
         next: { revalidate: 30 },
       });
       const data = await res.json();
-      if (!data.channels) continue;
-      // A LISTA do EvoHub às vezes vem SEM o meta_connection (inconsistente), fazendo um
-      // número conectado aparecer como "Pendente". Pros canais que parecem desconectados,
-      // busca o DETALHE (que traz o meta_connection real) usando a MESMA key da conta.
-      const merged = await Promise.all(
-        (data.channels as EvoHubChannel[]).map(async (ch) => {
-          const hasConnected = ch.meta_connection?.phone_numbers?.some((p) => p.status === "CONNECTED");
-          if (ch.status === "active" || hasConnected) return ch;
-          try {
-            const dr = await fetch(`${k.apiUrl}/api/v1/channels/${ch.id}`, {
-              headers: { Authorization: `Bearer ${k.apiKey}` },
-              cache: "no-store",
-            });
-            const detail = await dr.json();
-            if (detail?.meta_connection) return { ...ch, meta_connection: detail.meta_connection };
-          } catch { /* mantém como veio */ }
-          return ch;
-        })
-      );
-      allChannels.push(...merged);
+      if (data.channels) allChannels.push(...data.channels);
     } catch { /* skip */ }
   }
 
@@ -204,19 +175,15 @@ export async function enrichChannelsWithPhoneNumbers(channels: EvoHubChannel[]):
 
   return Promise.all(
     channels.map(async (ch) => {
-      const connected = connectedPhoneOf(ch);
-      // Corrige o status quando o EvoHub deixa "inactive" mas há número CONNECTED.
-      const status = effectiveStatus(ch);
-      // phone_number_id: do mapa (canais conhecidos) ou do próprio meta_connection.
-      const phoneId = phoneIdMap[ch.id] || ch.meta_connection?.phone_number_id || ch.metadata?.meta_connection?.phone_number_id;
+      const phoneId = phoneIdMap[ch.id];
       if (phoneId && ch.token) {
         const [phone, picture] = await Promise.all([
           getPhoneNumberFromMeta(ch.token, phoneId),
           getProfilePictureFromMeta(ch.token, phoneId),
         ]);
-        return { ...ch, status, displayPhone: phone || connected?.display_phone_number || undefined, profilePicture: picture || undefined };
+        return { ...ch, displayPhone: phone || undefined, profilePicture: picture || undefined };
       }
-      return { ...ch, status, displayPhone: connected?.display_phone_number || undefined };
+      return ch;
     })
   );
 }
