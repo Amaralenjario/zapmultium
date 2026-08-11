@@ -7,6 +7,7 @@
 .zpx-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #171b24; font-weight: 800; font-size: 14px; border-bottom: 1px solid #2a2f3a; }
 .zpx-head button { background: none; border: none; color: #8b93a7; cursor: pointer; font-size: 16px; }
 .zpx-body { padding: 12px 14px; overflow-y: auto; }
+.zpx-contact { font-size: 13px; font-weight: 700; color: #e7e9ee; margin-bottom: 12px; padding: 8px 10px; background: #0d1016; border: 1px solid #2a2f3a; border-radius: 9px; }
 .zpx-lbl { font-size: 11px; color: #8b93a7; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .zpx-input { width: 100%; margin: 6px 0 12px; padding: 9px 10px; border-radius: 9px; border: 1px solid #2a2f3a; background: #0d1016; color: #fff; font-size: 14px; box-sizing: border-box; }
 .zpx-input:focus { outline: none; border-color: #3A5AF0; }

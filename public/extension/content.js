@@ -1,28 +1,24 @@
 // Painel do ZapMultium dentro do WhatsApp Web.
-// - Detecta o número da conversa aberta (com campo editável de segurança).
-// - Lista os fluxos do vendedor e dispara pelo motor do ZapMultium (via background).
+// - Detecta AUTOMATICAMENTE o número + nome da conversa aberta (atualiza ao trocar de conversa).
+// - Fluxos do vendedor carregados uma vez (instantâneo) e disparados pelo motor do ZapMultium.
 (function () {
   if (window.__zpxLoaded) return;
   window.__zpxLoaded = true;
 
   const $ = (sel, root = document) => root.querySelector(sel);
+  let cachedFlows = null; // carrega uma vez
 
-  // ---- Detecta o número da conversa aberta (header do WhatsApp Web) ----
-  function detectPhone() {
-    // Tenta pelo título do header (leads não salvos aparecem como número).
-    const candidates = [
-      "#main header span[title]",
-      '#main header [role="button"] span[dir="auto"]',
-      "#main header span[dir='auto']",
-    ];
-    for (const sel of candidates) {
-      const el = $(sel);
-      const txt = (el?.getAttribute("title") || el?.textContent || "").trim();
-      const digits = txt.replace(/\D/g, "");
-      // número BR internacional tem 12-13 dígitos; aceita 10+ pra não perder edge cases
-      if (digits.length >= 10 && digits.length <= 15) return digits;
-    }
-    return "";
+  // ---- Detecta número + nome da conversa aberta (header do WhatsApp Web) ----
+  function detectChat() {
+    const header = $("#main header");
+    if (!header) return { phone: "", name: "" };
+    // O título costuma estar no primeiro span com title/dir=auto do header.
+    const titleEl = header.querySelector("span[title]") || header.querySelector("span[dir='auto']");
+    const raw = (titleEl?.getAttribute("title") || titleEl?.textContent || "").trim();
+    const digits = raw.replace(/\D/g, "");
+    // Se o título já é um número (lead não salvo) → é o telefone. Senão é nome (contato salvo).
+    if (digits.length >= 10 && digits.length <= 15) return { phone: digits, name: raw };
+    return { phone: "", name: raw };
   }
 
   // ---- UI ----
@@ -36,9 +32,11 @@
         <button id="zpx-close">✕</button>
       </div>
       <div class="zpx-body">
+        <div id="zpx-contact" class="zpx-contact"></div>
         <label class="zpx-lbl">Número do lead</label>
-        <input id="zpx-phone" class="zpx-input" placeholder="55 47 9xxxx-xxxx" />
-        <div id="zpx-flows" class="zpx-flows"><div class="zpx-muted">Carregando fluxos…</div></div>
+        <input id="zpx-phone" class="zpx-input" placeholder="Abra uma conversa…" />
+        <label class="zpx-lbl">Fluxos</label>
+        <div id="zpx-flows" class="zpx-flows"><div class="zpx-muted">Carregando…</div></div>
         <div id="zpx-status" class="zpx-status"></div>
       </div>
     </div>`;
@@ -46,48 +44,59 @@
 
   const card = $("#zpx-card", panel);
   const phoneInput = $("#zpx-phone", panel);
+  const contactEl = $("#zpx-contact", panel);
   const flowsBox = $("#zpx-flows", panel);
   const statusBox = $("#zpx-status", panel);
 
   const setStatus = (msg, kind) => { statusBox.textContent = msg || ""; statusBox.className = "zpx-status" + (kind ? " " + kind : ""); };
 
+  // Sincroniza o painel com a conversa aberta (número + nome). Chamado ao trocar de conversa.
+  let currentName = "";
+  function syncChat(force) {
+    const { phone, name } = detectChat();
+    if (name !== currentName || force) {
+      currentName = name;
+      contactEl.textContent = name ? "Conversa: " + name : "Nenhuma conversa aberta";
+      if (document.activeElement !== phoneInput) phoneInput.value = phone;
+      setStatus("");
+    }
+  }
+
   $("#zpx-fab", panel).addEventListener("click", () => {
     const open = card.style.display !== "none";
     card.style.display = open ? "none" : "block";
-    if (!open) { phoneInput.value = detectPhone(); loadFlows(); }
+    if (!open) syncChat(true);
   });
   $("#zpx-close", panel).addEventListener("click", () => { card.style.display = "none"; });
 
-  // Atualiza o número automaticamente ao trocar de conversa (se o card estiver aberto).
-  let lastPhone = "";
-  const obs = new MutationObserver(() => {
-    if (card.style.display === "none") return;
-    const p = detectPhone();
-    if (p && p !== lastPhone && document.activeElement !== phoneInput) { lastPhone = p; phoneInput.value = p; }
-  });
-  const main = document.querySelector("#main") || document.body;
-  obs.observe(main, { subtree: true, childList: true, characterData: true });
+  // Observa a troca de conversa (WhatsApp Web é SPA, não recarrega) e atualiza sozinho.
+  const obs = new MutationObserver(() => { if (card.style.display !== "none") syncChat(false); });
+  obs.observe(document.body, { subtree: true, childList: true });
+
+  function renderFlows() {
+    if (!cachedFlows) { flowsBox.innerHTML = `<div class="zpx-muted">Carregando…</div>`; return; }
+    if (cachedFlows.error) { flowsBox.innerHTML = `<div class="zpx-err">${cachedFlows.error}</div>`; return; }
+    if (!cachedFlows.length) { flowsBox.innerHTML = `<div class="zpx-muted">Nenhum fluxo.</div>`; return; }
+    flowsBox.innerHTML = "";
+    for (const f of cachedFlows) {
+      const b = document.createElement("button");
+      b.className = "zpx-flow";
+      b.textContent = "▶ " + f.name;
+      b.addEventListener("click", () => fire(f, b));
+      flowsBox.appendChild(b);
+    }
+  }
 
   function loadFlows() {
-    flowsBox.innerHTML = `<div class="zpx-muted">Carregando fluxos…</div>`;
     chrome.runtime.sendMessage({ type: "flows" }, (resp) => {
-      if (!resp || resp.error) { flowsBox.innerHTML = `<div class="zpx-err">${(resp && resp.error) || "Erro"}</div>`; return; }
-      const flows = resp.flows || [];
-      if (!flows.length) { flowsBox.innerHTML = `<div class="zpx-muted">Nenhum fluxo.</div>`; return; }
-      flowsBox.innerHTML = "";
-      for (const f of flows) {
-        const b = document.createElement("button");
-        b.className = "zpx-flow";
-        b.textContent = "▶ " + f.name;
-        b.addEventListener("click", () => fire(f, b));
-        flowsBox.appendChild(b);
-      }
+      cachedFlows = !resp || resp.error ? { error: (resp && resp.error) || "Erro ao carregar fluxos" } : (resp.flows || []);
+      renderFlows();
     });
   }
 
   function fire(flow, btn) {
     const leadPhone = (phoneInput.value || "").replace(/\D/g, "");
-    if (leadPhone.length < 10) { setStatus("Confira o número do lead.", "err"); return; }
+    if (leadPhone.length < 10) { setStatus("Abra a conversa do lead (ou confira o número).", "err"); return; }
     btn.disabled = true;
     setStatus("Disparando “" + flow.name + "”…");
     chrome.runtime.sendMessage({ type: "trigger", leadPhone, flowId: flow.id }, (resp) => {
@@ -96,4 +105,7 @@
       setStatus(resp.message || "Disparado!", "ok");
     });
   }
+
+  // Carrega os fluxos já no início (fica instantâneo quando abrir).
+  loadFlows();
 })();
