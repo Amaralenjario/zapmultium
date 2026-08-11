@@ -618,8 +618,18 @@ export async function advanceExpiredExecutions(): Promise<number> {
     .lte("next_step_at", new Date().toISOString())
     .limit(60);
 
+  // Também recupera execuções PENDING presas: o 1º passo é processado por quem dispara
+  // (painel/extensão via waitUntil), mas se aquilo morrer (função cortada), a execução
+  // ficaria em pending pra sempre. Aqui pegamos as que estão pending há > 20s e destravamos.
+  const { data: stuckPending } = await supabase
+    .from("flow_executions")
+    .select("id")
+    .eq("status", "pending")
+    .lt("updated_at", new Date(Date.now() - 20000).toISOString())
+    .limit(60);
+
   let advanced = 0;
-  const list = expired || [];
+  const list = [...(expired || []), ...(stuckPending || [])];
   // Processa em PARALELO LIMITADO (5 por vez) em vez de um-por-um. O lock atômico
   // (paused→running) em processFlowStep evita processamento duplo entre navegadores;
   // aqui só aceleramos o esvaziamento da fila pra aguentar muitos fluxos ao mesmo tempo.
