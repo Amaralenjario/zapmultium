@@ -24,7 +24,13 @@ export async function GET() {
       .in("status", ["completed", "error"])
       .lt("updated_at", execCutoff);
 
-    return NextResponse.json({ ok: true, deleted: { flow_execution_logs: logs || 0, flow_executions: execs || 0 } });
+    // Log cru de webhook (diagnóstico) — cresce rápido, mantém 7 dias.
+    const { count: rawlog } = await admin
+      .from("webhook_inbound_log")
+      .delete({ count: "estimated" })
+      .lt("received_at", new Date(now - 7 * 864e5).toISOString());
+
+    return NextResponse.json({ ok: true, deleted: { flow_execution_logs: logs || 0, flow_executions: execs || 0, webhook_inbound_log: rawlog || 0 } });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

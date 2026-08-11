@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { waitUntil } from "@vercel/functions";
 import { friendlyWaError } from "@/lib/wa-errors";
 import { notifyNewMessage } from "@/lib/web-push";
 
@@ -134,6 +135,14 @@ async function processMessages(payload: any) {
       const meta = value.metadata || {};
       const phoneNumberId = meta.phone_number_id || entry.id;
 
+      // LOG CRU: registra TODA mensagem recebida do EvoHub ANTES de processar. Assim dá pra
+      // atribuir perda com precisão: msg no log cru mas NÃO em messages = a gente dropou;
+      // msg que sumiu e nem no log cru = EvoHub/Meta não mandou. Fire-and-forget (não bloqueia).
+      if (messages.length > 0) {
+        const raw = messages.map((m: any) => ({ wa_message_id: m.id, phone_number_id: phoneNumberId, from_phone: m.from || null }));
+        supabase.from("webhook_inbound_log").insert(raw as any).then(() => {}, () => {});
+      }
+
       // Status de entrega/leitura das mensagens que ENVIAMOS (read receipts, falhas)
       const statuses = value.statuses || [];
       if (statuses.length > 0) {
@@ -226,13 +235,15 @@ async function processMessages(payload: any) {
         last_message_sender: "customer",
       } as any).eq("id", convId);
 
-      // Notificação push pro(s) vendedor(es) do canal (best effort — nunca quebra a ingestão).
-      await notifyNewMessage(supabase, {
+      // Notificação push pro(s) vendedor(es) do canal — EM BACKGROUND (waitUntil).
+      // Antes era `await` no caminho crítico: cada msg esperava queries + envios web-push,
+      // o que sob carga podia dar timeout no webhook e PERDER a mensagem. Agora não bloqueia.
+      waitUntil(notifyNewMessage(supabase, {
         phoneNumberId,
         conversationId: convId,
         customerName,
         content: lastContent,
-      });
+      }).catch(() => {}));
     }
   }
 }
