@@ -42,6 +42,51 @@ async function insertMessageWithRetry(supabase: any, row: any, attempts = 4): Pr
   return false;
 }
 
+// Upsert do cliente com retry. Sob carga (GABI recebe ~1800 leads/dia), o upsert podia
+// falhar por timeout e a gente fazia `continue` — DESCARTANDO todas as mensagens do lead
+// sem log. Isso fazia "o lead aparecer no zap mas não na plataforma".
+async function upsertCustomerWithRetry(supabase: any, name: string, phone: string, attempts = 4): Promise<{ id: string } | null> {
+  let lastErr: any;
+  for (let i = 0; i < attempts; i++) {
+    const { data, error } = await supabase
+      .from("customers")
+      .upsert({ name, phone, last_interaction_at: new Date().toISOString() }, { onConflict: "phone" })
+      .select("id").single();
+    if (data?.id) return data;
+    lastErr = error;
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+  }
+  console.error("[EvoHub] PERDA DE LEAD — upsert do cliente falhou:", lastErr?.message, "| phone:", phone);
+  return null;
+}
+
+// Acha a conversa ATIVA do cliente NESTE número, ou cria. Robusto a corrida (23505 →
+// outro processo criou, re-busca) e a falha transitória (retry do insert). Antes, uma
+// falha transitória na criação fazia `continue` e o lead sumia.
+async function findOrCreateActiveConversation(supabase: any, customerId: string, phoneNumberId: string, attempts = 4): Promise<{ id: string; unread_count: number } | null> {
+  let lastErr: any;
+  for (let i = 0; i < attempts; i++) {
+    const { data: found } = await supabase
+      .from("conversations")
+      .select("id, unread_count")
+      .eq("customer_id", customerId).eq("status", "active")
+      .filter("metadata->>phone_number_id", "eq", phoneNumberId).limit(1);
+    if (found && found.length > 0) return found[0];
+
+    const { data: created, error } = await supabase
+      .from("conversations")
+      .insert({ customer_id: customerId, status: "active", source: "whatsapp", unread_count: 0, metadata: { phone_number_id: phoneNumberId } })
+      .select("id, unread_count").single();
+    if (created?.id) return created;
+    lastErr = error;
+    // 23505 = corrida (outro criou no mesmo instante) → volta ao topo e acha na re-busca.
+    // Erro transitório → espera e tenta de novo.
+    if (error?.code !== "23505" && i < attempts - 1) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+  }
+  console.error("[EvoHub] PERDA DE LEAD — não achou/criou conversa:", lastErr?.message, "| cliente:", customerId, "| número:", phoneNumberId);
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const mode = searchParams.get("hub.mode");
@@ -102,61 +147,19 @@ async function processMessages(payload: any) {
       const customerName = contact?.profile?.name || from;
       const customerPhone = from;
 
-      const { data: cust }: any = await supabase
-        .from("customers")
-        .upsert({ name: customerName, phone: customerPhone, last_interaction_at: new Date().toISOString() } as any, { onConflict: "phone" } as any)
-        .select("id").single();
-      if (!cust) continue;
+      const cust = await upsertCustomerWithRetry(supabase, customerName, customerPhone);
+      if (!cust) continue; // já logado como PERDA DE LEAD
 
-      const { data: existing }: any = await supabase
-        .from("conversations")
-        .select("id, unread_count")
-        .eq("customer_id", cust.id)
-        .eq("status", "active")
-        .filter("metadata->>phone_number_id", "eq", phoneNumberId)
-        .limit(1);
+      const conv = await findOrCreateActiveConversation(supabase, cust.id, phoneNumberId);
+      if (!conv) continue; // já logado como PERDA DE LEAD
 
-      let convId: string;
-      let unread = 1;
-
-      if (existing && existing.length > 0) {
-        convId = existing[0].id;
-        unread = (existing[0].unread_count || 0) + 1;
-        await supabase.from("conversations").update({
-          last_message_at: new Date().toISOString(),
-          unread_count: unread,
-          updated_at: new Date().toISOString(),
-        } as any).eq("id", convId);
-      } else {
-        const { data: newConv, error: insErr }: any = await supabase
-          .from("conversations")
-          .insert({ customer_id: cust.id, status: "active", source: "whatsapp", unread_count: 1, metadata: { phone_number_id: phoneNumberId } } as any)
-          .select("id").single();
-        if (insErr || !newConv) {
-          // Corrida/duplicidade: re-busca a conversa ativa desse cliente NESTE número.
-          const { data: retry }: any = await supabase
-            .from("conversations")
-            .select("id, unread_count")
-            .eq("customer_id", cust.id)
-            .eq("status", "active")
-            .filter("metadata->>phone_number_id", "eq", phoneNumberId)
-            .limit(1);
-          if (retry && retry.length > 0) {
-            convId = retry[0].id;
-            unread = (retry[0].unread_count || 0) + 1;
-            await supabase.from("conversations").update({
-              last_message_at: new Date().toISOString(),
-              unread_count: unread,
-              updated_at: new Date().toISOString(),
-            } as any).eq("id", convId);
-          } else {
-            console.error("[EvoHub] Falha ao criar conversa:", insErr?.message, "cliente:", cust.id, "número:", phoneNumberId);
-            continue;
-          }
-        } else {
-          convId = newConv.id;
-        }
-      }
+      const convId: string = conv.id;
+      const unread = (conv.unread_count || 0) + 1;
+      await supabase.from("conversations").update({
+        last_message_at: new Date().toISOString(),
+        unread_count: unread,
+        updated_at: new Date().toISOString(),
+      } as any).eq("id", convId);
 
       for (const msg of messages) {
         let content = "";
