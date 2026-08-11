@@ -300,8 +300,19 @@ export default function ConversationList({
         if (!res.ok) return;
         const data = await res.json();
         const map: Record<string, { count: number; flowNames: string[] }> = {};
-        for (const item of data) { map[item.conversation_id] = { count: item.count, flowNames: item.flowNames }; }
+        const ids: string[] = [];
+        for (const item of data) { map[item.conversation_id] = { count: item.count, flowNames: item.flowNames }; ids.push(item.conversation_id); }
         setActiveFlows(map);
+        // Garante que conversas COM FLUXO ATIVO estejam na lista (senão o selo ⚡ não tem
+        // onde aparecer — ex.: fluxo disparado pela extensão numa conversa fora da janela).
+        // Aplica o escopo do vendedor pra não vazar conversa de outro canal.
+        const missing = ids.filter((id) => !allConvsRef.current.some((c) => c.id === id));
+        if (missing.length > 0) {
+          let mq = supabase.from("conversations").select(CONV_SELECT).in("id", missing.slice(0, 50));
+          mq = applyScopeConv(mq);
+          const { data: convs } = await mq;
+          if (convs && convs.length > 0) setAllConversations((prev) => mergeConvs(prev, convs as Conversation[]));
+        }
       } catch {}
     };
 
