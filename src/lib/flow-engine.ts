@@ -147,6 +147,17 @@ async function sendWaTextWithRetry(phoneNumberId: string, token: string, to: str
   throw lastErr;
 }
 
+// Grava a mensagem do agente com retry. NUNCA lança — o cliente já recebeu o envio, então
+// falha de gravação não pode abortar o fluxo (abortar → re-disparo → mensagem duplicada).
+async function persistAgentMessage(supabase: any, row: any): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    const { error } = await supabase.from("messages").insert(row);
+    if (!error || error.code === "23505") return;
+    if (i < 2) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+    else console.error("[flow] mensagem ENVIADA mas não gravada (não aborta p/ não duplicar):", error.message, "| conv:", row.conversation_id);
+  }
+}
+
 async function sendWhatsAppMessage(execution: any, text: string) {
   const { resolveChannelId, getRealChannelToken } = await import("@/lib/instances");
   const channelId = await resolveChannelId(execution.phone_number_id);
@@ -156,9 +167,11 @@ async function sendWhatsAppMessage(execution: any, text: string) {
 
   const data = await sendWaTextWithRetry(execution.phone_number_id, channelToken, execution.customer_phone, text);
 
-  // Persist the message in the database
+  // Persiste a mensagem. IMPORTANTE: o cliente JÁ recebeu (send ok acima). Se o insert
+  // falhar, NÃO pode abortar o fluxo — abortar leva a re-disparo, e o lead receberia a
+  // mensagem DUPLICADA (foi exatamente esse o bug da Larissa). Retry e, se falhar, só loga.
   const supabase = getSupabase();
-  const { error: insertError } = await supabase.from("messages").insert({
+  await persistAgentMessage(supabase, {
     conversation_id: execution.conversation_id,
     sender_type: "agent",
     content: text,
@@ -171,11 +184,6 @@ async function sendWhatsAppMessage(execution: any, text: string) {
       source: "flow",
     },
   });
-
-  if (insertError) {
-    console.error("Falha ao inserir mensagem do fluxo:", insertError);
-    throw new Error(`DB insert: ${insertError.message}`);
-  }
 
   await supabase.from("conversations").update({
     last_message: text,
@@ -207,7 +215,8 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
 
   const supabase = getSupabase();
   const labels: Record<string, string> = { image: "📷 Imagem", audio: "🎵 Áudio", video: "🎬 Vídeo" };
-  const { error: insertError } = await supabase.from("messages").insert({
+  // Mídia JÁ enviada (waMsgId ok) → insert não-fatal (não aborta = não re-dispara = não duplica).
+  await persistAgentMessage(supabase, {
     conversation_id: execution.conversation_id,
     sender_type: "agent",
     content: url,
@@ -218,15 +227,9 @@ async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image"
       flow_execution_id: execution.id,
       flow_step_node_id: execution.current_node_id,
       source: "flow",
-      // Legenda vai no metadata (mesma convenção do send-media do chat) pra aparecer no MessageBubble.
       caption: caption || undefined,
     },
   });
-
-  if (insertError) {
-    console.error("Falha ao inserir mídia do fluxo:", insertError);
-    throw new Error(`DB insert media: ${insertError.message}`);
-  }
 
   await supabase.from("conversations").update({
     last_message: (caption && caption.trim()) || labels[mediaType] || "📎 Mídia",
