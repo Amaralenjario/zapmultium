@@ -23,20 +23,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "flow_id e lead_phone são obrigatórios" }, { status: 400, headers: CORS });
     }
 
-    // Resolve o número do vendedor (de qual canal a mensagem sai).
-    const myPhones = await sellerPhoneNumberIds(actor.userId);
-    if (phoneNumberId) {
-      // se passou um, precisa ser um canal do vendedor (admin pode qualquer um)
-      if (actor.role !== "admin" && actor.role !== "supervisor" && !myPhones.includes(phoneNumberId)) {
-        return NextResponse.json({ error: "Esse número não é seu" }, { status: 403, headers: CORS });
-      }
-    } else {
-      if (myPhones.length === 0) return NextResponse.json({ error: "Você não tem número vinculado" }, { status: 400, headers: CORS });
-      if (myPhones.length > 1) return NextResponse.json({ error: "Você tem mais de um número — a extensão precisa informar qual", need_phone: true, phones: myPhones }, { status: 409, headers: CORS });
-      phoneNumberId = myPhones[0];
-    }
-
     const admin = createAdminClient();
+    const isAdmin = actor.role === "admin" || actor.role === "supervisor";
+    const myPhones = await sellerPhoneNumberIds(actor.userId);
 
     // 1) cliente (find-or-create por telefone, robusto a corrida — 4 tentativas)
     let customerId: string | null = null;
@@ -49,17 +38,41 @@ export async function POST(request: Request) {
     }
     if (!customerId) return NextResponse.json({ error: "Não foi possível resolver o lead" }, { status: 500, headers: CORS });
 
-    // 2) conversa ATIVA desse cliente NESSE número (find-or-create, robusto a corrida)
+    // 2) DE QUAL número disparar + a conversa.
+    // Preferência: a conversa ATIVA que o lead JÁ tem num canal do vendedor (o número onde
+    // ele está falando de fato). Isso resolve o vendedor com VÁRIOS números (ex.: Luiz) — não
+    // precisa escolher, usa onde o lead está.
     let conversationId: string | null = null;
-    for (let i = 0; i < 4 && !conversationId; i++) {
-      const { data: found } = await admin.from("conversations").select("id").eq("customer_id", customerId).eq("status", "active").filter("metadata->>phone_number_id", "eq", phoneNumberId).limit(1);
-      if (found && found.length > 0) { conversationId = found[0].id; break; }
-      const { data: created, error } = await admin.from("conversations").insert({ customer_id: customerId, status: "active", source: "extension", unread_count: 0, metadata: { phone_number_id: phoneNumberId } }).select("id").single();
-      if (created?.id) { conversationId = created.id; break; }
-      // 23505 = índice único (outro criou a mesma conversa ativa) → volta e acha.
-      if (error?.code !== "23505" && i < 3) await new Promise((r) => setTimeout(r, 150 * (i + 1)));
+    const { data: activeConvs } = await admin
+      .from("conversations")
+      .select("id, metadata")
+      .eq("customer_id", customerId).eq("status", "active")
+      .order("last_message_at", { ascending: false, nullsFirst: false });
+    for (const c of activeConvs || []) {
+      const pid = (c as any).metadata?.phone_number_id;
+      if (pid && (isAdmin || myPhones.includes(pid))) { conversationId = c.id; phoneNumberId = pid; break; }
     }
-    if (!conversationId) return NextResponse.json({ error: "Não foi possível abrir a conversa" }, { status: 500, headers: CORS });
+
+    // Sem conversa existente num canal do vendedor → precisa decidir o número e criar a conversa.
+    if (!conversationId) {
+      if (phoneNumberId) {
+        if (!isAdmin && !myPhones.includes(phoneNumberId)) return NextResponse.json({ error: "Esse número não é seu" }, { status: 403, headers: CORS });
+      } else if (myPhones.length === 1) {
+        phoneNumberId = myPhones[0];
+      } else if (myPhones.length === 0) {
+        return NextResponse.json({ error: "Você não tem número vinculado" }, { status: 400, headers: CORS });
+      } else {
+        return NextResponse.json({ error: "Lead sem conversa — informe de qual número disparar", need_phone: true, phones: myPhones }, { status: 409, headers: CORS });
+      }
+      for (let i = 0; i < 4 && !conversationId; i++) {
+        const { data: found } = await admin.from("conversations").select("id").eq("customer_id", customerId).eq("status", "active").filter("metadata->>phone_number_id", "eq", phoneNumberId).limit(1);
+        if (found && found.length > 0) { conversationId = found[0].id; break; }
+        const { data: created, error } = await admin.from("conversations").insert({ customer_id: customerId, status: "active", source: "extension", unread_count: 0, metadata: { phone_number_id: phoneNumberId } }).select("id").single();
+        if (created?.id) { conversationId = created.id; break; }
+        if (error?.code !== "23505" && i < 3) await new Promise((r) => setTimeout(r, 150 * (i + 1)));
+      }
+    }
+    if (!conversationId || !phoneNumberId) return NextResponse.json({ error: "Não foi possível abrir a conversa" }, { status: 500, headers: CORS });
 
     // 3) dispara pelo motor EM BACKGROUND (waitUntil) → resposta INSTANTÂNEA pra extensão.
     // O vendedor não espera o 1º envio: já pode navegar/disparar o próximo. O startFlow
