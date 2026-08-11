@@ -12,6 +12,31 @@ export function getInstanceByPhoneId(phoneNumberId: string) {
   return instanceMap[phoneNumberId] || null;
 }
 
+// Resolve o evohub_channel_id de um número. Primeiro o mapa fixo (rápido), senão o BANCO
+// (operations_channels) — assim QUALQUER número cadastrado funciona, sem depender do mapa
+// hardcoded. Era a causa de "Canal não encontrado" nos números novos (ex.: RESERVA do Luiz).
+export async function resolveChannelId(phoneNumberId: string): Promise<string | null> {
+  const fromMap = instanceMap[phoneNumberId]?.channelId;
+  if (fromMap) return fromMap;
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data } = await supabase
+      .from("operations_channels")
+      .select("evohub_channel_id")
+      .eq("phone_number_id", phoneNumberId)
+      .eq("is_active", true)
+      .maybeSingle();
+    return (data as any)?.evohub_channel_id || null;
+  } catch {
+    return null;
+  }
+}
+
 export function getInstanceName(phoneNumberId: string): string | null {
   return instanceMap[phoneNumberId]?.name || null;
 }

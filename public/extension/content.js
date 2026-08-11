@@ -108,7 +108,12 @@
   let firing = false;
   function fire(flow, btn) {
     if (firing || btn.disabled) return;
-    const leadPhone = (phoneInput.value || "").replace(/\D/g, "");
+    // Re-detecta o número da conversa ABERTA AGORA (evita disparar pro lead errado quando
+    // troca de conversa rápido e o campo ainda não atualizou). Se não há conversa aberta,
+    // usa o que está no campo (número digitado na mão).
+    const fresh = detectChat().phone;
+    if (fresh && document.activeElement !== phoneInput) phoneInput.value = fresh;
+    const leadPhone = (fresh || phoneInput.value || "").replace(/\D/g, "");
     if (leadPhone.length < 10 || leadPhone.length > 15) { setStatus("Confira o número do lead.", "err"); return; }
     firing = true; btn.disabled = true;
     setStatus("Disparando “" + flow.name + "”…");

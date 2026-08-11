@@ -148,10 +148,10 @@ async function sendWaTextWithRetry(phoneNumberId: string, token: string, to: str
 }
 
 async function sendWhatsAppMessage(execution: any, text: string) {
-  const { getInstanceByPhoneId, getRealChannelToken } = await import("@/lib/instances");
-  const instance = getInstanceByPhoneId(execution.phone_number_id);
-  if (!instance?.channelId) throw new Error("Canal não encontrado");
-  const channelToken = await getRealChannelToken(instance.channelId);
+  const { resolveChannelId, getRealChannelToken } = await import("@/lib/instances");
+  const channelId = await resolveChannelId(execution.phone_number_id);
+  if (!channelId) throw new Error("Canal não encontrado");
+  const channelToken = await getRealChannelToken(channelId);
   if (!channelToken) throw new Error("Token do canal não encontrado");
 
   const data = await sendWaTextWithRetry(execution.phone_number_id, channelToken, execution.customer_phone, text);
@@ -188,10 +188,10 @@ async function sendWhatsAppMessage(execution: any, text: string) {
 }
 
 async function sendWhatsAppMedia(execution: any, url: string, mediaType: "image" | "audio" | "video", caption?: string) {
-  const { getInstanceByPhoneId, getRealChannelToken } = await import("@/lib/instances");
-  const instance = getInstanceByPhoneId(execution.phone_number_id);
-  if (!instance?.channelId) throw new Error("Canal não encontrado");
-  const channelToken = await getRealChannelToken(instance.channelId);
+  const { resolveChannelId, getRealChannelToken } = await import("@/lib/instances");
+  const channelId = await resolveChannelId(execution.phone_number_id);
+  if (!channelId) throw new Error("Canal não encontrado");
+  const channelToken = await getRealChannelToken(channelId);
   if (!channelToken) throw new Error("Token do canal não encontrado");
 
   // Use audio pipeline for media processing

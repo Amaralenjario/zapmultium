@@ -17,12 +17,12 @@ export async function POST(request: Request) {
     // Buscar channel token real da EvoHub
     let channelToken = "";
 
-    // Primeiro tenta pegar via mapeamento de instâncias
-    const { getInstanceByPhoneId } = await import("@/lib/instances");
-    const instance = getInstanceByPhoneId(phoneNumberId);
+    // Resolve o canal pelo mapa fixo OU pelo banco (operations_channels) — números novos incluídos.
+    const { resolveChannelId } = await import("@/lib/instances");
+    const channelId = await resolveChannelId(phoneNumberId);
 
-    if (instance?.channelId) {
-      const realToken = await getRealChannelToken(instance.channelId);
+    if (channelId) {
+      const realToken = await getRealChannelToken(channelId);
       channelToken = realToken || "";
     }
 

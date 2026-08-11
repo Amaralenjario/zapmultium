@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getInstanceByPhoneId, getRealChannelToken } from "@/lib/instances";
+import { resolveChannelId, getRealChannelToken } from "@/lib/instances";
 import { friendlyWaError } from "@/lib/wa-errors";
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
@@ -33,9 +33,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
     }
 
-    const instance = getInstanceByPhoneId(phoneNumberId);
-    if (!instance?.channelId) return NextResponse.json({ error: "Canal não encontrado" }, { status: 404 });
-    const channelToken = await getRealChannelToken(instance.channelId);
+    const channelId = await resolveChannelId(phoneNumberId);
+    if (!channelId) return NextResponse.json({ error: "Canal não encontrado" }, { status: 404 });
+    const channelToken = await getRealChannelToken(channelId);
     if (!channelToken) return NextResponse.json({ error: "Token do canal não encontrado" }, { status: 404 });
 
     const mimeType = file.type;
