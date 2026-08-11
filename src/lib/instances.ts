@@ -48,43 +48,45 @@ const TOKEN_TTL_MS = 10 * 60 * 1000; // 10 min
 export async function getRealChannelToken(channelId: string): Promise<string | null> {
   const cached = tokenCache.get(channelId);
   if (cached && cached.exp > Date.now()) return cached.token;
+
+  // Descobre a conta EvoHub do canal (pra usar a api_key certa).
+  let apiKey = process.env.EVOHUB_API_KEY;
+  let apiUrl = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
   try {
-    // Tenta pegar token real via API da EvoHub
     const { createClient } = await import("@supabase/supabase-js");
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
-
-    // Buscar conta EvoHub do canal
-    let apiKey = process.env.EVOHUB_API_KEY;
-    let apiUrl = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
-
     const { data: opCh } = await supabase
       .from("operations_channels")
-      .select("evo_account_id, evo_account:evo_account_id(api_key, api_url)")
+      .select("evo_account:evo_account_id(api_key, api_url)")
       .eq("evohub_channel_id", channelId)
       .maybeSingle();
+    const acc = opCh as any;
+    if (acc?.evo_account?.api_key) apiKey = acc.evo_account.api_key;
+    if (acc?.evo_account?.api_url) apiUrl = acc.evo_account.api_url;
+  } catch { /* usa env */ }
+  if (!apiKey) return null;
 
-    if (opCh) {
-      const acc = opCh as any;
-      if (acc.evo_account?.api_key) apiKey = acc.evo_account.api_key;
-      if (acc.evo_account?.api_url) apiUrl = acc.evo_account.api_url;
-    }
-
-    if (!apiKey) return null;
-
-    const res = await fetch(`${apiUrl}/api/v1/channels/${channelId}`, {
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    });
-    const data = await res.json();
-    const token = data?.token || null;
-    if (token) tokenCache.set(channelId, { token, exp: Date.now() + TOKEN_TTL_MS });
-    return token;
-  } catch {
-    // Fallback: usa o token do instanceMap
-    const entry = Object.values(instanceMap).find(i => i.channelId === channelId);
-    return entry?.channelToken || null;
+  // Busca o token REAL com retry (EvoHub instável não pode abortar o envio).
+  // IMPORTANTE: NÃO cair mais em token hardcoded antigo — token velho gera UNAUTHORIZED
+  // na Meta (funil ia "sem foto"). Se não conseguir o token de verdade, retorna null
+  // (falha limpa/transitória) em vez de enviar com token morto.
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(`${apiUrl}/api/v1/channels/${channelId}`, {
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const token = data?.token || null;
+        if (token) { tokenCache.set(channelId, { token, exp: Date.now() + TOKEN_TTL_MS }); return token; }
+      }
+    } catch { /* rede — tenta de novo */ }
+    if (i < 2) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
   }
+  return null;
 }
