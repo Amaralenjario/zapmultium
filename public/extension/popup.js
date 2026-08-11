@@ -2,8 +2,10 @@ const baseUrlEl = document.getElementById("baseUrl");
 const codeEl = document.getElementById("code");
 const okEl = document.getElementById("ok");
 
+const DEFAULT_BASE = "https://zapmultium.vercel.app";
+
 chrome.storage.sync.get(["baseUrl", "code"], (cfg) => {
-  baseUrlEl.value = cfg.baseUrl || "";
+  baseUrlEl.value = cfg.baseUrl || DEFAULT_BASE;
   codeEl.value = cfg.code || "";
 });
 

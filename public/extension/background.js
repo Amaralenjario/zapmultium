@@ -2,9 +2,11 @@
 // (O content script no WhatsApp Web NÃO pode chamar a API por causa do CSP da página —
 // por isso as requisições saem daqui, do background, que tem host_permissions.)
 
+const DEFAULT_BASE = "https://zapmultium.vercel.app";
+
 async function getConfig() {
   const { baseUrl, code } = await chrome.storage.sync.get(["baseUrl", "code"]);
-  return { baseUrl: (baseUrl || "").replace(/\/+$/, ""), code: code || "" };
+  return { baseUrl: (baseUrl || DEFAULT_BASE).replace(/\/+$/, ""), code: code || "" };
 }
 
 async function apiFlows() {

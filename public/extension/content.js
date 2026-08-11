@@ -8,17 +8,32 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   let cachedFlows = null; // carrega uma vez
 
-  // ---- Detecta número + nome da conversa aberta (header do WhatsApp Web) ----
+  // ---- Detecta número + nome da conversa aberta ----
+  // Pega o número REAL do lead mesmo com contato SALVO: toda mensagem tem um data-id no
+  // formato `<fromMe>_<numero>@c.us_<id>` — o número da conversa está ali, não depende do nome.
+  function numberFromDataId() {
+    const els = document.querySelectorAll("#main [data-id]");
+    for (const el of els) {
+      const id = el.getAttribute("data-id") || "";
+      const jid = id.split("_")[1] || "";      // ex.: 5547999999999@c.us  (ignora grupos @g.us)
+      if (jid.endsWith("@c.us")) {
+        const d = jid.replace("@c.us", "").replace(/\D/g, "");
+        if (d.length >= 10 && d.length <= 15) return d;
+      }
+    }
+    return "";
+  }
   function detectChat() {
     const header = $("#main header");
-    if (!header) return { phone: "", name: "" };
-    // O título costuma estar no primeiro span com title/dir=auto do header.
-    const titleEl = header.querySelector("span[title]") || header.querySelector("span[dir='auto']");
-    const raw = (titleEl?.getAttribute("title") || titleEl?.textContent || "").trim();
-    const digits = raw.replace(/\D/g, "");
-    // Se o título já é um número (lead não salvo) → é o telefone. Senão é nome (contato salvo).
-    if (digits.length >= 10 && digits.length <= 15) return { phone: digits, name: raw };
-    return { phone: "", name: raw };
+    const titleEl = header?.querySelector("span[title]") || header?.querySelector("span[dir='auto']");
+    const name = (titleEl?.getAttribute("title") || titleEl?.textContent || "").trim();
+    // 1º tenta o número real via data-id (funciona com contato salvo). 2º cai no título (lead não salvo).
+    let phone = numberFromDataId();
+    if (!phone) {
+      const d = name.replace(/\D/g, "");
+      if (d.length >= 10 && d.length <= 15) phone = d;
+    }
+    return { phone, name };
   }
 
   // ---- UI ----
