@@ -8,6 +8,111 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ── Helpers resilientes ─────────────────────────────────────────────────────
+// O supabase-js NÃO lança em erro de banco: devolve { error }. A versão antiga
+// ignorava esse retorno — sob carga (pool/timeout, e a GABI recebe ~1800 leads/
+// dia) o insert falhava e a mensagem do lead SUMIA em silêncio. Agora tudo tem
+// retry e, se ainda assim falhar, grava um log gritante pra termos rastro.
+
+async function insertMessageWithRetry(row: any, attempts = 4): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    const { error } = await supabase.from("messages").insert(row);
+    if (!error) return true;
+    if (error.code === "23505") return true; // duplicata → já está lá, ok
+    if (i < attempts - 1) {
+      await sleep(200 * (i + 1)); // 200/400/600ms
+    } else {
+      console.error(
+        "[EvoHub] PERDA DE MENSAGEM — insert falhou após", attempts, "tentativas:",
+        error.message, "| conv:", row.conversation_id, "| wa_id:", row?.metadata?.wa_message_id,
+      );
+    }
+  }
+  return false;
+}
+
+async function upsertCustomerWithRetry(name: string, phone: string, attempts = 4): Promise<{ id: string } | null> {
+  let lastErr: any;
+  for (let i = 0; i < attempts; i++) {
+    const { data, error } = await supabase
+      .from("customers")
+      .upsert({ name, phone, last_interaction_at: new Date().toISOString() }, { onConflict: "phone" })
+      .select("id")
+      .single();
+    if (data?.id) return data as { id: string };
+    lastErr = error;
+    if (i < attempts - 1) await sleep(200 * (i + 1));
+  }
+  console.error("[EvoHub] PERDA DE LEAD — upsert do cliente falhou:", lastErr?.message, "| phone:", phone);
+  return null;
+}
+
+// Resolve (ou cria) a conversa ATIVA do cliente NAQUELE número. Nunca deixa
+// convId indefinido em silêncio: se tudo falhar, cai numa conversa ativa
+// existente (melhor grudar no canal errado do que PERDER a mensagem) e loga.
+async function resolveConversation(custId: string, phoneNumberId: string): Promise<{ id: string; unread: number; isNew: boolean } | null> {
+  // 1) Já existe ativa NESTE número?
+  for (let i = 0; i < 3; i++) {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("id, unread_count")
+      .eq("customer_id", custId)
+      .eq("status", "active")
+      .filter("metadata->>phone_number_id", "eq", phoneNumberId)
+      .limit(1);
+    if (!error) {
+      if (data && data.length > 0) return { id: data[0].id, unread: (data[0].unread_count || 0) + 1, isNew: false };
+      break; // sem erro e vazio → segue pra criar
+    }
+    await sleep(200 * (i + 1));
+  }
+
+  // 2) Criar. Em corrida (23505) → re-busca a que o outro processo criou.
+  for (let i = 0; i < 3; i++) {
+    const { data: newConv, error: insertErr } = await supabase
+      .from("conversations")
+      .insert({
+        customer_id: custId,
+        status: "active",
+        source: "whatsapp",
+        unread_count: 1,
+        metadata: { phone_number_id: phoneNumberId },
+      })
+      .select("id")
+      .single();
+    if (!insertErr && newConv) return { id: newConv.id, unread: 1, isNew: true };
+
+    // corrida ou constraint → tenta achar a ativa deste número
+    const { data: raced } = await supabase
+      .from("conversations")
+      .select("id, unread_count")
+      .eq("customer_id", custId)
+      .eq("status", "active")
+      .filter("metadata->>phone_number_id", "eq", phoneNumberId)
+      .limit(1);
+    if (raced && raced.length > 0) return { id: raced[0].id, unread: (raced[0].unread_count || 0) + 1, isNew: false };
+    if (i < 2) await sleep(200 * (i + 1));
+  }
+
+  // 3) Último recurso: qualquer conversa ativa do cliente (evita DROP).
+  const { data: anyActive } = await supabase
+    .from("conversations")
+    .select("id, unread_count")
+    .eq("customer_id", custId)
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (anyActive && anyActive.length > 0) {
+    console.error("[EvoHub] CONVERSA FALLBACK (canal diferente) — cliente:", custId, "| pid esperado:", phoneNumberId, "| usou conv:", anyActive[0].id);
+    return { id: anyActive[0].id, unread: (anyActive[0].unread_count || 0) + 1, isNew: false };
+  }
+
+  console.error("[EvoHub] PERDA DE LEAD — não resolveu conversa:", custId, "| pid:", phoneNumberId);
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   // GET: verificação do webhook Meta (hub.challenge)
   const url = new URL(req.url);
@@ -70,6 +175,16 @@ async function processWhatsAppMessages(payload: any) {
       const metadata = value.metadata || {};
       const phoneNumberId = metadata.phone_number_id || entry.id;
 
+      // LOG CRU (caixa-preta): registra TODA mensagem recebida ANTES de processar.
+      // msg no log cru mas NÃO em messages = a gente dropou; sumiu e nem no log cru
+      // = EvoHub/Meta não mandou. É 1 insert barato e desnicessário travar por ele.
+      if (messages.length > 0) {
+        try {
+          const raw = messages.map((m: any) => ({ wa_message_id: m.id, phone_number_id: phoneNumberId, from_phone: m.from || null }));
+          await supabase.from("webhook_inbound_log").insert(raw);
+        } catch (_e) { /* nunca bloqueia ingestão */ }
+      }
+
       // Processa status de leitura (lead visualizou)
       if (statuses.length > 0) {
         await processReadReceipts(supabase, statuses);
@@ -83,105 +198,60 @@ async function processWhatsAppMessages(payload: any) {
       const customerName = contact?.profile?.name || from;
       const customerPhone = from;
 
-      // Upsert customer
-      const { data: cust } = await supabase
-        .from("customers")
-        .upsert(
-          { name: customerName, phone: customerPhone, last_interaction_at: new Date().toISOString() },
-          { onConflict: "phone" }
-        )
-        .select("id")
-        .single();
+      // Upsert customer (com retry — não descarta o lote por soluço)
+      const cust = await upsertCustomerWithRetry(customerName, customerPhone);
+      if (!cust) continue; // já logado como PERDA DE LEAD
 
-      if (!cust) continue;
+      // Resolve/cria conversa ativa deste número (nunca deixa convId indefinido)
+      const resolved = await resolveConversation(cust.id, phoneNumberId);
+      if (!resolved) continue; // já logado como PERDA DE LEAD
+      const convId = resolved.id;
+      const unread = resolved.unread;
 
-      // Buscar ou criar conversa (filtra pelo número também pra isolar por canal)
-      const { data: existing } = await supabase
+      await supabase
         .from("conversations")
-        .select("id, unread_count")
-        .eq("customer_id", cust.id)
-        .eq("status", "active")
-        .filter("metadata->>phone_number_id", "eq", phoneNumberId)
-        .limit(1);
+        .update({
+          last_message_at: new Date().toISOString(),
+          unread_count: unread,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", convId);
 
-      let convId: string;
-      let unread = 1;
-
-      if (existing && existing.length > 0) {
-        convId = existing[0].id;
-        unread = (existing[0].unread_count || 0) + 1;
-        await supabase
+      // Nota de transferência: só quando a conversa é NOVA e o lead já foi
+      // atendido por outro número antes.
+      if (resolved.isNew) {
+        const { data: prevConvs } = await supabase
           .from("conversations")
-          .update({
-            last_message_at: new Date().toISOString(),
-            unread_count: unread,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", convId);
-      } else {
-        // Tentar criar, se já existir (race condition), buscar a existente
-        const { data: newConv, error: insertErr } = await supabase
-          .from("conversations")
-          .insert({
-            customer_id: cust.id,
-            status: "active",
-            source: "whatsapp",
-            unread_count: 1,
-            metadata: { phone_number_id: phoneNumberId },
-          })
-          .select("id")
-          .single();
+          .select("id, metadata")
+          .eq("customer_id", cust.id)
+          .neq("id", convId)
+          .not("metadata->>phone_number_id", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(5);
 
-        if (insertErr) {
-          // Já existe - buscar a existente
-          const { data: fallback } = await supabase
-            .from("conversations")
-            .select("id, unread_count")
-            .eq("customer_id", cust.id)
-            .eq("status", "active")
-            .limit(1);
-          if (fallback && fallback.length > 0) {
-            convId = fallback[0].id;
-            unread = (fallback[0].unread_count || 0) + 1;
+        if (prevConvs && prevConvs.length > 0) {
+          const sellerNames: Record<string, string> = {
+            "897878513398151": "VH - 1692",
+            "892228177298374": "GUSTAVO",
+            "1034222499765101": "AMANDA",
+            "976034132269824": "GABI",
+            "1234821229708132": "NC - CAIO",
+          };
+          const seenSellers = new Set<string>();
+          for (const pc of prevConvs) {
+            const pid = (pc as any).metadata?.phone_number_id || "";
+            const name = sellerNames[pid];
+            if (name && !seenSellers.has(name)) seenSellers.add(name);
           }
-        } else if (newConv) {
-          convId = newConv.id;
-
-          // Verificar se o lead já foi atendido por outro número antes
-          const { data: prevConvs } = await supabase
-            .from("conversations")
-            .select("id, metadata")
-            .eq("customer_id", cust.id)
-            .neq("id", convId)
-            .not("metadata->>phone_number_id", "is", null)
-            .order("created_at", { ascending: false })
-            .limit(5);
-
-          if (prevConvs && prevConvs.length > 0) {
-            // Mapear phone_number_id → nome do vendedor
-            const sellerNames: Record<string, string> = {
-              "897878513398151": "VH - 1692",
-              "892228177298374": "GUSTAVO",
-              "1034222499765101": "AMANDA",
-              "976034132269824": "GABI",
-              "1234821229708132": "NC - CAIO",
-            };
-            const seenSellers = new Set<string>();
-            for (const pc of prevConvs) {
-              const pid = (pc as any).metadata?.phone_number_id || "";
-              const name = sellerNames[pid];
-              if (name && !seenSellers.has(name)) seenSellers.add(name);
-            }
-            if (seenSellers.size > 0) {
-              const sellersList = Array.from(seenSellers).join(", ");
-              await supabase.from("messages").insert({
-                conversation_id: convId,
-                sender_type: "system",
-                content: `📋 Este lead já foi atendido por: ${sellersList}`,
-                content_type: "text",
-                metadata: { type: "transfer_note" },
-              });
-            }
+          if (seenSellers.size > 0) {
+            const sellersList = Array.from(seenSellers).join(", ");
+            await insertMessageWithRetry({
+              conversation_id: convId,
+              sender_type: "system",
+              content: `📋 Este lead já foi atendido por: ${sellersList}`,
+              content_type: "text",
+              metadata: { type: "transfer_note" },
+            });
           }
         }
       }
@@ -216,7 +286,6 @@ async function processWhatsAppMessages(payload: any) {
           const reactedMsgId = msg.reaction?.message_id;
           const emoji = msg.reaction?.emoji || "";
           if (reactedMsgId && emoji) {
-            // Buscar a mensagem original pelo wa_message_id
             const { data: targetMsgs } = await supabase
               .from("messages")
               .select("id, metadata")
@@ -228,7 +297,6 @@ async function processWhatsAppMessages(payload: any) {
               const meta = target.metadata || {};
               const reactions = meta.reactions || {};
               if (emoji === "") {
-                // Remover reação
                 delete reactions[msg.from || "unknown"];
               } else {
                 reactions[msg.from || "unknown"] = emoji;
@@ -237,7 +305,6 @@ async function processWhatsAppMessages(payload: any) {
                 metadata: { ...meta, reactions },
               }).eq("id", target.id);
 
-              // Atualizar preview da conversa
               const previewText = emoji === "" ? "removeu reação" : `reagiu ${emoji}`;
               await supabase.from("conversations").update({
                 last_message: previewText,
@@ -258,7 +325,7 @@ async function processWhatsAppMessages(payload: any) {
         }
 
         if (content) {
-          // Check for duplicate by wa_message_id
+          // Dedup por wa_message_id
           const waId = msg.id;
           if (waId) {
             const { data: existing } = await supabase
@@ -274,7 +341,7 @@ async function processWhatsAppMessages(payload: any) {
           const caption = msg.image?.caption || msg.video?.caption || null;
           const context = msg.context || null;
 
-          // If this message is a reply, look up the quoted message content
+          // Se é resposta, busca o conteúdo citado
           if (context?.id) {
             const { data: quoted } = await supabase
               .from("messages")
@@ -288,7 +355,7 @@ async function processWhatsAppMessages(payload: any) {
             }
           }
 
-          await supabase.from("messages").insert({
+          await insertMessageWithRetry({
             conversation_id: convId,
             sender_type: "customer",
             content,
