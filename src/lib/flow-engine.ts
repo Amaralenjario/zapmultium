@@ -398,8 +398,15 @@ export async function processFlowStep(executionId: string): Promise<{
 
         case "add_tag":
         case "remove_tag": {
-          const res = await applyTag(execution, currentNode, currentNode.type === "add_tag" ? "add" : "remove");
-          logResult.tag = res?.name;
+          // Etiqueta é side-effect de CRM — NUNCA pode travar o fluxo de VENDA. Se falhar
+          // (ex.: "Não foi possível resolver o lead"), loga e SEGUE enviando o resto do funil.
+          try {
+            const res = await applyTag(execution, currentNode, currentNode.type === "add_tag" ? "add" : "remove");
+            logResult.tag = res?.name;
+          } catch (e: any) {
+            logResult.tagError = e?.message || "falha ao etiquetar";
+            console.error("[flow] etiqueta falhou, seguindo mesmo assim:", e?.message);
+          }
           logResult.action = currentNode.type;
           nextNodeId = findNextNode(currentNode.id, edges);
           break;

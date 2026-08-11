@@ -45,48 +45,78 @@ export function getInstanceName(phoneNumberId: string): string | null {
 const tokenCache = new Map<string, { token: string; exp: number }>();
 const TOKEN_TTL_MS = 10 * 60 * 1000; // 10 min
 
+const DB_TOKEN_FRESH_MS = 8 * 60 * 1000; // token do banco fresco por 8 min → nem chama o EvoHub
+
+// Compartilha o token bom (em memória) no banco, throttled — assim, mesmo com o EvoHub
+// fora, as OUTRAS instâncias (frias) usam esse token em vez de falhar.
+const dbSharedAt = new Map<string, number>();
+function shareTokenToDb(channelId: string, token: string) {
+  if (Date.now() - (dbSharedAt.get(channelId) || 0) < 5 * 60 * 1000) return;
+  dbSharedAt.set(channelId, Date.now());
+  import("@supabase/supabase-js").then(({ createClient }) => {
+    const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
+    sb.from("operations_channels").update({ cached_token: token, cached_token_at: new Date().toISOString() }).eq("evohub_channel_id", channelId).then(() => {}, () => {});
+  }).catch(() => {});
+}
+
 export async function getRealChannelToken(channelId: string): Promise<string | null> {
   const cached = tokenCache.get(channelId);
-  if (cached && cached.exp > Date.now()) return cached.token;
+  if (cached && cached.exp > Date.now()) { shareTokenToDb(channelId, cached.token); return cached.token; }
 
-  // Descobre a conta EvoHub do canal (pra usar a api_key certa).
   let apiKey = process.env.EVOHUB_API_KEY;
   let apiUrl = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
+  let dbToken: string | null = null;   // último token bom salvo (cache compartilhado)
+  let dbTokenAt = 0;
+  let supabase: any = null;
   try {
     const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
+    supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
     const { data: opCh } = await supabase
       .from("operations_channels")
-      .select("evo_account:evo_account_id(api_key, api_url)")
+      .select("cached_token, cached_token_at, evo_account:evo_account_id(api_key, api_url)")
       .eq("evohub_channel_id", channelId)
       .maybeSingle();
     const acc = opCh as any;
     if (acc?.evo_account?.api_key) apiKey = acc.evo_account.api_key;
     if (acc?.evo_account?.api_url) apiUrl = acc.evo_account.api_url;
+    if (acc?.cached_token) { dbToken = acc.cached_token; dbTokenAt = acc.cached_token_at ? Date.parse(acc.cached_token_at) : 0; }
   } catch { /* usa env */ }
-  if (!apiKey) return null;
 
-  // Busca o token REAL com retry (EvoHub instável não pode abortar o envio).
-  // IMPORTANTE: NÃO cair mais em token hardcoded antigo — token velho gera UNAUTHORIZED
-  // na Meta (funil ia "sem foto"). Se não conseguir o token de verdade, retorna null
-  // (falha limpa/transitória) em vez de enviar com token morto.
-  for (let i = 0; i < 3; i++) {
+  // CACHE COMPARTILHADO: se o token do banco está fresco (<8min), usa direto — NÃO bate no
+  // EvoHub. Isso corta as chamadas ao /channels (que sob carga eram limitadas/falhavam →
+  // "Token do canal não encontrado" → fluxo abortando, ex.: Caio não conseguindo disparar).
+  if (dbToken && Date.now() - dbTokenAt < DB_TOKEN_FRESH_MS) {
+    tokenCache.set(channelId, { token: dbToken, exp: Date.now() + TOKEN_TTL_MS });
+    return dbToken;
+  }
+  if (!apiKey) return dbToken; // sem key mas tem token salvo → usa mesmo assim
+
+  // Token velho/ausente → refresca no EvoHub (2 tentativas, timeout curto — o EvoHub
+  // PENDURA quando cai, então não dá pra esperar muito nem tentar demais). Persiste no banco.
+  for (let i = 0; i < 2; i++) {
     try {
       const res = await fetch(`${apiUrl}/api/v1/channels/${channelId}`, {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         cache: "no-store",
+        signal: AbortSignal.timeout(4000),
       });
       if (res.ok) {
         const data = await res.json();
         const token = data?.token || null;
-        if (token) { tokenCache.set(channelId, { token, exp: Date.now() + TOKEN_TTL_MS }); return token; }
+        if (token) {
+          tokenCache.set(channelId, { token, exp: Date.now() + TOKEN_TTL_MS });
+          if (supabase) supabase.from("operations_channels").update({ cached_token: token, cached_token_at: new Date().toISOString() }).eq("evohub_channel_id", channelId).then(() => {}, () => {});
+          return token;
+        }
       }
-    } catch { /* rede — tenta de novo */ }
-    if (i < 2) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
+    } catch { /* timeout/rede — tenta mais 1x */ }
+    if (i < 1) await new Promise((r) => setTimeout(r, 400));
   }
+  // EvoHub falhou → usa o último token bom salvo (resiliência: não aborta o fluxo por soluço).
+  if (dbToken) { tokenCache.set(channelId, { token: dbToken, exp: Date.now() + 2 * 60 * 1000 }); return dbToken; }
   return null;
 }
