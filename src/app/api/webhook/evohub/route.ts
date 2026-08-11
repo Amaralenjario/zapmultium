@@ -140,7 +140,8 @@ async function processMessages(payload: any) {
       // msg que sumiu e nem no log cru = EvoHub/Meta não mandou. Fire-and-forget (não bloqueia).
       if (messages.length > 0) {
         const raw = messages.map((m: any) => ({ wa_message_id: m.id, phone_number_id: phoneNumberId, from_phone: m.from || null }));
-        supabase.from("webhook_inbound_log").insert(raw as any).then(() => {}, () => {});
+        // waitUntil: sem isso o insert fire-and-forget morre quando a função retorna (Vercel).
+        waitUntil((async () => { try { await supabase.from("webhook_inbound_log").insert(raw as any); } catch { /* diag */ } })());
       }
 
       // Status de entrega/leitura das mensagens que ENVIAMOS (read receipts, falhas)
