@@ -38,31 +38,26 @@ export async function POST(request: Request) {
 
     const admin = createAdminClient();
 
-    // 1) cliente (find-or-create por telefone, sem sobrescrever nome existente)
+    // 1) cliente (find-or-create por telefone, robusto a corrida — 4 tentativas)
     let customerId: string | null = null;
-    const { data: existingCust } = await admin.from("customers").select("id").eq("phone", leadPhone).maybeSingle();
-    if (existingCust) customerId = existingCust.id;
-    else {
-      const { data: created } = await admin.from("customers").insert({ name: leadPhone, phone: leadPhone, last_interaction_at: new Date().toISOString() }).select("id").single();
-      customerId = created?.id || null;
-      if (!customerId) {
-        const { data: again } = await admin.from("customers").select("id").eq("phone", leadPhone).maybeSingle();
-        customerId = again?.id || null;
-      }
+    for (let i = 0; i < 4 && !customerId; i++) {
+      const { data: found } = await admin.from("customers").select("id").eq("phone", leadPhone).maybeSingle();
+      if (found) { customerId = found.id; break; }
+      const { data: created, error } = await admin.from("customers").insert({ name: leadPhone, phone: leadPhone, last_interaction_at: new Date().toISOString() }).select("id").single();
+      if (created?.id) { customerId = created.id; break; }
+      if (error?.code !== "23505" && i < 3) await new Promise((r) => setTimeout(r, 150 * (i + 1)));
     }
     if (!customerId) return NextResponse.json({ error: "Não foi possível resolver o lead" }, { status: 500, headers: CORS });
 
-    // 2) conversa ativa desse cliente NESSE número (find-or-create)
+    // 2) conversa ATIVA desse cliente NESSE número (find-or-create, robusto a corrida)
     let conversationId: string | null = null;
-    const { data: conv } = await admin.from("conversations").select("id").eq("customer_id", customerId).eq("status", "active").filter("metadata->>phone_number_id", "eq", phoneNumberId).limit(1);
-    if (conv && conv.length > 0) conversationId = conv[0].id;
-    else {
-      const { data: newConv } = await admin.from("conversations").insert({ customer_id: customerId, status: "active", source: "extension", unread_count: 0, metadata: { phone_number_id: phoneNumberId } }).select("id").single();
-      conversationId = newConv?.id || null;
-      if (!conversationId) {
-        const { data: again } = await admin.from("conversations").select("id").eq("customer_id", customerId).eq("status", "active").filter("metadata->>phone_number_id", "eq", phoneNumberId).limit(1);
-        conversationId = again?.[0]?.id || null;
-      }
+    for (let i = 0; i < 4 && !conversationId; i++) {
+      const { data: found } = await admin.from("conversations").select("id").eq("customer_id", customerId).eq("status", "active").filter("metadata->>phone_number_id", "eq", phoneNumberId).limit(1);
+      if (found && found.length > 0) { conversationId = found[0].id; break; }
+      const { data: created, error } = await admin.from("conversations").insert({ customer_id: customerId, status: "active", source: "extension", unread_count: 0, metadata: { phone_number_id: phoneNumberId } }).select("id").single();
+      if (created?.id) { conversationId = created.id; break; }
+      // 23505 = índice único (outro criou a mesma conversa ativa) → volta e acha.
+      if (error?.code !== "23505" && i < 3) await new Promise((r) => setTimeout(r, 150 * (i + 1)));
     }
     if (!conversationId) return NextResponse.json({ error: "Não foi possível abrir a conversa" }, { status: 500, headers: CORS });
 
