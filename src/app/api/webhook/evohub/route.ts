@@ -139,9 +139,10 @@ async function processMessages(payload: any) {
       // atribuir perda com precisão: msg no log cru mas NÃO em messages = a gente dropou;
       // msg que sumiu e nem no log cru = EvoHub/Meta não mandou. Fire-and-forget (não bloqueia).
       if (messages.length > 0) {
+        // AWAITED (não fire-and-forget nem waitUntil — esses não gravavam de forma confiável).
+        // É 1 insert com índice, custo mínimo, e garante a caixa-preta.
         const raw = messages.map((m: any) => ({ wa_message_id: m.id, phone_number_id: phoneNumberId, from_phone: m.from || null }));
-        // waitUntil: sem isso o insert fire-and-forget morre quando a função retorna (Vercel).
-        waitUntil((async () => { try { await supabase.from("webhook_inbound_log").insert(raw as any); } catch { /* diag */ } })());
+        try { await supabase.from("webhook_inbound_log").insert(raw as any); } catch (e: any) { console.error("[EvoHub] log cru falhou:", e?.message); }
       }
 
       // Status de entrega/leitura das mensagens que ENVIAMOS (read receipts, falhas)
