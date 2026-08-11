@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { width: 280px; margin: 0; font-family: system-ui, sans-serif; background: #12151c; color: #e7e9ee; }
+    .h { padding: 14px; font-weight: 800; font-size: 15px; background: #171b24; border-bottom: 1px solid #2a2f3a; }
+    .b { padding: 14px; }
+    label { font-size: 11px; color: #8b93a7; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    input { width: 100%; margin: 6px 0 14px; padding: 9px 10px; border-radius: 9px; border: 1px solid #2a2f3a; background: #0d1016; color: #fff; font-size: 13px; box-sizing: border-box; }
+    input:focus { outline: none; border-color: #3A5AF0; }
+    button { width: 100%; padding: 10px; border: none; border-radius: 9px; background: #3A5AF0; color: #fff; font-weight: 800; font-size: 13px; cursor: pointer; }
+    button:hover { background: #2f49d0; }
+    .ok { margin-top: 10px; font-size: 12px; color: #34d399; min-height: 15px; text-align: center; }
+    .hint { font-size: 11px; color: #8b93a7; margin-top: -8px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <div class="h">⚡ ZapMultium</div>
+  <div class="b">
+    <label>URL do sistema</label>
+    <input id="baseUrl" placeholder="https://seu-sistema.com" />
+    <label>Seu código</label>
+    <input id="code" placeholder="ZPX-..." />
+    <div class="hint">Pegue seu código na aba Vendedores do painel.</div>
+    <button id="save">Salvar</button>
+    <div class="ok" id="ok"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

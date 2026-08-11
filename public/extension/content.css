@@ -1,0 +1,21 @@
+#zpx-panel { position: fixed; right: 18px; bottom: 18px; z-index: 2147483000; font-family: system-ui, -apple-system, sans-serif; }
+#zpx-fab { width: 48px; height: 48px; border-radius: 50%; background: #3A5AF0; color: #fff; font-size: 22px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 6px 20px rgba(58,90,240,.45); user-select: none; }
+#zpx-fab:hover { background: #2f49d0; }
+#zpx-card { position: absolute; right: 0; bottom: 60px; width: 300px; max-height: 60vh; overflow: hidden;
+  background: #12151c; color: #e7e9ee; border: 1px solid #2a2f3a; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+.zpx-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #171b24; font-weight: 800; font-size: 14px; border-bottom: 1px solid #2a2f3a; }
+.zpx-head button { background: none; border: none; color: #8b93a7; cursor: pointer; font-size: 16px; }
+.zpx-body { padding: 12px 14px; overflow-y: auto; }
+.zpx-lbl { font-size: 11px; color: #8b93a7; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.zpx-input { width: 100%; margin: 6px 0 12px; padding: 9px 10px; border-radius: 9px; border: 1px solid #2a2f3a; background: #0d1016; color: #fff; font-size: 14px; box-sizing: border-box; }
+.zpx-input:focus { outline: none; border-color: #3A5AF0; }
+.zpx-flows { display: flex; flex-direction: column; gap: 7px; }
+.zpx-flow { text-align: left; padding: 9px 11px; border-radius: 9px; border: 1px solid #2a2f3a; background: #171b24; color: #e7e9ee; font-size: 13px; font-weight: 600; cursor: pointer; }
+.zpx-flow:hover { border-color: #3A5AF0; background: #1c2130; }
+.zpx-flow:disabled { opacity: .5; cursor: default; }
+.zpx-muted { color: #8b93a7; font-size: 12px; padding: 6px 0; }
+.zpx-err { color: #ff6b6b; font-size: 12px; padding: 6px 0; }
+.zpx-status { margin-top: 10px; font-size: 12px; min-height: 16px; color: #8b93a7; }
+.zpx-status.ok { color: #34d399; }
+.zpx-status.err { color: #ff6b6b; }

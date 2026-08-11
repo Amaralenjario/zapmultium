@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "ZapMultium — Disparar Fluxos",
+  "version": "1.0.0",
+  "description": "Dispara os fluxos do ZapMultium direto do WhatsApp Web (o envio é pelo motor do ZapMultium).",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": { "default_popup": "popup.html", "default_title": "ZapMultium" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, Headset } from "lucide-react";
+import { Plus, Pencil, Trash2, Headset, Download, Copy, Check } from "lucide-react";
 import Avatar from "@/components/chat/Avatar";
 import CreateSellerModal from "@/components/sellers/CreateSellerModal";
 import EditSellerModal from "@/components/sellers/EditSellerModal";
@@ -28,10 +28,28 @@ export default function VendedoresPage() {
   const [channels, setChannels] = useState<ChannelOption[]>([]);
   const supabaseClient = createClient();
 
+  const [extKeys, setExtKeys] = useState<Record<string, string>>({});
+  const [copied, setCopied] = useState<string | null>(null);
+
   const fetchSellers = async () => {
     const res = await fetch("/api/sellers");
     const data = await res.json();
     if (Array.isArray(data)) setSellers(data);
+  };
+
+  const fetchExtKeys = async () => {
+    try {
+      const res = await fetch("/api/extension/keys");
+      if (res.ok) { const d = await res.json(); setExtKeys(d.keys || {}); }
+    } catch {}
+  };
+
+  const copyCode = (code: string) => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(code);
+      toast.success("Código copiado!");
+      setTimeout(() => setCopied(null), 2000);
+    });
   };
 
   const fetchChannels = useCallback(async () => {
@@ -49,7 +67,7 @@ export default function VendedoresPage() {
     } catch {}
   }, []);
 
-  useEffect(() => { fetchSellers(); fetchChannels(); }, [fetchChannels]);
+  useEffect(() => { fetchSellers(); fetchChannels(); fetchExtKeys(); }, [fetchChannels]);
 
   const handleDelete = async (seller: Seller) => {
     if (!confirm(`Excluir "${seller.name}" permanentemente?`)) return;
@@ -77,9 +95,20 @@ export default function VendedoresPage() {
           <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-tx">Vendedores</h1>
           <p className="text-tx2 text-sm mt-0.5">{sellers.length} {sellers.length === 1 ? "vendedor cadastrado" : "vendedores cadastrados"}</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition flex items-center gap-2">
-          <Plus className="w-4 h-4" strokeWidth={2.2} /> Novo vendedor
-        </button>
+        <div className="flex items-center gap-2">
+          <a href="/zapmultium-extension.zip" download className="rounded-control border border-bd bg-surface2 px-4 py-2.5 text-sm font-bold text-tx2 hover:text-accent hover:border-accent/50 transition flex items-center gap-2" title="Baixar a extensão do WhatsApp Web pra mandar pros vendedores">
+            <Download className="w-4 h-4" strokeWidth={2.2} /> Baixar extensão
+          </a>
+          <button onClick={() => setShowCreate(true)} className="rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition flex items-center gap-2">
+            <Plus className="w-4 h-4" strokeWidth={2.2} /> Novo vendedor
+          </button>
+        </div>
+      </div>
+
+      {/* Como instalar */}
+      <div className="rounded-card border border-bd bg-surface2 p-4 mb-5 text-[13px] text-tx2">
+        <p className="font-bold text-tx mb-1 flex items-center gap-2">⚡ Extensão do WhatsApp Web</p>
+        <p className="text-tx3">Baixe o ZIP, extraia, e no Chrome vá em <b className="text-tx2">chrome://extensions</b> → ative o <b className="text-tx2">Modo desenvolvedor</b> → <b className="text-tx2">Carregar sem compactação</b> → selecione a pasta <b className="text-tx2">extension</b>. Depois clique no ícone da extensão, cole a <b className="text-tx2">URL do sistema</b> e o <b className="text-tx2">código do vendedor</b> (abaixo). No WhatsApp Web vai aparecer o botão ⚡.</p>
       </div>
 
       <div className="rounded-card border border-bd bg-surface overflow-hidden">
@@ -92,6 +121,7 @@ export default function VendedoresPage() {
                 <th className="text-left p-4">Função</th>
                 <th className="text-left p-4">Instância</th>
                 <th className="text-left p-4">Status</th>
+                <th className="text-left p-4">Código extensão</th>
                 <th className="text-right p-4">Ações</th>
               </tr>
             </thead>
@@ -119,6 +149,14 @@ export default function VendedoresPage() {
                         <span className={`w-2 h-2 rounded-full ${s.is_active ? "bg-success" : "bg-tx3"}`} />{s.is_active ? "Ativo" : "Inativo"}
                       </span>
                     </td>
+                    <td className="p-4">
+                      {extKeys[s.id] ? (
+                        <button onClick={() => copyCode(extKeys[s.id])} className="inline-flex items-center gap-1.5 rounded-lg border border-bd bg-surface2 px-2.5 py-1 font-mono text-[12px] text-tx2 hover:border-accent/50 hover:text-accent transition" title="Clique pra copiar">
+                          {extKeys[s.id]}
+                          {copied === extKeys[s.id] ? <Check className="w-3.5 h-3.5 text-success" strokeWidth={2.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={2} />}
+                        </button>
+                      ) : <span className="text-tx3 text-xs">—</span>}
+                    </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => setEditing(s)} className="p-1.5 rounded-lg text-tx3 hover:text-accent hover:bg-accentsoft transition" title="Editar"><Pencil className="w-4 h-4" strokeWidth={2} /></button>
@@ -130,7 +168,7 @@ export default function VendedoresPage() {
               })}
               {sellers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-14 text-center text-tx3">
+                  <td colSpan={7} className="p-14 text-center text-tx3">
                     <Headset className="w-12 h-12 mx-auto mb-3 opacity-30" strokeWidth={1.5} />
                     <p className="font-semibold text-tx2">Nenhum vendedor cadastrado</p>
                     <p className="text-sm mt-1">Clique em &ldquo;Novo vendedor&rdquo; para começar</p>
