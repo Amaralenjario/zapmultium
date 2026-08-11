@@ -24,6 +24,25 @@ interface Message {
 
 interface CrmTag { id: string; name: string; color: string; column_key: string; }
 
+// União por id (nunca descarta) + reconcilia otimistas (remove o temp cujo conteúdo já
+// chegou como msg real do agente). Retorna prev se nada mudou (evita re-render à toa).
+function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
+  const byId = new Map<string, Message>();
+  for (const m of prev) byId.set(m.id, m);
+  let changed = false;
+  for (const d of incoming) {
+    const ex = byId.get(d.id);
+    if (!ex) { byId.set(d.id, d); changed = true; }
+    else if (ex.read_at !== d.read_at || ex.content !== d.content) { byId.set(d.id, d); changed = true; }
+  }
+  const realAgent = new Set(Array.from(byId.values()).filter(m => !String(m.id).startsWith("tmp_") && m.sender_type === "agent").map(m => m.content));
+  for (const [id, m] of byId) {
+    if (String(id).startsWith("tmp_") && m.metadata?.pending && realAgent.has(m.content)) { byId.delete(id); changed = true; }
+  }
+  if (!changed && byId.size === prev.length) return prev;
+  return Array.from(byId.values()).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+}
+
 export default function ChatWindow({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,15 +114,33 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
     return () => clearInterval(i);
   }, [window24h]);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (replace = false) => {
     const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
-    setMessages(data || []);
+    // MESCLA (não substitui) pra não apagar mensagens otimísticas ainda não confirmadas.
+    // replace=true só na 1ª carga da conversa (quando prev já foi zerado).
+    if (replace) setMessages(data || []);
+    else setMessages(prev => mergeMessages(prev, (data || []) as Message[]));
     setLoading(false);
+  };
+
+  // Envio OTIMISTA: mostra a mensagem na hora que o atendente dá enter (some a demora de segundos).
+  // Ela é reconciliada (removida) quando a msg real do agente chega via realtime/poll.
+  const addOptimistic = (content: string) => {
+    const tmp = {
+      id: "tmp_" + Date.now() + "_" + Math.random().toString(36).slice(2),
+      conversation_id: conversation.id,
+      sender_type: "agent" as const,
+      content,
+      content_type: "text",
+      created_at: new Date().toISOString(),
+      metadata: { pending: true },
+    } as unknown as Message;
+    setMessages(prev => [...prev, tmp]);
   };
 
   useEffect(() => {
     setMessages([]); setLoading(true); prevLength.current = 0;
-    fetchMessages();
+    fetchMessages(true);
     supabase.from("operations_channels").select("phone_number_id, evohub_channel_name, operation:operation_id(name, color)").eq("is_active", true).not("phone_number_id", "is", null).then(({ data }) => {
       if (data) {
         const map: Record<string, { name: string; color: string; channel?: string }> = {};
@@ -220,22 +257,8 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
     const interval = setInterval(async () => {
       const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
       if (data && data.length > 0) {
-        // UNIÃO por id — NUNCA descarta o que já está na tela. Antes, um polling
-        // desatualizado (fetch iniciado antes de chegarem msgs via tempo-real) fazia
-        // `prev.filter(in data)` e REMOVIA da tela mensagens reais → "pulando mensagens"
-        // (a msg estava no banco mas sumia da conversa). Agora só adiciona/atualiza.
-        setMessages(prev => {
-          const byId = new Map<string, Message>();
-          for (const m of prev) byId.set(m.id, m);
-          let changed = false;
-          for (const d of data) {
-            const ex = byId.get(d.id);
-            if (!ex) { byId.set(d.id, d); changed = true; }
-            else if (ex.read_at !== d.read_at || ex.content !== d.content) { byId.set(d.id, d); changed = true; }
-          }
-          if (!changed && byId.size === prev.length) return prev;
-          return Array.from(byId.values()).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        });
+        // União por id + reconcilia otimistas (helper). NUNCA descarta msg real.
+        setMessages(prev => mergeMessages(prev, data as Message[]));
       }
     }, 4000);
     return () => clearInterval(interval);
@@ -244,7 +267,15 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   useEffect(() => {
     const channel = supabase.channel("messages-" + conversation.id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversation.id}` }, (payload) => {
-        setMessages(prev => { if (prev.some(m => m.id === (payload.new as Message).id)) return prev; return [...prev, payload.new as Message]; });
+        setMessages(prev => {
+          const incoming = payload.new as Message;
+          if (prev.some(m => m.id === incoming.id)) return prev;
+          // remove o otimista (temp) de mesmo conteúdo quando a msg real do agente chega
+          const next = incoming.sender_type === "agent"
+            ? prev.filter(m => !(String(m.id).startsWith("tmp_") && (m.metadata as any)?.pending && m.content === incoming.content))
+            : prev;
+          return [...next, incoming];
+        });
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [conversation.id]);
@@ -338,7 +369,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
         )}
       </div>
 
-      <ChatInput conversationId={conversation.id} phoneNumberId={phoneNumberId} customerPhone={customerPhone} onMessageSent={fetchMessages} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />
+      <ChatInput conversationId={conversation.id} phoneNumberId={phoneNumberId} customerPhone={customerPhone} onMessageSent={fetchMessages} onOptimisticSend={addOptimistic} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />
       <FlowBar conversationId={conversation.id} phoneNumberId={phoneNumberId} customerPhone={customerPhone} />
 
       {showTagModal && (

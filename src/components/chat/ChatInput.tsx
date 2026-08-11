@@ -12,13 +12,14 @@ interface ChatInputProps {
   phoneNumberId?: string;
   customerPhone?: string;
   onMessageSent: () => void;
+  onOptimisticSend?: (content: string) => void;
   replyTo?: { id: string; content: string; sender_type: string; metadata?: any } | null;
   onCancelReply?: () => void;
 }
 
 const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
 
-export default function ChatInput({ conversationId, phoneNumberId, customerPhone, onMessageSent, replyTo, onCancelReply }: ChatInputProps) {
+export default function ChatInput({ conversationId, phoneNumberId, customerPhone, onMessageSent, onOptimisticSend, replyTo, onCancelReply }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -103,6 +104,8 @@ export default function ChatInput({ conversationId, phoneNumberId, customerPhone
     setMessage("");
     if (onCancelReply) onCancelReply();
     inputRef.current?.focus();
+    // Aparece NA HORA na conversa (otimista); o envio real segue em background e reconcilia.
+    onOptimisticSend?.(trimmed);
 
     const doSend = async () => {
       try {
