@@ -10,6 +10,35 @@ function detectOgg(buf: Buffer, url: string, contentType: string): boolean {
   return false;
 }
 
+// POST /messages resiliente: usa res.text() (não estoura em HTML de gateway 5xx) e
+// REPETE em falha transitória — mas SÓ quando não veio message_id (Meta não aceitou),
+// então não duplica a mídia. Erro 4xx (token/número) é permanente, não repete.
+async function postMessageWithRetry(phoneNumberId: string, token: string, body: any, attempts = 3): Promise<{ wamid: string | null; error?: string }> {
+  let lastErr: string | undefined;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const raw = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(raw); } catch { /* HTML/gateway */ }
+      const wamid = data?.messages?.[0]?.id;
+      if (wamid) return { wamid };
+      if (res.status >= 400 && res.status < 500) {
+        return { wamid: null, error: (data ? JSON.stringify(data) : raw).slice(0, 300) }; // permanente
+      }
+      lastErr = data ? JSON.stringify(data).slice(0, 200) : `HTTP ${res.status}: ${raw.slice(0, 120)}`;
+    } catch (e: any) {
+      lastErr = e?.message || "fetch failed";
+    }
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+  }
+  return { wamid: null, error: lastErr || "falha no envio de mídia" };
+}
+
 export async function processAndSendMedia(
   fileUrl: string,
   mediaType: "image" | "audio" | "video",
@@ -23,14 +52,9 @@ export async function processAndSendMedia(
       const mediaObj: any = { link: fileUrl };
       if (caption) mediaObj.caption = caption;
       const body: any = { messaging_product: "whatsapp", to, type: mediaType === "video" ? "video" : mediaType, [mediaType]: mediaObj };
-      const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
-        method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      const wamid = data?.messages?.[0]?.id;
+      const { wamid, error } = await postMessageWithRetry(phoneNumberId, channelToken, body);
       if (wamid) return { waMessageId: wamid };
-      if (!res.ok) throw new Error(JSON.stringify(data));
-      return { waMessageId: wamid };
+      return { waMessageId: null, error: error || "Falha ao enviar mídia" };
     }
 
     // ─── Audio: check for OGG version first ───
@@ -74,25 +98,13 @@ export async function processAndSendMedia(
 
     // Se conseguiu media_id, envia como audio nativo (sempre voice: true para aparecer como mensagem de voz)
     if (mediaId) {
-      const sendBody = { type: "audio", audio: { id: mediaId, voice: true } };
-      const sendRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
-        method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ messaging_product: "whatsapp", to, ...sendBody }),
-      });
-      const sendData = await sendRes.json();
-      const wamid = sendData?.messages?.[0]?.id;
+      const { wamid } = await postMessageWithRetry(phoneNumberId, channelToken, { messaging_product: "whatsapp", to, type: "audio", audio: { id: mediaId, voice: true } });
       if (wamid) return { waMessageId: wamid };
     }
 
     // Se não conseguiu media_id → NUNCA usa document. Envia como audio com link mesmo assim.
-    // Meta aceita link pra audio? Não na teoria, mas vamos tentar.
-    const fallbackBody = { messaging_product: "whatsapp", to, type: "audio", audio: { link: fileUrl, voice: true } };
-    const fRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
-      method: "POST", headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" }, body: JSON.stringify(fallbackBody),
-    });
-    const fData = await fRes.json();
-    const wamid = fData?.messages?.[0]?.id;
-    if (wamid) return { waMessageId: wamid };
+    const { wamid: fWamid } = await postMessageWithRetry(phoneNumberId, channelToken, { messaging_product: "whatsapp", to, type: "audio", audio: { link: fileUrl, voice: true } });
+    if (fWamid) return { waMessageId: fWamid };
     // Se nem link funcionou, retorna erro (NUNCA document)
     throw new Error("Falha ao enviar áudio - upload media_id e link falharam");
   } catch (err: any) {
