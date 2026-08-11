@@ -76,6 +76,8 @@ export default function ConversationList({
   const allConvsRef = useRef<Conversation[]>([]);
   useEffect(() => { allConvsRef.current = allConversations; }, [allConversations]);
   const listRef = useRef<HTMLDivElement>(null);
+  // Cursor do polling delta: só busca conversas mudadas DEPOIS disso (não re-busca 500 toda hora).
+  const lastSyncRef = useRef<string | null>(null);
 
   // Aplica o escopo do vendedor (por canal) numa query. Admin/supervisor → sem filtro.
   const applyScope = useCallback((q: any) => {
@@ -217,26 +219,32 @@ export default function ConversationList({
   }, [search]);
 
   useEffect(() => {
-    const fetchConversations = async () => {
-      let q = supabase
-        .from("conversations")
-        .select(CONV_SELECT)
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(LIVE_LIMIT);
-      // Escopo do vendedor DENTRO da query (não no cliente): o limite passa a valer
-      // só pras conversas do canal dele, então ele vê TODAS as dele, não só as mais recentes.
+    // full=true → carga inicial (as 500 mais recentes). full=false → DELTA: só as conversas
+    // mudadas desde o último sync (barato — normalmente poucas linhas). Isso troca o "re-buscar
+    // 500 a cada poll" (que travava a coluna e atrasava o preview) por um fetch minúsculo.
+    const applyScopeConv = (q: any) => {
       const phones = sellerPhonesRef.current;
       if (Array.isArray(phones)) {
-        if (phones.length === 0) q = q.eq("metadata->>phone_number_id", "__none__");
-        else if (phones.length === 1) q = q.eq("metadata->>phone_number_id", phones[0]);
-        else q = q.or(phones.map((p) => `metadata->>phone_number_id.eq.${p}`).join(","));
+        if (phones.length === 0) return q.eq("metadata->>phone_number_id", "__none__");
+        if (phones.length === 1) return q.eq("metadata->>phone_number_id", phones[0]);
+        return q.or(phones.map((p: string) => `metadata->>phone_number_id.eq.${p}`).join(","));
       }
+      return q;
+    };
+    const fetchConversations = async (full = false) => {
+      let q = supabase.from("conversations").select(CONV_SELECT);
+      if (full || !lastSyncRef.current) {
+        q = q.order("last_message_at", { ascending: false, nullsFirst: false }).limit(LIVE_LIMIT);
+      } else {
+        q = q.gt("updated_at", lastSyncRef.current).order("updated_at", { ascending: false }).limit(200);
+      }
+      q = applyScopeConv(q);
       const { data } = await q;
-      // MESCLA (não substitui): mantém as páginas antigas já carregadas via "carregar mais",
-      // e só atualiza/insere as recentes. Sem isso, o polling apagava o que foi paginado.
-      setAllConversations((prev) => mergeConvs(prev, (data as Conversation[]) || []));
-      setClickLocked(true);
-      setTimeout(() => setClickLocked(false), 150);
+      lastSyncRef.current = new Date().toISOString();
+      if (data && data.length > 0) {
+        setAllConversations((prev) => mergeConvs(prev, data as Conversation[]));
+      }
+      if (full) { setClickLocked(true); setTimeout(() => setClickLocked(false), 150); }
     };
 
     const fetchSellerChannels = async () => {
@@ -312,17 +320,34 @@ export default function ConversationList({
     };
 
     // Resolve o escopo do vendedor ANTES da 1ª busca de conversas (pra filtrar pelo canal dele).
-    fetchSellerChannels().then(fetchConversations);
+    fetchSellerChannels().then(() => fetchConversations(true));
     fetchOperations();
     fetchActiveFlows();
     fetchLeadTags();
 
+    // Realtime atualiza a LINHA na hora (preview instantâneo) — sem re-buscar 500.
     const channel = supabase
       .channel("conversations-list")
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => fetchConversations())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, (payload) => {
+        const row: any = payload.new;
+        setAllConversations((prev) => {
+          const i = prev.findIndex((c) => c.id === row.id);
+          if (i === -1) return prev; // não é do nosso escopo/janela → o delta pega
+          const next = [...prev];
+          next[i] = { ...next[i], last_message: row.last_message, last_message_at: row.last_message_at, last_message_sender: row.last_message_sender, last_message_read: row.last_message_read, unread_count: row.unread_count, archived: row.archived, status: row.status };
+          next.sort((a, b) => (b.last_message_at ? Date.parse(b.last_message_at) : 0) - (a.last_message_at ? Date.parse(a.last_message_at) : 0));
+          return next;
+        });
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "conversations" }, (payload) => {
+        // conversa nova → busca ELA (com o cliente) e mescla. Barato (1 linha).
+        supabase.from("conversations").select(CONV_SELECT).eq("id", (payload.new as any).id).single()
+          .then(({ data }) => { if (data) setAllConversations((prev) => mergeConvs(prev, [data as Conversation])); });
+      })
       .subscribe();
 
-    const interval = setInterval(fetchConversations, 6000);
+    // Poll DELTA a cada 3s (barato — só o que mudou) como rede de segurança do realtime.
+    const interval = setInterval(() => fetchConversations(false), 3000);
     const flowInterval = setInterval(fetchActiveFlows, 4000);
 
     const onFlowTriggered = () => fetchActiveFlows();
@@ -330,9 +355,8 @@ export default function ConversationList({
     window.addEventListener("flow-triggered", onFlowTriggered);
     window.addEventListener("lead-tagged", onLeadTagged);
 
-    // Aba em segundo plano → o navegador estrangula o timer de 3s e o realtime pode cair,
-    // então leads novos "não aparecem" até mexer. Ao voltar o foco/visibilidade, recarrega na hora.
-    const onVisible = () => { if (document.visibilityState === "visible") { fetchConversations(); fetchActiveFlows(); } };
+    // Ao voltar o foco, faz um delta na hora (aba em background estrangula o timer).
+    const onVisible = () => { if (document.visibilityState === "visible") { fetchConversations(false); fetchActiveFlows(); } };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
 

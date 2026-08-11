@@ -2,6 +2,7 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "crons": [
-    { "path": "/api/flows/advance", "schedule": "* * * * *" }
+    { "path": "/api/flows/advance", "schedule": "* * * * *" },
+    { "path": "/api/maintenance/cleanup", "schedule": "0 4 * * *" }
   ]
 }
