@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveExtensionKey, sellerPhoneNumberIds, CORS } from "@/lib/extension-auth";
 
@@ -65,19 +66,13 @@ export async function POST(request: Request) {
     }
     if (!conversationId) return NextResponse.json({ error: "Não foi possível abrir a conversa" }, { status: 500, headers: CORS });
 
-    // 3) dispara pelo motor (mesmo caminho do painel: trata dup/fila/processa)
+    // 3) dispara pelo motor EM BACKGROUND (waitUntil) → resposta INSTANTÂNEA pra extensão.
+    // O vendedor não espera o 1º envio: já pode navegar/disparar o próximo. O startFlow
+    // trata dup/fila e o processamento segue no servidor mesmo após responder.
     const { startFlow } = await import("@/lib/flow-engine");
-    const result = await startFlow({ flow_id: flowId, conversation_id: conversationId, customer_phone: leadPhone, phone_number_id: phoneNumberId });
+    waitUntil(startFlow({ flow_id: flowId, conversation_id: conversationId, customer_phone: leadPhone, phone_number_id: phoneNumberId }).catch(() => {}));
 
-    const msg: Record<string, string> = {
-      started: "Fluxo disparado!",
-      queued: "Fluxo na fila (já tem um rodando nessa conversa).",
-      already_active: "Esse fluxo já está ativo nessa conversa.",
-      no_start: "Fluxo sem nó de início.",
-      not_found: "Fluxo não encontrado.",
-    };
-    const ok = result === "started" || result === "queued";
-    return NextResponse.json({ ok, result, message: msg[result] || result, conversation_id: conversationId }, { headers: CORS });
+    return NextResponse.json({ ok: true, message: "Disparando…", conversation_id: conversationId }, { headers: CORS });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500, headers: CORS });
   }
