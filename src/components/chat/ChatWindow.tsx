@@ -220,10 +220,21 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
     const interval = setInterval(async () => {
       const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
       if (data && data.length > 0) {
+        // UNIÃO por id — NUNCA descarta o que já está na tela. Antes, um polling
+        // desatualizado (fetch iniciado antes de chegarem msgs via tempo-real) fazia
+        // `prev.filter(in data)` e REMOVIA da tela mensagens reais → "pulando mensagens"
+        // (a msg estava no banco mas sumia da conversa). Agora só adiciona/atualiza.
         setMessages(prev => {
-          if (data.length === prev.length) { let changed = false; const u = prev.map(m => { const f = data.find(d => d.id === m.id); if (f && f.read_at !== m.read_at) { changed = true; return f; } return m; }); return changed ? u : prev; }
-          const ids = new Set(data.map(m => m.id));
-          return [...prev.filter(m => ids.has(m.id)), ...data.filter(d => !prev.some(m => m.id === d.id))].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+          const byId = new Map<string, Message>();
+          for (const m of prev) byId.set(m.id, m);
+          let changed = false;
+          for (const d of data) {
+            const ex = byId.get(d.id);
+            if (!ex) { byId.set(d.id, d); changed = true; }
+            else if (ex.read_at !== d.read_at || ex.content !== d.content) { byId.set(d.id, d); changed = true; }
+          }
+          if (!changed && byId.size === prev.length) return prev;
+          return Array.from(byId.values()).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
         });
       }
     }, 2000);

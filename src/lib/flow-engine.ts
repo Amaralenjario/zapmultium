@@ -616,16 +616,16 @@ export async function advanceExpiredExecutions(): Promise<number> {
     .select("id")
     .eq("status", "paused")
     .lte("next_step_at", new Date().toISOString())
-    .limit(50);
+    .limit(60);
 
   let advanced = 0;
-  for (const exec of (expired || [])) {
-    try {
-      await processFlowStep(exec.id);
-      advanced++;
-    } catch {
-      // continue with next
-    }
+  const list = expired || [];
+  // Processa em PARALELO LIMITADO (5 por vez) em vez de um-por-um. O lock atômico
+  // (paused→running) em processFlowStep evita processamento duplo entre navegadores;
+  // aqui só aceleramos o esvaziamento da fila pra aguentar muitos fluxos ao mesmo tempo.
+  for (let i = 0; i < list.length; i += 5) {
+    const results = await Promise.allSettled(list.slice(i, i + 5).map((e) => processFlowStep(e.id)));
+    advanced += results.filter((r) => r.status === "fulfilled").length;
   }
 
   advanced += await advanceAwaitingReplies();
