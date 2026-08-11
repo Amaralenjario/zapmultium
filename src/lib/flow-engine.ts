@@ -95,6 +95,12 @@ async function applyTag(execution: any, node: any, action: "add" | "remove"): Pr
     const cust = Array.isArray(conv?.customer) ? conv.customer[0] : conv?.customer;
     const { data: created } = await sb.from("leads").insert({ name: cust?.name || phone, phone, status: tag.column_key || "new", source: "whatsapp", customer_id: conv?.customer_id || null, conversation_id: execution.conversation_id }).select("id").single();
     leadId = created?.id || null;
+    // Corrida: o webhook (ou outro passo) pode ter criado o lead no mesmo instante e o
+    // insert falha por telefone duplicado (created=null). Re-busca antes de desistir.
+    if (!leadId) {
+      const { data: again } = await sb.from("leads").select("id").eq("phone", phone).maybeSingle();
+      leadId = again?.id || null;
+    }
   }
   if (!leadId) throw new Error("Não foi possível resolver o lead");
 
@@ -107,6 +113,40 @@ async function applyTag(execution: any, node: any, action: "add" | "remove"): Pr
   return { tagId: tag.id, name: tag.name || name };
 }
 
+// Envia texto pela Meta com RETRY em falhas TRANSITÓRIAS (rede caiu, gateway 5xx que
+// devolve HTML, resposta não-JSON). Erros PERMANENTES (4xx: token inválido, número ruim)
+// não são repetidos — sobem na hora. Sem isso, um soluço de rede matava o fluxo no meio.
+async function sendWaTextWithRetry(phoneNumberId: string, token: string, to: string, text: string, attempts = 3): Promise<any> {
+  let lastErr: any;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: text } }),
+      });
+      const raw = await res.text();
+      if (res.ok) {
+        try { return JSON.parse(raw); }
+        catch { lastErr = new Error("resposta não-JSON no envio"); } // transitório → retry
+      } else if (res.status >= 400 && res.status < 500) {
+        // permanente (token/numero/permissão) — repetir não adianta
+        const perr: any = new Error(raw.slice(0, 300));
+        perr.__permanent = true;
+        throw perr;
+      } else {
+        lastErr = new Error(`HTTP ${res.status}: ${raw.slice(0, 150)}`); // 5xx → retry
+      }
+    } catch (e: any) {
+      // 4xx lançado acima → permanente, não repete
+      if (e?.__permanent) throw e;
+      lastErr = e; // fetch failed / timeout → transitório
+    }
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1))); // 400/800ms
+  }
+  throw lastErr;
+}
+
 async function sendWhatsAppMessage(execution: any, text: string) {
   const { getInstanceByPhoneId, getRealChannelToken } = await import("@/lib/instances");
   const instance = getInstanceByPhoneId(execution.phone_number_id);
@@ -114,22 +154,7 @@ async function sendWhatsAppMessage(execution: any, text: string) {
   const channelToken = await getRealChannelToken(instance.channelId);
   if (!channelToken) throw new Error("Token do canal não encontrado");
 
-  const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${execution.phone_number_id}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${channelToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: execution.customer_phone,
-      type: "text",
-      text: { body: text },
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(JSON.stringify(data));
+  const data = await sendWaTextWithRetry(execution.phone_number_id, channelToken, execution.customer_phone, text);
 
   // Persist the message in the database
   const supabase = getSupabase();
