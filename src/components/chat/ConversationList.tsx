@@ -322,7 +322,7 @@ export default function ConversationList({
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => fetchConversations())
       .subscribe();
 
-    const interval = setInterval(fetchConversations, 3000);
+    const interval = setInterval(fetchConversations, 6000);
     const flowInterval = setInterval(fetchActiveFlows, 4000);
 
     const onFlowTriggered = () => fetchActiveFlows();

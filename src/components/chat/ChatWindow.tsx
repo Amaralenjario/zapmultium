@@ -237,7 +237,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
           return Array.from(byId.values()).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
         });
       }
-    }, 2000);
+    }, 4000);
     return () => clearInterval(interval);
   }, [conversation.id]);
 
