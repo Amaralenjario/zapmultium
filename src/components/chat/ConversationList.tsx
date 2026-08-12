@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag, Pin, Megaphone, Check } from "lucide-react";
+import { useEffect, useState, useCallback, useMemo, useRef, useLayoutEffect } from "react";
+import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag, Pin, Megaphone, Check, ArrowUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 import Avatar from "./Avatar";
@@ -104,6 +104,23 @@ export default function ConversationList({
   const listRef = useRef<HTMLDivElement>(null);
   // Cursor do polling delta: só busca conversas mudadas DEPOIS disso (não re-busca 500 toda hora).
   const lastSyncRef = useRef<string | null>(null);
+  // Âncora de scroll: guarda a conversa do TOPO da viewport + offset. Quando a lista se
+  // reordena (uma conversa sobe ao receber/enviar msg), restauramos a posição pra o scroll
+  // NÃO pular junto com ela. null = usuário está no topo (aí conversa nova aparece normal).
+  const anchorRef = useRef<{ cid: string; delta: number } | null>(null);
+  const [isAtTop, setIsAtTop] = useState(true);
+
+  const captureAnchor = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return null;
+    const top = el.scrollTop;
+    const rows = el.querySelectorAll<HTMLElement>("[data-cid]");
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.offsetTop + r.offsetHeight > top + 1) return { cid: r.dataset.cid || "", delta: r.offsetTop - top };
+    }
+    return null;
+  }, []);
 
   // Aplica o escopo do vendedor (por canal) numa query. Admin/supervisor → sem filtro.
   const applyScope = useCallback((q: any) => {
@@ -234,6 +251,26 @@ export default function ConversationList({
   }, [allConversations, sellerPhoneIds, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady, stageTab, onlyUnread]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
+
+  // Identidade da VISÃO atual (aba/filtros/busca). Se mudou, vai pro topo; se é a mesma
+  // visão só reordenada (conversa subiu ao receber/enviar msg), restaura a posição do
+  // usuário — o scroll NÃO arrasta pro topo junto com a conversa.
+  const viewKey = `${stageTab}|${operationFilter || ""}|${tagFilter || ""}|${onlyUnread}|${search.trim()}`;
+  const lastViewKeyRef = useRef(viewKey);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    if (lastViewKeyRef.current !== viewKey) {
+      lastViewKeyRef.current = viewKey;
+      anchorRef.current = null;
+      el.scrollTop = 0;
+      return;
+    }
+    const a = anchorRef.current;
+    if (!a || !a.cid) return;
+    const r = el.querySelector<HTMLElement>(`[data-cid="${a.cid}"]`);
+    if (r) el.scrollTop = r.offsetTop - a.delta;
+  }, [conversations, viewKey]);
 
   useEffect(() => {
     if (!search.trim() || search.trim().length < 2) {
@@ -530,7 +567,7 @@ export default function ConversationList({
     const borderColor = conv.pinned_at ? "var(--accent)" : conv.remarketing_at ? "#A855F7" : flowInfo ? "var(--success)" : operation ? operation.color : null;
 
     return (
-      <div key={conv.id} className={`relative overflow-hidden border-b border-line ${conv.archived ? "opacity-60" : ""}`}>
+      <div key={conv.id} data-cid={conv.id} className={`relative overflow-hidden border-b border-line ${conv.archived ? "opacity-60" : ""}`}>
         {/* Ação revelada ao arrastar pro lado (mobile) — Etiquetar */}
         <button
           tabIndex={-1}
@@ -636,7 +673,7 @@ export default function ConversationList({
   }, [allConversations, sellerPhoneIds]);
 
   return (
-    <div className="h-full flex flex-col bg-surface">
+    <div className="h-full flex flex-col bg-surface relative">
       {/* Cabeçalho */}
       <div className="px-4 pt-4 pb-3 border-b border-bd">
         <div className="flex items-center justify-between mb-3">
@@ -746,11 +783,15 @@ export default function ConversationList({
       <div
         ref={listRef}
         onScroll={() => {
-          // Perto do fim → carrega a próxima página de antigas (só na lista completa, sem busca).
-          if (searchResults !== null || search.trim()) return;
           const el = listRef.current;
           if (!el) return;
-          if (el.scrollHeight - el.scrollTop - el.clientHeight < 350) loadOlder();
+          const top = el.scrollTop;
+          setIsAtTop(top <= 8);
+          // No topo → sem âncora (conversa nova aparece normal). Rolado → ancora a viewport.
+          anchorRef.current = top <= 40 ? null : captureAnchor();
+          // Perto do fim → carrega a próxima página de antigas (só na lista completa, sem busca).
+          if (searchResults !== null || search.trim()) return;
+          if (el.scrollHeight - top - el.clientHeight < 350) loadOlder();
         }}
         className="flex-1 overflow-y-auto"
       >
@@ -861,6 +902,18 @@ export default function ConversationList({
             })()}
           </div>
         </>
+      )}
+
+      {/* Voltar ao topo — só aparece quando NÃO está no topo (some no topo). */}
+      {!isAtTop && permReady && (
+        <button
+          onClick={() => { anchorRef.current = null; setIsAtTop(true); listRef.current?.scrollTo({ top: 0, behavior: "smooth" }); }}
+          className="absolute bottom-4 right-4 z-20 w-10 h-10 rounded-full bg-accent text-white shadow-pop flex items-center justify-center hover:bg-accent2 transition active:scale-95"
+          title="Voltar ao topo"
+          aria-label="Voltar ao topo"
+        >
+          <ArrowUp className="w-5 h-5" strokeWidth={2.5} />
+        </button>
       )}
     </div>
   );
