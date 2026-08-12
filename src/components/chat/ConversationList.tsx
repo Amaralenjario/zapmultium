@@ -79,6 +79,8 @@ export default function ConversationList({
   const sellerPhonesRef = useRef<string[] | null | undefined>(undefined);
   // Aba de etapa selecionada (Aguardando / Atendendo / Resolvidos / Arquivadas)
   const [stageTab, setStageTab] = useState<string>("waiting");
+  // Filtro explícito de NÃO LIDAS (modifica a aba atual)
+  const [onlyUnread, setOnlyUnread] = useState(false);
   // Menu de botão direito no lead (mudar etapa / fixar / remarketing sem entrar na conversa)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: Conversation } | null>(null);
   const [search, setSearch] = useState("");
@@ -221,8 +223,11 @@ export default function ConversationList({
       else filtered = filtered.filter((c) => !c.archived && ((c.stage || "waiting") === stageTab));
     }
 
+    // Filtro explícito de NÃO LIDAS (modifica a aba/busca atual).
+    if (onlyUnread) filtered = filtered.filter((c) => c.unread_count > 0);
+
     setConversations(filtered);
-  }, [allConversations, sellerPhoneIds, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady, stageTab]);
+  }, [allConversations, sellerPhoneIds, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady, stageTab, onlyUnread]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
 
@@ -543,7 +548,7 @@ export default function ConversationList({
 
   // Contagem por etapa (pro badge das abas) — respeita o escopo do vendedor.
   const stageCounts = useMemo(() => {
-    const c: Record<string, number> = { waiting: 0, attending: 0, resolved: 0, archived: 0 };
+    const c: Record<string, number> = { waiting: 0, attending: 0, resolved: 0, archived: 0, unread: 0 };
     const base = sellerPhoneIds === null ? allConversations : allConversations.filter((conv) => {
       const pid = (conv as any).metadata?.phone_number_id || "";
       return !pid || sellerPhoneIds.includes(pid);
@@ -552,6 +557,7 @@ export default function ConversationList({
       if (conv.archived) { c.archived++; continue; }
       const st = conv.stage === "attending" || conv.stage === "resolved" ? conv.stage : "waiting";
       c[st]++;
+      if (conv.unread_count > 0) c.unread++;
     }
     return c;
   }, [allConversations, sellerPhoneIds]);
@@ -649,6 +655,18 @@ export default function ConversationList({
               <Archive className="w-3.5 h-3.5" strokeWidth={2} />
             </button>
           )}
+        </div>
+        {/* Filtro explícito de NÃO LIDAS */}
+        <div className="flex mt-2">
+          <button
+            onClick={() => setOnlyUnread((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition ${onlyUnread ? "bg-accent text-white shadow-sm" : "bg-surface2 text-tx2 hover:bg-hover"}`}
+            title="Mostrar só as não lidas"
+          >
+            <span className={`w-2 h-2 rounded-full ${onlyUnread ? "bg-white" : "bg-accent"}`} />
+            Só não lidas
+            {permReady && <span className={`text-[10px] font-semibold ${onlyUnread ? "text-white/85" : "text-tx3"}`}>{stageCounts.unread}</span>}
+          </button>
         </div>
       </div>
 

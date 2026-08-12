@@ -283,12 +283,34 @@ export default function CrmKanban() {
 
   const tagLeadCount = (tagId: string) => leads.filter((l) => (l.lead_tags || []).some((lt) => lt.tag_id === tagId)).length;
 
-  // Agrupa leads por coluna
+  // Agrupa leads por coluna.
+  // A ETIQUETA manda: o lead vai pra coluna da etiqueta dele. O `status` só é respeitado
+  // quando é uma colocação EXPLÍCITA (≠ "new", ex.: arrastado à mão) — assim o arraste
+  // continua funcionando, mas leads etiquetados NÃO ficam presos em "Novos" quando a
+  // etiqueta foi vinculada à coluna depois (o status antigo não era re-sincronizado).
+  const DEFAULT_STATUS = "new";
   const leadsByStatus: Record<string, Lead[]> = {};
   for (const col of columns) leadsByStatus[col.key] = [];
   const colKeys = new Set(columns.map((c) => c.key));
+  const colPos = new Map(columns.map((c) => [c.key, c.position ?? 0]));
+  const tagCol = new Map(tags.map((t) => [t.id, t.column_key]));
   for (const l of leads) {
-    const key = colKeys.has(l.status) ? l.status : (columns[0]?.key || "new");
+    let key: string | null = null;
+    // 1) Colocação explícita (status real, diferente do default) tem prioridade.
+    if (l.status && l.status !== DEFAULT_STATUS && colKeys.has(l.status)) key = l.status;
+    // 2) Senão, a coluna da etiqueta do lead (a MAIS avançada no funil, se tiver várias).
+    if (!key) {
+      let bestPos = -1;
+      for (const lt of l.lead_tags || []) {
+        const ck = tagCol.get(lt.tag_id);
+        if (ck && colKeys.has(ck)) {
+          const pos = (colPos.get(ck) as number) ?? 0;
+          if (pos > bestPos) { bestPos = pos; key = ck; }
+        }
+      }
+    }
+    // 3) Fallback: status se for coluna válida, senão a primeira coluna.
+    if (!key) key = colKeys.has(l.status) ? l.status : (columns[0]?.key || "new");
     (leadsByStatus[key] = leadsByStatus[key] || []).push(l);
   }
 
