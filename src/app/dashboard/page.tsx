@@ -8,7 +8,8 @@ import SellerPerformanceTable from "@/components/dashboard/SellerPerformanceTabl
 import RecentConversations from "@/components/dashboard/RecentConversations";
 import DashboardFilter from "@/components/dashboard/DashboardFilter";
 import WolfTeaser from "@/components/dashboard/WolfTeaser";
-import { MessageSquarePlus, Clock, MessagesSquare, Timer, Inbox, Send, Workflow, Hourglass } from "lucide-react";
+import { MessageSquarePlus, Clock, MessagesSquare, Timer, Inbox, Send, Workflow, Hourglass, ShoppingBag, DollarSign } from "lucide-react";
+import { multiumClient } from "@/lib/public-metrics";
 
 const kpiIcon = "w-[1.15rem] h-[1.15rem]";
 
@@ -132,10 +133,12 @@ export default async function DashboardPage({
 
   // Vendedor (operator) -> apenas seus canais
   let sellerPhoneIds: string[] | null = null;
+  let myChannelIds: string[] = []; // evohub_channel_id do vendedor logado (pra cruzar com o Multium)
   const phoneToSeller: Record<string, string> = {};
   if (!isAdmin) {
     const { data: sc } = await admin.from("seller_channels").select("evohub_channel_id").eq("user_id", user?.id || "");
-    sellerPhoneIds = (sc || []).map((s) => channelToPhone[s.evohub_channel_id]).filter(Boolean);
+    myChannelIds = (sc || []).map((s) => s.evohub_channel_id);
+    sellerPhoneIds = myChannelIds.map((cid) => channelToPhone[cid]).filter(Boolean);
   }
 
   // Mapa phone -> vendedor (para tabela admin)
@@ -203,6 +206,39 @@ export default async function DashboardPage({
   const s = (summaryRes.data as any) || {};
   const channels: any[] = (channelRes.data as any[]) || [];
   const volume: any[] = (volumeRes.data as any[]) || [];
+
+  // ── Vendas do vendedor logado (fonte Multium, cruzada por UTM via canal) ──
+  // Vendedor: soma as vendas dos vendedores cujos canais batem com os dele. Admin: total do time.
+  let mySales = 0, myRevenue = 0, showSalesCard = false;
+  try {
+    const multium = multiumClient();
+    if (multium) {
+      const toBrDate = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const [sellersRes, rankRes] = await Promise.all([
+        multium.rpc("x1_sellers"),
+        multium.rpc("x1_ranking", { p_start: toBrDate(startISO), p_end: toBrDate(endISO) }),
+      ]);
+      const salesByUtm: Record<string, { vendas: number; faturamento: number }> = {};
+      for (const r of ((rankRes.data as any[]) || [])) salesByUtm[r.utm] = { vendas: Number(r.vendas) || 0, faturamento: Number(r.faturamento) || 0 };
+      const vendedores = (sellersRes.data as any[]) || [];
+      if (isAdmin) {
+        for (const v of vendedores) { const sv = salesByUtm[v.utm]; if (sv) { mySales += sv.vendas; myRevenue += sv.faturamento; } }
+        showSalesCard = true;
+      } else {
+        const mine = new Set(myChannelIds);
+        const seenUtm = new Set<string>();
+        for (const v of vendedores) {
+          if (!v.utm || seenUtm.has(v.utm)) continue;
+          if ((v.wa_channel_ids || []).some((cid: string) => mine.has(cid))) {
+            seenUtm.add(v.utm);
+            const sv = salesByUtm[v.utm]; if (sv) { mySales += sv.vendas; myRevenue += sv.faturamento; }
+          }
+        }
+        showSalesCard = seenUtm.size > 0; // só mostra se conseguiu vincular o vendedor
+      }
+    }
+  } catch { /* sem Multium → não mostra o card */ }
+  const fmtBRL = (n: number) => "R$ " + (n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Gráfico de volume
   const volumeData = volume.map((v) => {
@@ -311,6 +347,14 @@ export default async function DashboardPage({
       <div className="mb-4">
         <WolfTeaser />
       </div>
+
+      {/* Vendas (do vendedor logado, ou total do time p/ admin) */}
+      {showSalesCard && (
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <MetricCard title={isAdmin ? "Vendas do time" : "Minhas vendas"} value={fmtNum(mySales)} subtitle="no período" icon={<ShoppingBag className={kpiIcon} strokeWidth={1.9} />} />
+          <MetricCard title={isAdmin ? "Faturamento do time" : "Meu faturamento"} value={fmtBRL(myRevenue)} subtitle="no período" icon={<DollarSign className={kpiIcon} strokeWidth={1.9} />} />
+        </div>
+      )}
 
       {/* KPIs principais */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
