@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { Plus, Trash2, Copy, ExternalLink, MessageCircle, AlertTriangle, Repeat2, FolderOpen, User, RefreshCw, Link2 } from "lucide-react";
+import { Plus, Trash2, Copy, ExternalLink, MessageCircle, AlertTriangle, Repeat2, FolderOpen, User, RefreshCw, Link2, Server } from "lucide-react";
 import CreateChannelModal from "@/components/whatsapp/CreateChannelModal";
 import OperationPickerModal from "@/components/whatsapp/OperationPickerModal";
 import SellerPickerModal from "@/components/whatsapp/SellerPickerModal";
+import EvoAccountsModal from "@/components/whatsapp/EvoAccountsModal";
 import toast from "react-hot-toast";
 
 // Link do webhook (Edge Function no "banco de dados" Supabase) pra colar num canal novo no EvoHub.
@@ -74,6 +75,7 @@ export default function WhatsappPageClient({
   const [sellers, setSellers] = useState<{ id: string; name: string; evohub_channel_id: string | null }[]>([]);
   const [sellerPickerFor, setSellerPickerFor] = useState<Channel | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
 
   const fetchChannels = useCallback(async () => {
     const res = await fetch("/api/evohub/channels");
@@ -243,6 +245,9 @@ export default function WhatsappPageClient({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => setShowAccounts(true)} className="inline-flex items-center gap-2 rounded-control border border-bd px-3 py-2.5 text-sm font-bold text-tx2 hover:border-accent hover:text-accent transition" title="Gerenciar contas EvoHub">
+            <Server className="w-4 h-4" strokeWidth={2} /> <span className="hidden sm:inline">Contas EvoHub</span>
+          </button>
           <button onClick={() => { navigator.clipboard.writeText(WEBHOOK_URL); toast.success("Link do webhook copiado!"); }} className="inline-flex items-center gap-2 rounded-control border border-bd px-3 py-2.5 text-sm font-bold text-tx2 hover:border-accent hover:text-accent transition" title={WEBHOOK_URL}>
             <Link2 className="w-4 h-4" strokeWidth={2} /> <span className="hidden sm:inline">Copiar webhook</span>
           </button>
@@ -337,6 +342,9 @@ export default function WhatsappPageClient({
           onSelect={(userId) => { assignSeller(sellerPickerFor.id, userId); setSellerPickerFor(null); }}
           onClose={() => setSellerPickerFor(null)}
         />
+      )}
+      {showAccounts && (
+        <EvoAccountsModal onClose={() => setShowAccounts(false)} onChanged={handleSync} />
       )}
     </div>
   );

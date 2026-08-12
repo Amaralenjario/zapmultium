@@ -51,7 +51,7 @@ export async function listAllChannels(): Promise<EvoHubChannel[]> {
     try {
       const res = await fetch(`${k.apiUrl}/api/v1/channels`, {
         headers: { Authorization: `Bearer ${k.apiKey}` },
-        next: { revalidate: 30 },
+        cache: "no-store", // Sincronizar precisa puxar na hora (conta/canal novo aparece já)
       });
       const data = await res.json();
       if (data.channels) allChannels.push(...data.channels);
