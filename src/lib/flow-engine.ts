@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
+import { friendlyWaError, isRetriableNotSent } from "./wa-errors";
 
 // no-store: fluxos leem/escrevem estado que muda a cada segundo; o Next.js Data Cache não pode congelar.
 const noStoreFetch = { fetch: (input: any, init?: any) => fetch(input, { ...init, cache: "no-store" as RequestCache }) };
@@ -116,32 +117,30 @@ async function applyTag(execution: any, node: any, action: "add" | "remove"): Pr
 // Envia texto pela Meta com RETRY em falhas TRANSITÓRIAS (rede caiu, gateway 5xx que
 // devolve HTML, resposta não-JSON). Erros PERMANENTES (4xx: token inválido, número ruim)
 // não são repetidos — sobem na hora. Sem isso, um soluço de rede matava o fluxo no meio.
+// SEGURANÇA CONTRA DUPLICATA: só repete quando é CERTO que não entregou (isRetriableNotSent).
+// Qualquer 5xx/timeout AMBÍGUO (a msg pode ter ido) → lança e NÃO repete — melhor um falso
+// erro do que mandar duplicado pro cliente (fluxo é automático, o estrago seria em escala).
 async function sendWaTextWithRetry(phoneNumberId: string, token: string, to: string, text: string, attempts = 3): Promise<any> {
   let lastErr: any;
   for (let i = 0; i < attempts; i++) {
+    let res: Response | null = null;
+    let data: any = {};
     try {
-      const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
+      res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: text } }),
       });
       const raw = await res.text();
-      if (res.ok) {
-        try { return JSON.parse(raw); }
-        catch { lastErr = new Error("resposta não-JSON no envio"); } // transitório → retry
-      } else if (res.status >= 400 && res.status < 500) {
-        // permanente (token/numero/permissão) — repetir não adianta
-        const perr: any = new Error(raw.slice(0, 300));
-        perr.__permanent = true;
-        throw perr;
-      } else {
-        lastErr = new Error(`HTTP ${res.status}: ${raw.slice(0, 150)}`); // 5xx → retry
-      }
+      if (res.ok) { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } } // enviado (200)
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: { message: raw } }; }
     } catch (e: any) {
-      // 4xx lançado acima → permanente, não repete
-      if (e?.__permanent) throw e;
-      lastErr = e; // fetch failed / timeout → transitório
+      res = null;
+      data = { error: { code: "NETWORK", message: e?.message || "network", cause: e?.cause?.code } };
     }
+    lastErr = new Error(friendlyWaError(data));
+    // Só repete se GARANTIDO que não entregou; senão para aqui (não duplica).
+    if (!isRetriableNotSent(res, data)) throw lastErr;
     if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1))); // 400/800ms
   }
   throw lastErr;

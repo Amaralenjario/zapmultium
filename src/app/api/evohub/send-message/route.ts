@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRealChannelToken } from "@/lib/instances";
-import { friendlyWaError, isPermanentWaError, isAuthWaError } from "@/lib/wa-errors";
+import { friendlyWaError, isRetriableNotSent, isAuthWaError } from "@/lib/wa-errors";
 
 const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 const KEY = process.env.EVOHUB_API_KEY;
@@ -72,12 +72,14 @@ export async function POST(request: Request) {
         });
         data = await res.json().catch(() => ({}));
       } catch (e: any) {
-        // Erro de rede na NOSSA ponta → transitório, tenta de novo.
+        // Exceção de rede na NOSSA ponta. Guarda a causa (ECONNREFUSED/ENOTFOUND = não
+        // conectou = seguro repetir; timeout genérico = ambíguo = NÃO repete).
         res = null;
-        data = { error: { code: "NETWORK", message: e?.message || "network" } };
+        data = { error: { code: "NETWORK", message: e?.message || "network", cause: e?.cause?.code } };
       }
       if (res && res.ok) break;
-      if (isPermanentWaError(res, data)) break; // erro definitivo → não repete
+      // SÓ repete se for GARANTIDO que não entregou (senão duplicaria pro cliente).
+      if (!isRetriableNotSent(res, data)) break;
       if (attempt < MAX_TRIES - 1) await new Promise((r) => setTimeout(r, attempt === 0 ? 500 : 1200));
     }
     const ok = !!(res && res.ok);

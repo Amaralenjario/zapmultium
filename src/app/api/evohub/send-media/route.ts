@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveChannelId, getRealChannelToken } from "@/lib/instances";
-import { friendlyWaError, isPermanentWaError, isAuthWaError } from "@/lib/wa-errors";
+import { friendlyWaError, isRetriableNotSent, isAuthWaError } from "@/lib/wa-errors";
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 
@@ -126,10 +126,11 @@ export async function POST(request: NextRequest) {
           sendData = await sendRes.json().catch(() => ({}));
         } catch (e: any) {
           sendRes = null;
-          sendData = { error: { code: "NETWORK", message: e?.message || "network" } };
+          sendData = { error: { code: "NETWORK", message: e?.message || "network", cause: e?.cause?.code } };
         }
         if (sendRes && sendRes.ok) break;
-        if (isPermanentWaError(sendRes, sendData)) break;
+        // SÓ repete se for GARANTIDO que não entregou (senão duplicaria a mídia pro cliente).
+        if (!isRetriableNotSent(sendRes, sendData)) break;
         if (attempt < MAX_TRIES - 1) await new Promise((r) => setTimeout(r, attempt === 0 ? 500 : 1200));
       }
       if (!sendRes || !sendRes.ok) { const friendly = friendlyWaError(sendData); await saveFailed(friendly); return NextResponse.json({ error: friendly }, { status: sendRes?.status || 502 }); }

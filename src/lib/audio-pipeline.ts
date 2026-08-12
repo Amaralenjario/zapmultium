@@ -1,5 +1,7 @@
 // Audio Pipeline - upload via EvoHub (versão correta) → media_id → audio nativo
 
+import { isRetriableNotSent } from "./wa-errors";
+
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 
 function detectOgg(buf: Buffer, url: string, contentType: string): boolean {
@@ -16,24 +18,27 @@ function detectOgg(buf: Buffer, url: string, contentType: string): boolean {
 async function postMessageWithRetry(phoneNumberId: string, token: string, body: any, attempts = 3): Promise<{ wamid: string | null; error?: string }> {
   let lastErr: string | undefined;
   for (let i = 0; i < attempts; i++) {
+    let res: Response | null = null;
+    let data: any = null;
+    let raw = "";
     try {
-      const res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
+      res = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const raw = await res.text();
-      let data: any = null;
+      raw = await res.text();
       try { data = JSON.parse(raw); } catch { /* HTML/gateway */ }
       const wamid = data?.messages?.[0]?.id;
-      if (wamid) return { wamid };
-      if (res.status >= 400 && res.status < 500) {
-        return { wamid: null, error: (data ? JSON.stringify(data) : raw).slice(0, 300) }; // permanente
-      }
-      lastErr = data ? JSON.stringify(data).slice(0, 200) : `HTTP ${res.status}: ${raw.slice(0, 120)}`;
+      if (wamid) return { wamid }; // enviado
     } catch (e: any) {
-      lastErr = e?.message || "fetch failed";
+      res = null;
+      data = { error: { code: "NETWORK", message: e?.message || "fetch failed", cause: e?.cause?.code } };
     }
+    const errData = data || { error: { message: raw } };
+    lastErr = (data ? JSON.stringify(data) : raw || "falha").slice(0, 200);
+    // SEGURANÇA: só repete se GARANTIDO que não entregou; senão para (não duplica a mídia).
+    if (!isRetriableNotSent(res, errData)) return { wamid: null, error: lastErr.slice(0, 300) };
     if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
   }
   return { wamid: null, error: lastErr || "falha no envio de mídia" };
