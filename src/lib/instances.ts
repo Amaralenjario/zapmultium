@@ -59,9 +59,12 @@ function shareTokenToDb(channelId: string, token: string) {
   }).catch(() => {});
 }
 
-export async function getRealChannelToken(channelId: string): Promise<string | null> {
+export async function getRealChannelToken(channelId: string, forceRefresh = false): Promise<string | null> {
+  // forceRefresh: usado após um UNAUTHORIZED — ignora os caches (memória e "banco fresco")
+  // e vai direto no EvoHub pegar um token novo, senão a repetição usaria o mesmo token ruim.
+  if (forceRefresh) tokenCache.delete(channelId);
   const cached = tokenCache.get(channelId);
-  if (cached && cached.exp > Date.now()) { shareTokenToDb(channelId, cached.token); return cached.token; }
+  if (!forceRefresh && cached && cached.exp > Date.now()) { shareTokenToDb(channelId, cached.token); return cached.token; }
 
   let apiKey = process.env.EVOHUB_API_KEY;
   let apiUrl = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
@@ -89,7 +92,7 @@ export async function getRealChannelToken(channelId: string): Promise<string | n
   // CACHE COMPARTILHADO: se o token do banco está fresco (<8min), usa direto — NÃO bate no
   // EvoHub. Isso corta as chamadas ao /channels (que sob carga eram limitadas/falhavam →
   // "Token do canal não encontrado" → fluxo abortando, ex.: Caio não conseguindo disparar).
-  if (dbToken && Date.now() - dbTokenAt < DB_TOKEN_FRESH_MS) {
+  if (!forceRefresh && dbToken && Date.now() - dbTokenAt < DB_TOKEN_FRESH_MS) {
     tokenCache.set(channelId, { token: dbToken, exp: Date.now() + TOKEN_TTL_MS });
     return dbToken;
   }

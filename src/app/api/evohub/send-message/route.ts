@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRealChannelToken } from "@/lib/instances";
-import { friendlyWaError } from "@/lib/wa-errors";
+import { friendlyWaError, isPermanentWaError, isAuthWaError } from "@/lib/wa-errors";
 
 const BASE = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 const KEY = process.env.EVOHUB_API_KEY;
@@ -50,16 +50,37 @@ export async function POST(request: Request) {
     }
     if (context) msgBody.context = { message_id: context };
 
-    const res = await fetch(`${BASE}/meta/v23.0/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${channelToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(msgBody),
-    });
-
-    const data = await res.json();
+    // Envio com RETRY em falhas transitórias. Numa piscada (Meta 131000/2, EvoHub
+    // INTERNAL/timeout, 5xx) tenta de novo; num UNAUTHORIZED força TOKEN NOVO antes de
+    // repetir. Antes era 1 tentativa só → qualquer soluço virava "Não enviada" na hora
+    // (o vendedor via falhar e "voltava sozinho" quando reenviava minutos depois).
+    const url = `${BASE}/meta/v23.0/${phoneNumberId}/messages`;
+    let res: Response | null = null;
+    let data: any = {};
+    const MAX_TRIES = 3;
+    for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+      if (attempt > 0 && channelId) {
+        // Repetição: se foi auth, força token novo; senão reusa o token atual.
+        const fresh = await getRealChannelToken(channelId, isAuthWaError(res, data));
+        if (fresh) channelToken = fresh;
+      }
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify(msgBody),
+        });
+        data = await res.json().catch(() => ({}));
+      } catch (e: any) {
+        // Erro de rede na NOSSA ponta → transitório, tenta de novo.
+        res = null;
+        data = { error: { code: "NETWORK", message: e?.message || "network" } };
+      }
+      if (res && res.ok) break;
+      if (isPermanentWaError(res, data)) break; // erro definitivo → não repete
+      if (attempt < MAX_TRIES - 1) await new Promise((r) => setTimeout(r, attempt === 0 ? 500 : 1200));
+    }
+    const ok = !!(res && res.ok);
 
     const { createClient } = await import("@supabase/supabase-js");
     const supabase = createClient(
@@ -70,7 +91,7 @@ export async function POST(request: Request) {
 
     const contentType = msgType === "sticker" ? "sticker" : (msgType === "text" ? "text" : (msgType === "video" ? "video" : "image"));
 
-    if (!res.ok) {
+    if (!ok) {
       const friendly = friendlyWaError(data);
       // Registra a mensagem como FALHA para aparecer no chat com o motivo em vermelho
       if (conversationId) {
@@ -79,7 +100,7 @@ export async function POST(request: Request) {
           sender_type: "agent",
           content: message,
           content_type: contentType,
-          metadata: { phone_number_id: phoneNumberId, error: friendly, failed: true, wa_error_code: data?.error?.code },
+          metadata: { phone_number_id: phoneNumberId, error: friendly, failed: true, wa_error_code: data?.error?.code ?? data?.code },
         });
         await supabase.from("conversations").update({
           last_message: msgType === "text" ? message : "📎 Mídia",
@@ -89,7 +110,7 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString(),
         }).eq("id", conversationId);
       }
-      return NextResponse.json({ error: friendly }, { status: res.status });
+      return NextResponse.json({ error: friendly }, { status: res?.status || 502 });
     }
 
     const mediaLabels: Record<string, string> = {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveChannelId, getRealChannelToken } from "@/lib/instances";
-import { friendlyWaError } from "@/lib/wa-errors";
+import { friendlyWaError, isPermanentWaError, isAuthWaError } from "@/lib/wa-errors";
 
 const EVOHUB_API_URL = process.env.EVOHUB_API_URL || "https://api.evohub.ai";
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     const channelId = await resolveChannelId(phoneNumberId);
     if (!channelId) return NextResponse.json({ error: "Canal não encontrado" }, { status: 404 });
-    const channelToken = await getRealChannelToken(channelId);
+    let channelToken = await getRealChannelToken(channelId);
     if (!channelToken) return NextResponse.json({ error: "Token do canal não encontrado" }, { status: 404 });
 
     const mimeType = file.type;
@@ -106,17 +106,33 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const sendRes = await fetch(`${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${channelToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(msgBody),
-      });
-
-      const sendData = await sendRes.json();
-      if (!sendRes.ok) { const friendly = friendlyWaError(sendData); await saveFailed(friendly); return NextResponse.json({ error: friendly }, { status: 500 }); }
+      // Envio com RETRY em falhas transitórias (Meta 131000/2, EvoHub INTERNAL/timeout,
+      // 5xx). UNAUTHORIZED → força token novo antes de repetir. Erro definitivo falha na hora.
+      const mediaUrl = `${EVOHUB_API_URL}/meta/v23.0/${phoneNumberId}/messages`;
+      let sendRes: Response | null = null;
+      let sendData: any = {};
+      const MAX_TRIES = 3;
+      for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+        if (attempt > 0) {
+          const fresh = await getRealChannelToken(channelId, isAuthWaError(sendRes, sendData));
+          if (fresh) channelToken = fresh;
+        }
+        try {
+          sendRes = await fetch(mediaUrl, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${channelToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(msgBody),
+          });
+          sendData = await sendRes.json().catch(() => ({}));
+        } catch (e: any) {
+          sendRes = null;
+          sendData = { error: { code: "NETWORK", message: e?.message || "network" } };
+        }
+        if (sendRes && sendRes.ok) break;
+        if (isPermanentWaError(sendRes, sendData)) break;
+        if (attempt < MAX_TRIES - 1) await new Promise((r) => setTimeout(r, attempt === 0 ? 500 : 1200));
+      }
+      if (!sendRes || !sendRes.ok) { const friendly = friendlyWaError(sendData); await saveFailed(friendly); return NextResponse.json({ error: friendly }, { status: sendRes?.status || 502 }); }
       waMsgId = sendData?.messages?.[0]?.id || null;
     }
 

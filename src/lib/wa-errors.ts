@@ -1,3 +1,17 @@
+// Erros PERMANENTES da Meta — não adianta repetir (falha na hora com o motivo).
+// Todo o resto (131000 "Something went wrong", 2, INTERNAL/timeout, 5xx, UNAUTHORIZED)
+// é TRANSITÓRIO e vale um retry — é o que se cura sozinho em minutos.
+const PERMANENT_WA_CODES = new Set([131047, 131026, 131051, 100, 131008, 131009, 131021, 131031, 131052]);
+export function isPermanentWaError(_res: { status?: number } | null, data: any): boolean {
+  const code = Number(data?.error?.code ?? data?.code);
+  return !!code && PERMANENT_WA_CODES.has(code);
+}
+export function isAuthWaError(res: { status?: number } | null, data: any): boolean {
+  const code = data?.error?.code ?? data?.code;
+  const msg = String(data?.error?.message || data?.message || "").toLowerCase();
+  return res?.status === 401 || code === "UNAUTHORIZED" || Number(code) === 190 || /unauthor/i.test(msg);
+}
+
 // Traduz erros da API do WhatsApp/Meta para mensagens amigáveis em PT-BR.
 export function friendlyWaError(data: any): string {
   const err = data?.error || data || {};
