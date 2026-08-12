@@ -64,6 +64,10 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   const prevLength = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
+  // ID da conversa ATUALMENTE aberta. Toda query async compara com isto antes de aplicar,
+  // pra um fetch/poll da conversa ANTERIGA (que resolve depois da troca) não cruzar as duas.
+  const convIdRef = useRef(conversation.id);
+  convIdRef.current = conversation.id;
 
   const customer = Array.isArray(conversation.customer) ? conversation.customer[0] : conversation.customer;
   const rawPhoneId = (conversation as any).metadata?.phone_number_id || "";
@@ -124,7 +128,9 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   }, [window24h]);
 
   const fetchMessages = async (replace = false) => {
-    const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
+    const cid = conversation.id;
+    const { data } = await supabase.from("messages").select("*").eq("conversation_id", cid).order("created_at", { ascending: true });
+    if (cid !== convIdRef.current) return; // troquei de conversa no meio → descarta (não cruza)
     // MESCLA (não substitui) pra não apagar mensagens otimísticas ainda não confirmadas.
     // replace=true só na 1ª carga da conversa (quando prev já foi zerado).
     if (replace) setMessages(data || []);
@@ -285,7 +291,9 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
 
   useEffect(() => {
     const interval = setInterval(async () => {
-      const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
+      const cid = conversation.id;
+      const { data } = await supabase.from("messages").select("*").eq("conversation_id", cid).order("created_at", { ascending: true });
+      if (cid !== convIdRef.current) return; // poll da conversa anterior resolveu tarde → descarta
       if (data && data.length > 0) {
         // União por id + reconcilia otimistas (helper). NUNCA descarta msg real.
         setMessages(prev => mergeMessages(prev, data as Message[]));
@@ -297,8 +305,9 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   useEffect(() => {
     const channel = supabase.channel("messages-" + conversation.id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversation.id}` }, (payload) => {
+        const incoming = payload.new as Message;
+        if (incoming.conversation_id !== convIdRef.current) return; // evento da conversa anterior → ignora
         setMessages(prev => {
-          const incoming = payload.new as Message;
           if (prev.some(m => m.id === incoming.id)) return prev;
           // remove o otimista (temp) de mesmo conteúdo quando a msg real do agente chega
           const next = incoming.sender_type === "agent"
