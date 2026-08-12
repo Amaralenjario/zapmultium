@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
-import { ChevronLeft, Tag, Archive, ArchiveRestore, MessagesSquare, Smartphone } from "lucide-react";
+import { ChevronLeft, Tag, Archive, ArchiveRestore, MessagesSquare, Smartphone, ChevronDown, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import MessageBubble, { formatDateHeader, shouldShowDate, isConsecutive } from "./MessageBubble";
 import ChatInput from "./ChatInput";
@@ -10,6 +10,13 @@ import QuickLinksBar from "./QuickLinksBar";
 import Avatar from "./Avatar";
 import type { Conversation } from "./ConversationList";
 import toast from "react-hot-toast";
+
+// Etapas de atendimento (cor por etapa) — usado no chip/dropdown do header.
+const STAGE_UI: { key: string; label: string; color: string }[] = [
+  { key: "waiting", label: "Aguardando", color: "#F59E0B" },
+  { key: "attending", label: "Atendendo", color: "#3B82F6" },
+  { key: "resolved", label: "Resolvido", color: "#10B981" },
+];
 
 interface Message {
   id: string;
@@ -50,6 +57,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [archived, setArchived] = useState(!!(conversation as any).archived);
   const [stage, setStage] = useState<string>((conversation as any).stage || "waiting");
+  const [stageOpen, setStageOpen] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   const [crmTags, setCrmTags] = useState<CrmTag[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -332,30 +340,48 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
             </div>
           </div>
         )}
+        {/* Etapa de atendimento — chip minimalista com dropdown */}
+        {(() => {
+          const cur = STAGE_UI.find((s) => s.key === stage) || STAGE_UI[0];
+          return (
+            <div className="relative flex-shrink-0">
+              <button
+                onClick={() => setStageOpen((v) => !v)}
+                className="flex items-center gap-1.5 pl-2 pr-2 py-1.5 rounded-full text-[12px] font-bold transition hover:brightness-95"
+                style={{ backgroundColor: cur.color + "1f", color: cur.color }}
+                title="Mudar etapa de atendimento"
+              >
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cur.color }} />
+                <span className="hidden sm:inline">{cur.label}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${stageOpen ? "rotate-180" : ""}`} strokeWidth={2.4} />
+              </button>
+              {stageOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setStageOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 z-30 w-48 rounded-xl bg-surface border border-bd shadow-pop overflow-hidden py-1">
+                    {STAGE_UI.map((s) => (
+                      <button
+                        key={s.key}
+                        onClick={() => { changeStage(s.key); setStageOpen(false); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] font-semibold text-tx hover:bg-hover transition text-left"
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                        {s.label}
+                        {stage === s.key && <Check className="w-4 h-4 ml-auto" strokeWidth={2.5} style={{ color: s.color }} />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
         <button onClick={handleOpenTagModal} className="p-2 hover:bg-hover rounded-full transition text-tx2 hover:text-accent" title="Etiquetar lead">
           <Tag className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} />
         </button>
         <button onClick={toggleArchive} className="p-2 hover:bg-hover rounded-full transition text-tx2 hover:text-tx" title={archived ? "Desarquivar" : "Arquivar"}>
           {archived ? <ArchiveRestore className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} /> : <Archive className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} />}
         </button>
-      </div>
-
-      {/* Etapa de atendimento — clique pra mover Aguardando → Atendendo → Resolvido */}
-      <div className="flex items-center gap-1 px-3 py-2 bg-surface border-b border-bd flex-shrink-0">
-        {([
-          { key: "waiting", label: "Aguardando", dot: "bg-amber-500", active: "bg-amber-500 text-white" },
-          { key: "attending", label: "Atendendo", dot: "bg-blue-500", active: "bg-blue-500 text-white" },
-          { key: "resolved", label: "Resolvido", dot: "bg-emerald-500", active: "bg-emerald-500 text-white" },
-        ] as const).map((s) => (
-          <button
-            key={s.key}
-            onClick={() => changeStage(s.key)}
-            className={`flex-1 flex items-center justify-center gap-1.5 text-[12px] font-bold py-1.5 rounded-control transition ${stage === s.key ? s.active + " shadow-sm" : "text-tx2 hover:bg-hover"}`}
-          >
-            <span className={`w-2 h-2 rounded-full ${stage === s.key ? "bg-white" : s.dot}`} />
-            {s.label}
-          </button>
-        ))}
       </div>
 
       {/* Janela 24h */}

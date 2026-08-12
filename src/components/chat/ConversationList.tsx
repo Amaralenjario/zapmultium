@@ -520,30 +520,6 @@ export default function ConversationList({
             className="w-full pl-9 pr-4 py-2.5 rounded-control bg-surface2 border border-bd text-[14px] text-tx placeholder:text-tx3 focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none transition"
           />
         </div>
-        {/* Abas de etapa de atendimento */}
-        <div className="flex gap-1.5">
-          {STAGE_TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setStageTab(t.key)}
-              className={`flex-1 text-[11px] font-bold py-1.5 rounded-control transition ${
-                stageTab === t.key ? t.active + " shadow-sm" : "text-tx2 hover:bg-hover hover:text-tx"
-              }`}
-            >
-              {t.label}
-              <span className={`ml-1 text-[10px] font-semibold ${stageTab === t.key ? "text-white/80" : "text-tx3"}`}>{permReady ? stageCounts[t.key] : ""}</span>
-            </button>
-          ))}
-          {permReady && stageCounts.archived > 0 && (
-            <button
-              onClick={() => setStageTab("archived")}
-              className={`flex-shrink-0 px-2.5 py-1.5 rounded-control transition ${stageTab === "archived" ? "bg-tx2 text-white" : "text-tx3 hover:bg-hover"}`}
-              title="Arquivadas"
-            >
-              <Archive className="w-3.5 h-3.5" strokeWidth={2} />
-            </button>
-          )}
-        </div>
         {permReady && visibleOps.length > 0 && (
           <div className="flex items-center gap-1.5 mt-2.5">
             <Building2 className="w-3.5 h-3.5 text-tx3 flex-shrink-0" strokeWidth={2} aria-label="Operações" />
@@ -597,6 +573,30 @@ export default function ConversationList({
             </div>
           </div>
         )}
+        {/* Abas de etapa de atendimento (abaixo dos filtros) */}
+        <div className="flex gap-1.5 mt-2.5">
+          {STAGE_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setStageTab(t.key)}
+              className={`flex-1 text-[11px] font-bold py-1.5 rounded-control transition ${
+                stageTab === t.key ? t.active + " shadow-sm" : "text-tx2 hover:bg-hover hover:text-tx"
+              }`}
+            >
+              {t.label}
+              <span className={`ml-1 text-[10px] font-semibold ${stageTab === t.key ? "text-white/80" : "text-tx3"}`}>{permReady ? stageCounts[t.key] : ""}</span>
+            </button>
+          ))}
+          {permReady && stageCounts.archived > 0 && (
+            <button
+              onClick={() => setStageTab("archived")}
+              className={`flex-shrink-0 px-2.5 py-1.5 rounded-control transition ${stageTab === "archived" ? "bg-tx2 text-white" : "text-tx3 hover:bg-hover"}`}
+              title="Arquivadas"
+            >
+              <Archive className="w-3.5 h-3.5" strokeWidth={2} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div
