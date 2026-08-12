@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { Plus, Trash2, Copy, ExternalLink, MessageCircle, AlertTriangle, Repeat2, FolderOpen } from "lucide-react";
+import { Plus, Trash2, Copy, ExternalLink, MessageCircle, AlertTriangle, Repeat2, FolderOpen, User, RefreshCw, Link2 } from "lucide-react";
 import CreateChannelModal from "@/components/whatsapp/CreateChannelModal";
 import OperationPickerModal from "@/components/whatsapp/OperationPickerModal";
+import SellerPickerModal from "@/components/whatsapp/SellerPickerModal";
 import toast from "react-hot-toast";
+
+// Link do webhook (Edge Function no "banco de dados" Supabase) pra colar num canal novo no EvoHub.
+const WEBHOOK_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL || ""}/functions/v1/evohub-webhook`;
 
 interface Channel {
   id: string;
@@ -67,6 +71,9 @@ export default function WhatsappPageClient({
   const [deleting, setDeleting] = useState(false);
   const [operations, setOperations] = useState<{ id: string; name: string; color: string }[]>([]);
   const [pickerFor, setPickerFor] = useState<Channel | null>(null);
+  const [sellers, setSellers] = useState<{ id: string; name: string; evohub_channel_id: string | null }[]>([]);
+  const [sellerPickerFor, setSellerPickerFor] = useState<Channel | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchChannels = useCallback(async () => {
     const res = await fetch("/api/evohub/channels");
@@ -77,7 +84,36 @@ export default function WhatsappPageClient({
     }
   }, []);
 
-  useEffect(() => { fetchChannels(); fetch("/api/operations").then(r => r.json()).then(setOperations); }, [fetchChannels]);
+  const fetchSellers = useCallback(async () => {
+    try { const res = await fetch("/api/sellers"); if (res.ok) setSellers(await res.json()); } catch {}
+  }, []);
+
+  useEffect(() => { fetchChannels(); fetchSellers(); fetch("/api/operations").then(r => r.json()).then(setOperations); }, [fetchChannels, fetchSellers]);
+
+  // canal -> vendedor atribuído (1 por número).
+  const channelToSeller = useMemo(() => {
+    const map: Record<string, { id: string; name: string }> = {};
+    for (const s of sellers) if (s.evohub_channel_id) map[s.evohub_channel_id] = { id: s.id, name: s.name };
+    return map;
+  }, [sellers]);
+
+  // Sincroniza (puxa) os canais do EvoHub + vendedores na hora.
+  const handleSync = async () => {
+    setSyncing(true);
+    await Promise.all([fetchChannels(), fetchSellers()]);
+    setSyncing(false);
+    toast.success("Sincronizado!");
+  };
+
+  const assignSeller = async (channelId: string, userId: string | null) => {
+    const res = await fetch("/api/evohub/channels/assign-seller", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ evohub_channel_id: channelId, user_id: userId }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || "Erro ao trocar vendedor"); return; }
+    toast.success(userId ? "Vendedor atribuído!" : "Vendedor removido");
+    fetchSellers();
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -146,6 +182,7 @@ export default function WhatsappPageClient({
     const link = `https://app.evohub.evolutionfoundation.com.br/connect/${ch.token}`;
     const phone = (ch as any).displayPhone;
     const days = daysAgo(ch.created_at);
+    const seller = channelToSeller[ch.id];
 
     return (
       <div key={ch.id} className="group rounded-card border border-bd bg-surface p-4 hover:shadow-pop transition-all" style={{ borderLeftWidth: "3px", borderLeftColor: opColor }}>
@@ -169,6 +206,13 @@ export default function WhatsappPageClient({
           <div className="flex items-center justify-between">
             <span className="text-tx3 text-xs">Criado</span>
             <span className="text-xs text-tx2">{new Date(ch.created_at).toLocaleDateString("pt-BR")}<span className="text-tx3 ml-1">· {days} dia{days > 1 ? "s" : ""}</span></span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-tx3 text-xs">Vendedor</span>
+            <button onClick={() => setSellerPickerFor(ch)} className="flex items-center gap-1 text-xs font-bold text-tx hover:text-accent transition max-w-[60%]" title="Trocar vendedor">
+              <User className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
+              <span className="truncate">{seller ? seller.name : <span className="text-tx3 font-semibold">Definir</span>}</span>
+            </button>
           </div>
         </div>
 
@@ -198,9 +242,27 @@ export default function WhatsappPageClient({
             {connected > 0 && <span className="text-success font-semibold"> · {connected} conectada{connected > 1 ? "s" : ""}</span>}
           </p>
         </div>
-        <button onClick={() => openConnect()} className="inline-flex items-center gap-2 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition">
-          <Plus className="w-4 h-4" strokeWidth={2.2} /> Conectar WhatsApp
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => { navigator.clipboard.writeText(WEBHOOK_URL); toast.success("Link do webhook copiado!"); }} className="inline-flex items-center gap-2 rounded-control border border-bd px-3 py-2.5 text-sm font-bold text-tx2 hover:border-accent hover:text-accent transition" title={WEBHOOK_URL}>
+            <Link2 className="w-4 h-4" strokeWidth={2} /> <span className="hidden sm:inline">Copiar webhook</span>
+          </button>
+          <button onClick={handleSync} disabled={syncing} className="inline-flex items-center gap-2 rounded-control border border-bd px-3 py-2.5 text-sm font-bold text-tx2 hover:border-accent hover:text-accent transition disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} strokeWidth={2} /> <span className="hidden sm:inline">Sincronizar</span>
+          </button>
+          <button onClick={() => openConnect()} className="inline-flex items-center gap-2 rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-glow hover:bg-accent2 transition">
+            <Plus className="w-4 h-4" strokeWidth={2.2} /> <span className="hidden sm:inline">Conectar</span> WhatsApp
+          </button>
+        </div>
+      </div>
+
+      {/* Barra de ajuda: link do webhook visível pra colar num canal novo (autoatendimento) */}
+      <div className="mb-6 rounded-card border border-bd bg-surface2/60 p-3 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-control bg-accentsoft flex items-center justify-center flex-shrink-0"><Link2 className="w-4 h-4 text-accent" strokeWidth={2} /></div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold text-tx2 uppercase tracking-wide">Webhook (recebimento de mensagens)</p>
+          <p className="text-[12px] text-tx3 font-mono truncate">{WEBHOOK_URL}</p>
+        </div>
+        <button onClick={() => { navigator.clipboard.writeText(WEBHOOK_URL); toast.success("Copiado!"); }} className="flex items-center gap-1 text-[11px] font-bold text-accent px-2.5 py-1.5 rounded-lg hover:bg-accentsoft transition flex-shrink-0"><Copy className="w-3.5 h-3.5" strokeWidth={2} /> Copiar</button>
       </div>
 
       {groups.length === 0 ? (
@@ -265,6 +327,15 @@ export default function WhatsappPageClient({
           currentOpId={phoneMap[pickerFor.id]?.opId}
           onSelect={(opId) => { changeOperation(pickerFor.id, opId, pickerFor.name); setPickerFor(null); }}
           onClose={() => setPickerFor(null)}
+        />
+      )}
+      {sellerPickerFor && (
+        <SellerPickerModal
+          sellers={sellers.filter(s => s.id).map(s => ({ id: s.id, name: s.name }))}
+          currentSellerId={channelToSeller[sellerPickerFor.id]?.id || null}
+          channelName={sellerPickerFor.name}
+          onSelect={(userId) => { assignSeller(sellerPickerFor.id, userId); setSellerPickerFor(null); }}
+          onClose={() => setSellerPickerFor(null)}
         />
       )}
     </div>
