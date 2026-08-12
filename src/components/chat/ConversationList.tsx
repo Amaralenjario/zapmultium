@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag, ChevronRight } from "lucide-react";
+import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "./Avatar";
 
@@ -61,8 +61,8 @@ export default function ConversationList({
   // Usado pra FILTRAR a query de conversas por canal, senão o limite de 500 pega o pool GLOBAL
   // e o vendedor de alto volume só vê as conversas mais recentes (bug do "só até 11h").
   const sellerPhonesRef = useRef<string[] | null | undefined>(undefined);
-  // Blocos de etapa recolhíveis (Aguardando / Atendendo / Resolvido / Arquivadas)
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ resolved: true, archived: true });
+  // Aba de etapa selecionada (Aguardando / Atendendo / Resolvidos / Arquivadas)
+  const [stageTab, setStageTab] = useState<string>("waiting");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -197,8 +197,14 @@ export default function ConversationList({
       });
     }
 
+    // Aba de etapa (só quando NÃO está buscando — busca mostra todas as etapas).
+    if (searchResults === null && !search.trim()) {
+      if (stageTab === "archived") filtered = filtered.filter((c) => !!c.archived);
+      else filtered = filtered.filter((c) => !c.archived && ((c.stage || "waiting") === stageTab));
+    }
+
     setConversations(filtered);
-  }, [allConversations, sellerPhoneIds, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady]);
+  }, [allConversations, sellerPhoneIds, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady, stageTab]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
 
@@ -397,27 +403,14 @@ export default function ConversationList({
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   };
 
-  // Etapas de atendimento (os 3 blocos) + Arquivadas no rodapé.
-  const STAGE_META = [
-    { key: "waiting", label: "Aguardando atendimento", dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
-    { key: "attending", label: "Atendendo", dot: "bg-blue-500", text: "text-blue-600 dark:text-blue-400" },
-    { key: "resolved", label: "Resolvido", dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
+  // Abas de etapa de atendimento (filtro no topo, uma etapa por vez).
+  const STAGE_TABS = [
+    { key: "waiting", label: "Aguardando", active: "bg-amber-500 text-white" },
+    { key: "attending", label: "Atendendo", active: "bg-blue-500 text-white" },
+    { key: "resolved", label: "Resolvidos", active: "bg-emerald-500 text-white" },
   ] as const;
 
-  // Distribui as conversas (já filtradas por escopo/etiqueta/operação) nos blocos.
-  const grouped = useMemo(() => {
-    const g: Record<string, Conversation[]> = { waiting: [], attending: [], resolved: [], archived: [] };
-    for (const c of conversations) {
-      if (c.archived) { g.archived.push(c); continue; }
-      const st = c.stage === "attending" || c.stage === "resolved" ? c.stage : "waiting";
-      g[st].push(c);
-    }
-    return g;
-  }, [conversations]);
-
-  const toggleSection = (key: string) => setCollapsed((p) => ({ ...p, [key]: !p[key] }));
-
-  // Renderiza uma linha de conversa (reusado nos 3 blocos e na busca).
+  // Renderiza uma linha de conversa (reusado na aba e na busca).
   const renderRow = (conv: Conversation) => {
     const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
     const isSelected = selectedId === conv.id;
@@ -495,25 +488,20 @@ export default function ConversationList({
     );
   };
 
-  // Cabeçalho de um bloco (etapa) — clicável pra recolher/expandir.
-  const renderSection = (key: string, label: string, dot: string, textCls: string, rows: Conversation[]) => {
-    if (rows.length === 0) return null;
-    const isCollapsed = !!collapsed[key];
-    return (
-      <div key={key}>
-        <button
-          onClick={() => toggleSection(key)}
-          className="w-full sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-surface2/95 backdrop-blur border-b border-bd hover:bg-hover transition"
-        >
-          <ChevronRight className={`w-3.5 h-3.5 text-tx3 transition-transform ${isCollapsed ? "" : "rotate-90"}`} strokeWidth={2.5} />
-          <span className={`w-2 h-2 rounded-full ${dot} flex-shrink-0`} />
-          <span className="text-[12px] font-extrabold uppercase tracking-wide text-tx2 flex-1 text-left truncate">{label}</span>
-          <span className={`text-[11px] font-bold ${textCls}`}>{rows.length}</span>
-        </button>
-        {!isCollapsed && rows.map(renderRow)}
-      </div>
-    );
-  };
+  // Contagem por etapa (pro badge das abas) — respeita o escopo do vendedor.
+  const stageCounts = useMemo(() => {
+    const c: Record<string, number> = { waiting: 0, attending: 0, resolved: 0, archived: 0 };
+    const base = sellerPhoneIds === null ? allConversations : allConversations.filter((conv) => {
+      const pid = (conv as any).metadata?.phone_number_id || "";
+      return !pid || sellerPhoneIds.includes(pid);
+    });
+    for (const conv of base) {
+      if (conv.archived) { c.archived++; continue; }
+      const st = conv.stage === "attending" || conv.stage === "resolved" ? conv.stage : "waiting";
+      c[st]++;
+    }
+    return c;
+  }, [allConversations, sellerPhoneIds]);
 
   return (
     <div className="h-full flex flex-col bg-surface">
@@ -531,6 +519,30 @@ export default function ConversationList({
             placeholder="Pesquisar conversas..."
             className="w-full pl-9 pr-4 py-2.5 rounded-control bg-surface2 border border-bd text-[14px] text-tx placeholder:text-tx3 focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none transition"
           />
+        </div>
+        {/* Abas de etapa de atendimento */}
+        <div className="flex gap-1.5">
+          {STAGE_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setStageTab(t.key)}
+              className={`flex-1 text-[11px] font-bold py-1.5 rounded-control transition ${
+                stageTab === t.key ? t.active + " shadow-sm" : "text-tx2 hover:bg-hover hover:text-tx"
+              }`}
+            >
+              {t.label}
+              <span className={`ml-1 text-[10px] font-semibold ${stageTab === t.key ? "text-white/80" : "text-tx3"}`}>{permReady ? stageCounts[t.key] : ""}</span>
+            </button>
+          ))}
+          {permReady && stageCounts.archived > 0 && (
+            <button
+              onClick={() => setStageTab("archived")}
+              className={`flex-shrink-0 px-2.5 py-1.5 rounded-control transition ${stageTab === "archived" ? "bg-tx2 text-white" : "text-tx3 hover:bg-hover"}`}
+              title="Arquivadas"
+            >
+              <Archive className="w-3.5 h-3.5" strokeWidth={2} />
+            </button>
+          )}
         </div>
         {permReady && visibleOps.length > 0 && (
           <div className="flex items-center gap-1.5 mt-2.5">
@@ -616,14 +628,9 @@ export default function ConversationList({
             <MessagesSquare className="w-12 h-12 mb-3 opacity-30" strokeWidth={1.5} />
             <p>Nenhuma conversa</p>
           </div>
-        ) : (searchResults !== null || search.trim()) ? (
-          // Em busca, mostra lista plana (agrupar por etapa não faz sentido buscando).
-          conversations.map(renderRow)
         ) : (
-          <>
-            {STAGE_META.map((s) => renderSection(s.key, s.label, s.dot, s.text, grouped[s.key]))}
-            {renderSection("archived", "Arquivadas", "bg-tx3", "text-tx3", grouped.archived)}
-          </>
+          // Lista plana da aba selecionada (ou dos resultados de busca).
+          conversations.map(renderRow)
         )}
 
         {/* Rodapé de paginação: carrega mais antigas conforme rola (e botão manual de reserva) */}

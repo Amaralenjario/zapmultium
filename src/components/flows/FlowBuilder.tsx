@@ -4,7 +4,7 @@ import { useCallback, useState, useRef, useMemo, useEffect } from "react";
 import toast from "react-hot-toast";
 import { createClient } from "@/lib/supabase/client";
 import {
-  Play, MessageSquare, Image as ImageIcon, Video, Music, Clock, GitBranch, Tag, Tags,
+  Play, MessageSquare, Image as ImageIcon, Video, Music, Clock, GitBranch, Tag, Tags, Flag,
   Copy, Trash2, Download, Upload, Loader2, ArrowLeft, Undo2, Check, MessageCircleReply, Plus, X, type LucideIcon,
 } from "lucide-react";
 import ReactFlow, {
@@ -24,6 +24,7 @@ const NODE_CONFIGS: Record<string, { label: string; color: string; icon: LucideI
   condition: { label: "Condição", color: "#8B5CF6", icon: GitBranch, defaultData: { variable: "", value: "" } },
   add_tag: { label: "Adicionar etiqueta", color: "#22C55E", icon: Tag, defaultData: { tagName: "" } },
   remove_tag: { label: "Remover etiqueta", color: "#D946EF", icon: Tags, defaultData: { tagName: "" } },
+  set_stage: { label: "Mudar etapa", color: "#4F46E5", icon: Flag, defaultData: { stage: "attending" } },
 };
 const START = { label: "Início", color: "#0EA5E9", icon: Play };
 
@@ -113,6 +114,7 @@ function FlowNode({ data }: any) {
         </div>
       )}
       {(data.type === "add_tag" || data.type === "remove_tag") && <TagEditor config={data.config} />}
+      {data.type === "set_stage" && <StageEditor config={data.config} />}
       {(data.type === "image" || data.type === "video" || data.type === "audio") && <MediaEditor type={data.type} config={data.config} />}
 
       {/* Saídas */}
@@ -245,6 +247,24 @@ function TagEditor({ config }: { config: any }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Editor de etapa de atendimento (bloco "Mudar etapa") ──
+function StageEditor({ config }: { config: any }) {
+  const [stage, setStage] = useState<string>(config.stage || "attending");
+  const opts = [
+    { key: "waiting", label: "Aguardando atendimento" },
+    { key: "attending", label: "Atendendo" },
+    { key: "resolved", label: "Resolvido" },
+  ];
+  return (
+    <div className="p-2.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <select value={stage} onChange={(e) => { setStage(e.target.value); config.stage = e.target.value; }} className={inputCls}>
+        {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      <p className="text-[9px] text-tx3 leading-tight mt-1">Move o lead pra esta etapa no chat ao vivo.</p>
     </div>
   );
 }

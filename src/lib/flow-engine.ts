@@ -399,6 +399,27 @@ export async function processFlowStep(executionId: string): Promise<{
           break;
         }
 
+        case "set_stage": {
+          // Muda a ETAPA de atendimento do lead (aguardando/atendendo/resolvido).
+          // Side-effect igual à etiqueta: NUNCA trava o funil de venda — se falhar,
+          // loga e segue. A lista do chat ao vivo pega pelo realtime e move de aba.
+          try {
+            const stage = currentNode.config?.stage || "attending";
+            if (["waiting", "attending", "resolved"].includes(stage) && execution.conversation_id) {
+              await supabase.from("conversations")
+                .update({ stage, updated_at: new Date().toISOString() })
+                .eq("id", execution.conversation_id);
+              logResult.stage = stage;
+            }
+          } catch (e: any) {
+            logResult.stageError = e?.message || "falha ao mudar etapa";
+            console.error("[flow] mudar etapa falhou, seguindo mesmo assim:", e?.message);
+          }
+          logResult.action = "set_stage";
+          nextNodeId = findNextNode(currentNode.id, edges);
+          break;
+        }
+
         case "add_tag":
         case "remove_tag": {
           // Etiqueta é side-effect de CRM — NUNCA pode travar o fluxo de VENDA. Se falhar

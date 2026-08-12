@@ -24,6 +24,7 @@ const TO_FLOWV1: Record<string, string> = {
   video: "send_video",
   add_tag: "add_tag",
   remove_tag: "remove_tag",
+  set_stage: "set_stage",
 };
 
 const FROM_FLOWV1: Record<string, string> = {
@@ -41,6 +42,7 @@ const FROM_FLOWV1: Record<string, string> = {
   apply_tag: "add_tag",
   tag: "add_tag",
   untag: "remove_tag",
+  set_stage: "set_stage",
 };
 
 export function exportFlowV1(
@@ -92,6 +94,9 @@ export function exportFlowV1(
         case "add_tag":
         case "remove_tag":
           nodeData.tagName = n.config?.tagName || n.config?.name || "";
+          break;
+        case "set_stage":
+          nodeData.stage = n.config?.stage || "attending";
           break;
       }
 
@@ -164,6 +169,9 @@ export function importFlowV1(code: string): {
         case "add_tag":
         case "remove_tag":
           config.tagName = n.data?.tagName || n.data?.name || "";
+          break;
+        case "set_stage":
+          config.stage = n.data?.stage || "attending";
           break;
       }
 
