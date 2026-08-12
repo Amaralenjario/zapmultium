@@ -31,7 +31,7 @@ export interface Conversation {
 }
 
 // Colunas buscadas (reusado na sincronização "ao vivo" e no "carregar mais antigas").
-const CONV_SELECT = "id, status, stage, pinned_at, remarketing_at, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)";
+const CONV_SELECT = "id, status, stage, pinned_at, remarketing_at, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(id, name, phone, avatar_url)";
 const LIVE_LIMIT = 500; // janela ao vivo (as mais recentes)
 const PAGE = 200;       // cada página de "mais antigas" (carrega conforme rola)
 
@@ -81,8 +81,12 @@ export default function ConversationList({
   const [stageTab, setStageTab] = useState<string>("waiting");
   // Filtro explícito de NÃO LIDAS (modifica a aba atual)
   const [onlyUnread, setOnlyUnread] = useState(false);
-  // Menu de botão direito no lead (mudar etapa / fixar / remarketing sem entrar na conversa)
+  // Menu de botão direito no lead (mudar etapa / fixar / remarketing / etiquetar sem entrar na conversa)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: Conversation } | null>(null);
+  const [ctxView, setCtxView] = useState<"menu" | "tags">("menu"); // "tags" = submenu de etiquetas
+  const [allTags, setAllTags] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [swipedId, setSwipedId] = useState<string | null>(null); // linha aberta por swipe (mobile)
+  const touchRef = useRef<{ x: number; y: number } | null>(null);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -357,11 +361,17 @@ export default function ConversationList({
       }
     };
 
+    // Todas as etiquetas do CRM (pro seletor de etiqueta no menu/swipe).
+    const fetchAllTags = async () => {
+      try { const res = await fetch("/api/crm/tags"); if (res.ok) setAllTags(await res.json()); } catch {}
+    };
+
     // Resolve o escopo do vendedor ANTES da 1ª busca de conversas (pra filtrar pelo canal dele).
     fetchSellerChannels().then(() => fetchConversations(true));
     fetchOperations();
     fetchActiveFlows();
     fetchLeadTags();
+    fetchAllTags();
 
     // Realtime atualiza a LINHA na hora (preview instantâneo) — sem re-buscar 500.
     const channel = supabase
@@ -445,6 +455,49 @@ export default function ConversationList({
     toast.success(conv.remarketing_at ? "Tirado do remarketing" : "Marcado p/ remarketing");
   };
 
+  // Etiqueta a conversa SEM entrar nela: resolve/cria o lead pelo telefone e aplica/remove
+  // a etiqueta (mesma lógica do chat). Atualiza leadTagsMap na hora pro selo aparecer.
+  const toggleTagOnConv = async (conv: Conversation, tag: { id: string; name: string; color: string }) => {
+    const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
+    const phone = customer?.phone;
+    if (!phone) { toast.error("Lead sem telefone"); return; }
+    const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
+    const applied = (leadTagsMap[phone] || []).some((t) => t.id === tag.id);
+    // Otimista: atualiza o selo na lista na hora.
+    setLeadTagsMap((prev) => {
+      const cur = prev[phone] || [];
+      const next = applied ? cur.filter((t) => t.id !== tag.id) : [...cur, tag];
+      return { ...prev, [phone]: next };
+    });
+    try {
+      let { data: lead } = await supabase.from("leads").select("id").eq("phone", phone).maybeSingle();
+      if (!lead) {
+        const { data: newLead, error } = await supabase.from("leads")
+          .insert({ name: customer?.name || phone, phone, status: "new", source: "whatsapp", customer_id: (customer as any)?.id || null, conversation_id: conv.id, metadata: { phone_number_id: phoneNumberId } })
+          .select("id").single();
+        if (error || !newLead) throw error || new Error("no lead");
+        lead = newLead;
+      }
+      if (applied) {
+        await supabase.from("lead_tags").delete().eq("lead_id", lead.id).eq("tag_id", tag.id);
+        toast.success("Etiqueta removida");
+      } else {
+        const res = await fetch(`/api/crm/leads/${lead.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag_id: tag.id }) });
+        if (!res.ok) throw new Error("falha");
+        toast.success("Etiqueta aplicada");
+      }
+      window.dispatchEvent(new CustomEvent("lead-tagged"));
+    } catch {
+      // desfaz o otimista em erro
+      setLeadTagsMap((prev) => {
+        const cur = prev[phone] || [];
+        const next = applied ? [...cur, tag] : cur.filter((t) => t.id !== tag.id);
+        return { ...prev, [phone]: next };
+      });
+      toast.error("Erro ao etiquetar");
+    }
+  };
+
   const formatTime = (dateStr: string | null) => {
     if (!dateStr) return "";
     const d = new Date(dateStr);
@@ -477,18 +530,37 @@ export default function ConversationList({
     const borderColor = conv.pinned_at ? "var(--accent)" : conv.remarketing_at ? "#A855F7" : flowInfo ? "var(--success)" : operation ? operation.color : null;
 
     return (
-      <div
-        key={conv.id}
-        role="button"
-        tabIndex={0}
-        onClick={() => { if (!clickLocked) onSelect(conv); }}
-        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, conv }); }}
-        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !clickLocked) { e.preventDefault(); onSelect(conv); } }}
-        className={`w-full flex items-start gap-3 px-3 py-3 cursor-pointer transition text-left border-l-[3px] group relative overflow-hidden border-b border-line ${
-          isSelected ? "bg-accentsoft border-l-accent" : "border-l-transparent hover:bg-rowhover"
-        } ${conv.archived ? "opacity-60" : ""}`}
-        style={borderColor && !isSelected ? { borderLeftColor: borderColor } : {}}
-      >
+      <div key={conv.id} className={`relative overflow-hidden border-b border-line ${conv.archived ? "opacity-60" : ""}`}>
+        {/* Ação revelada ao arrastar pro lado (mobile) — Etiquetar */}
+        <button
+          tabIndex={-1}
+          onClick={(e) => { setSwipedId(null); setCtxView("tags"); setCtxMenu({ x: e.clientX - 210, y: e.clientY, conv }); }}
+          className="absolute right-0 top-0 bottom-0 w-[104px] bg-accent text-white flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold"
+        >
+          <Tag className="w-4 h-4" strokeWidth={2.2} />
+          Etiquetar
+        </button>
+        {/* A linha em si — desliza pra revelar a ação; botão direito abre o menu (desktop) */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => { if (clickLocked) return; if (swipedId === conv.id) { setSwipedId(null); return; } onSelect(conv); }}
+          onContextMenu={(e) => { e.preventDefault(); setCtxView("menu"); setCtxMenu({ x: e.clientX, y: e.clientY, conv }); }}
+          onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !clickLocked) { e.preventDefault(); onSelect(conv); } }}
+          onTouchStart={(e) => { touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+          onTouchEnd={(e) => {
+            if (!touchRef.current) return;
+            const dx = e.changedTouches[0].clientX - touchRef.current.x;
+            const dy = e.changedTouches[0].clientY - touchRef.current.y;
+            touchRef.current = null;
+            if (dx < -50 && Math.abs(dx) > Math.abs(dy)) setSwipedId(conv.id);   // arrastou pra esquerda → revela
+            else if (dx > 30) setSwipedId(null);                                 // arrastou pra direita → fecha
+          }}
+          className={`w-full flex items-start gap-3 px-3 py-3 cursor-pointer text-left border-l-[3px] group relative ${
+            isSelected ? "bg-accentsoft border-l-accent" : "bg-surface border-l-transparent hover:bg-rowhover"
+          }`}
+          style={{ transform: swipedId === conv.id ? "translateX(-104px)" : "translateX(0)", transition: "transform .2s ease", ...(borderColor && !isSelected ? { borderLeftColor: borderColor } : {}) }}
+        >
         <div className="flex-shrink-0 mt-0.5">
           <Avatar name={customer?.name} url={customer?.avatar_url} size="md" />
         </div>
@@ -541,6 +613,7 @@ export default function ConversationList({
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
     );
@@ -731,25 +804,61 @@ export default function ConversationList({
             className="fixed z-50 w-56 rounded-xl bg-surface border border-bd shadow-pop py-1 text-[13px]"
             style={{ top: Math.min(ctxMenu.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 280), left: Math.min(ctxMenu.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 230) }}
           >
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-tx3 truncate">
-              {(() => { const c = Array.isArray(ctxMenu.conv.customer) ? ctxMenu.conv.customer[0] : ctxMenu.conv.customer; return c?.name || c?.phone || "Lead"; })()}
-            </div>
-            {([{ k: "waiting", l: "Aguardando", c: "#F59E0B" }, { k: "attending", l: "Atendendo", c: "#3B82F6" }, { k: "resolved", l: "Resolvido", c: "#10B981" }] as const).map((s) => (
-              <button key={s.k} onClick={() => setStageQuick(ctxMenu.conv, s.k)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.c }} />
-                {s.l}
-                {(ctxMenu.conv.stage || "waiting") === s.k && <Check className="w-3.5 h-3.5 ml-auto text-tx2" strokeWidth={2.5} />}
-              </button>
-            ))}
-            <div className="my-1 border-t border-bd" />
-            <button onClick={() => togglePin(ctxMenu.conv)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
-              <Pin className="w-4 h-4 text-accent flex-shrink-0" fill={ctxMenu.conv.pinned_at ? "currentColor" : "none"} strokeWidth={2} />
-              {ctxMenu.conv.pinned_at ? "Desafixar" : "Fixar no topo"}
-            </button>
-            <button onClick={() => toggleRemarketing(ctxMenu.conv)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
-              <Megaphone className="w-4 h-4 flex-shrink-0" style={{ color: "#A855F7" }} strokeWidth={2} />
-              {ctxMenu.conv.remarketing_at ? "Tirar do remarketing" : "Marcar p/ remarketing"}
-            </button>
+            {(() => {
+              const c = Array.isArray(ctxMenu.conv.customer) ? ctxMenu.conv.customer[0] : ctxMenu.conv.customer;
+              const phone = c?.phone || "";
+              const applied = leadTagsMap[phone] || [];
+              return (
+                <>
+                  <div className="px-3 pt-1.5 pb-1 flex items-center gap-1.5">
+                    {ctxView === "tags" && (
+                      <button onClick={() => setCtxView("menu")} className="text-tx3 hover:text-tx font-bold text-sm leading-none px-0.5" title="Voltar">‹</button>
+                    )}
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-tx3 truncate">{ctxView === "tags" ? "Etiquetas" : (c?.name || phone || "Lead")}</span>
+                  </div>
+                  {ctxView === "menu" ? (
+                    <>
+                      {([{ k: "waiting", l: "Aguardando", c: "#F59E0B" }, { k: "attending", l: "Atendendo", c: "#3B82F6" }, { k: "resolved", l: "Resolvido", c: "#10B981" }] as const).map((s) => (
+                        <button key={s.k} onClick={() => setStageQuick(ctxMenu.conv, s.k)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.c }} />
+                          {s.l}
+                          {(ctxMenu.conv.stage || "waiting") === s.k && <Check className="w-3.5 h-3.5 ml-auto text-tx2" strokeWidth={2.5} />}
+                        </button>
+                      ))}
+                      <div className="my-1 border-t border-bd" />
+                      <button onClick={() => { setCtxView("tags"); }} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+                        <Tag className="w-4 h-4 flex-shrink-0 text-accent" strokeWidth={2} />
+                        Etiquetar
+                        {applied.length > 0 && <span className="ml-auto text-[10px] text-tx3">{applied.length}</span>}
+                      </button>
+                      <button onClick={() => togglePin(ctxMenu.conv)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+                        <Pin className="w-4 h-4 text-accent flex-shrink-0" fill={ctxMenu.conv.pinned_at ? "currentColor" : "none"} strokeWidth={2} />
+                        {ctxMenu.conv.pinned_at ? "Desafixar" : "Fixar no topo"}
+                      </button>
+                      <button onClick={() => toggleRemarketing(ctxMenu.conv)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+                        <Megaphone className="w-4 h-4 flex-shrink-0" style={{ color: "#A855F7" }} strokeWidth={2} />
+                        {ctxMenu.conv.remarketing_at ? "Tirar do remarketing" : "Marcar p/ remarketing"}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="max-h-60 overflow-y-auto">
+                      {allTags.length === 0 ? (
+                        <p className="px-3 py-3 text-[12px] text-tx3 text-center">Nenhuma etiqueta criada.</p>
+                      ) : allTags.map((t) => {
+                        const on = applied.some((x) => x.id === t.id);
+                        return (
+                          <button key={t.id} onClick={() => toggleTagOnConv(ctxMenu.conv, t)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                            <span className="truncate">{t.name}</span>
+                            {on && <Check className="w-3.5 h-3.5 ml-auto flex-shrink-0" strokeWidth={2.5} style={{ color: t.color }} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </>
       )}
