@@ -217,6 +217,15 @@ async function processWhatsAppMessages(payload: any) {
         })
         .eq("id", convId);
 
+      // Reabre atendimento: se o lead estava RESOLVIDO e mandou msg de novo, volta
+      // pra "aguardando" (senão o vendedor não sabe que precisa reatender). Só mexe
+      // nos resolvidos — "atendendo" continua atendendo.
+      await supabase
+        .from("conversations")
+        .update({ stage: "waiting" })
+        .eq("id", convId)
+        .eq("stage", "resolved");
+
       // Nota de transferência: só quando a conversa é NOVA e o lead já foi
       // atendido por outro número antes.
       if (resolved.isNew) {

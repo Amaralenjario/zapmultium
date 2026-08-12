@@ -49,6 +49,7 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
   const [phoneMap, setPhoneMap] = useState<Record<string, { name: string; color: string; channel?: string }>>({});
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [archived, setArchived] = useState(!!(conversation as any).archived);
+  const [stage, setStage] = useState<string>((conversation as any).stage || "waiting");
   const [showTagModal, setShowTagModal] = useState(false);
   const [crmTags, setCrmTags] = useState<CrmTag[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -195,6 +196,27 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
     toast.success(next ? "Conversa arquivada" : "Conversa desarquivada");
   };
 
+  // Muda a ETAPA de atendimento (aguardando/atendendo/resolvido). Atualiza o banco;
+  // a lista à esquerda recebe pelo realtime e move a conversa de bloco sozinha.
+  const changeStage = async (next: string) => {
+    if (next === stage) return;
+    const prev = stage;
+    setStage(next); // otimista
+    const { error } = await supabase
+      .from("conversations")
+      .update({ stage: next, updated_at: new Date().toISOString() })
+      .eq("id", conversation.id);
+    if (error) { setStage(prev); toast.error("Não consegui mudar a etapa"); return; }
+    const labels: Record<string, string> = { waiting: "Aguardando atendimento", attending: "Em atendimento", resolved: "Resolvido" };
+    toast.success(labels[next] || "Etapa atualizada");
+  };
+
+  // Ao abrir OUTRA conversa, ressincroniza etapa/arquivo (o componente não remonta).
+  useEffect(() => {
+    setStage((conversation as any).stage || "waiting");
+    setArchived(!!(conversation as any).archived);
+  }, [conversation.id]);
+
   const handleOpenTagModal = async () => {
     setShowTagModal(true);
     const res = await fetch("/api/crm/tags");
@@ -316,6 +338,24 @@ export default function ChatWindow({ conversation, onClose }: { conversation: Co
         <button onClick={toggleArchive} className="p-2 hover:bg-hover rounded-full transition text-tx2 hover:text-tx" title={archived ? "Desarquivar" : "Arquivar"}>
           {archived ? <ArchiveRestore className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} /> : <Archive className="w-[1.15rem] h-[1.15rem]" strokeWidth={1.9} />}
         </button>
+      </div>
+
+      {/* Etapa de atendimento — clique pra mover Aguardando → Atendendo → Resolvido */}
+      <div className="flex items-center gap-1 px-3 py-2 bg-surface border-b border-bd flex-shrink-0">
+        {([
+          { key: "waiting", label: "Aguardando", dot: "bg-amber-500", active: "bg-amber-500 text-white" },
+          { key: "attending", label: "Atendendo", dot: "bg-blue-500", active: "bg-blue-500 text-white" },
+          { key: "resolved", label: "Resolvido", dot: "bg-emerald-500", active: "bg-emerald-500 text-white" },
+        ] as const).map((s) => (
+          <button
+            key={s.key}
+            onClick={() => changeStage(s.key)}
+            className={`flex-1 flex items-center justify-center gap-1.5 text-[12px] font-bold py-1.5 rounded-control transition ${stage === s.key ? s.active + " shadow-sm" : "text-tx2 hover:bg-hover"}`}
+          >
+            <span className={`w-2 h-2 rounded-full ${stage === s.key ? "bg-white" : s.dot}`} />
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {/* Janela 24h */}

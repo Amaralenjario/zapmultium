@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag } from "lucide-react";
+import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "./Avatar";
 
@@ -15,6 +15,7 @@ export interface Customer {
 export interface Conversation {
   id: string;
   status: string;
+  stage?: string; // etapa de atendimento: waiting | attending | resolved
   last_message: string | null;
   last_message_at: string | null;
   last_message_sender?: string | null;
@@ -27,7 +28,7 @@ export interface Conversation {
 }
 
 // Colunas buscadas (reusado na sincronização "ao vivo" e no "carregar mais antigas").
-const CONV_SELECT = "id, status, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)";
+const CONV_SELECT = "id, status, stage, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)";
 const LIVE_LIMIT = 500; // janela ao vivo (as mais recentes)
 const PAGE = 200;       // cada página de "mais antigas" (carrega conforme rola)
 
@@ -60,7 +61,8 @@ export default function ConversationList({
   // Usado pra FILTRAR a query de conversas por canal, senão o limite de 500 pega o pool GLOBAL
   // e o vendedor de alto volume só vê as conversas mais recentes (bug do "só até 11h").
   const sellerPhonesRef = useRef<string[] | null | undefined>(undefined);
-  const [filter, setFilter] = useState<"all" | "unread" | "active" | "archived">("all");
+  // Blocos de etapa recolhíveis (Aguardando / Atendendo / Resolvido / Arquivadas)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ resolved: true, archived: true });
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -167,10 +169,6 @@ export default function ConversationList({
       });
     }
 
-    if (filter === "active") filtered = filtered.filter((c) => !c.archived);
-    else if (filter === "archived") filtered = filtered.filter((c) => !!c.archived);
-    else if (filter === "unread") filtered = filtered.filter((c) => c.unread_count > 0 && !c.archived);
-
     if (tagFilter) {
       filtered = filtered.filter((conv) => {
         const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
@@ -200,7 +198,7 @@ export default function ConversationList({
     }
 
     setConversations(filtered);
-  }, [allConversations, sellerPhoneIds, filter, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady]);
+  }, [allConversations, sellerPhoneIds, search, tagFilter, operationFilter, leadTagsMap, searchResults, phoneMap, permReady]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
 
@@ -345,7 +343,7 @@ export default function ConversationList({
           const i = prev.findIndex((c) => c.id === row.id);
           if (i === -1) return prev; // não é do nosso escopo/janela → o delta pega
           const next = [...prev];
-          next[i] = { ...next[i], last_message: row.last_message, last_message_at: row.last_message_at, last_message_sender: row.last_message_sender, last_message_read: row.last_message_read, unread_count: row.unread_count, archived: row.archived, status: row.status };
+          next[i] = { ...next[i], last_message: row.last_message, last_message_at: row.last_message_at, last_message_sender: row.last_message_sender, last_message_read: row.last_message_read, unread_count: row.unread_count, archived: row.archived, status: row.status, stage: row.stage };
           next.sort((a, b) => (b.last_message_at ? Date.parse(b.last_message_at) : 0) - (a.last_message_at ? Date.parse(a.last_message_at) : 0));
           return next;
         });
@@ -399,7 +397,123 @@ export default function ConversationList({
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   };
 
-  const filterLabels: Record<string, string> = { all: "Todas", unread: "Não lidas", active: "Ativas", archived: "Arquivadas" };
+  // Etapas de atendimento (os 3 blocos) + Arquivadas no rodapé.
+  const STAGE_META = [
+    { key: "waiting", label: "Aguardando atendimento", dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
+    { key: "attending", label: "Atendendo", dot: "bg-blue-500", text: "text-blue-600 dark:text-blue-400" },
+    { key: "resolved", label: "Resolvido", dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
+  ] as const;
+
+  // Distribui as conversas (já filtradas por escopo/etiqueta/operação) nos blocos.
+  const grouped = useMemo(() => {
+    const g: Record<string, Conversation[]> = { waiting: [], attending: [], resolved: [], archived: [] };
+    for (const c of conversations) {
+      if (c.archived) { g.archived.push(c); continue; }
+      const st = c.stage === "attending" || c.stage === "resolved" ? c.stage : "waiting";
+      g[st].push(c);
+    }
+    return g;
+  }, [conversations]);
+
+  const toggleSection = (key: string) => setCollapsed((p) => ({ ...p, [key]: !p[key] }));
+
+  // Renderiza uma linha de conversa (reusado nos 3 blocos e na busca).
+  const renderRow = (conv: Conversation) => {
+    const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
+    const isSelected = selectedId === conv.id;
+    const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
+    const operation = phoneMap[phoneNumberId];
+    const flowInfo = activeFlows[conv.id];
+    const customerPhone = customer?.phone || "";
+    const tags = leadTagsMap[customerPhone] || [];
+    const isFromMe = conv.last_message_sender === "agent" || conv.last_message_sender === "bot";
+
+    return (
+      <div
+        key={conv.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => { if (!clickLocked) onSelect(conv); }}
+        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !clickLocked) { e.preventDefault(); onSelect(conv); } }}
+        className={`w-full flex items-start gap-3 px-3 py-3 cursor-pointer transition text-left border-l-[3px] group relative overflow-hidden border-b border-line ${
+          isSelected ? "bg-accentsoft border-l-accent" : "border-l-transparent hover:bg-rowhover"
+        } ${conv.archived ? "opacity-60" : ""}`}
+        style={flowInfo && !isSelected ? { borderLeftColor: "var(--success)" } : operation && !isSelected ? { borderLeftColor: operation.color } : {}}
+      >
+        <div className="flex-shrink-0 mt-0.5">
+          <Avatar name={customer?.name} url={customer?.avatar_url} size="md" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {operation && (
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} title={operation.name} />
+              )}
+              <p className="font-bold text-[15px] text-tx truncate">
+                {customer?.name || customer?.phone || "Desconhecido"}
+              </p>
+              {flowInfo && (
+                <span className="flex-shrink-0 flex items-center gap-1 bg-success-soft rounded-full pl-1.5 pr-2 py-0.5" title={`${flowInfo.count} fluxo(s): ${flowInfo.flowNames.join(", ")}`}>
+                  <Zap className="w-2.5 h-2.5 text-success animate-pulse" fill="currentColor" strokeWidth={0} />
+                  <span className="text-[9px] font-bold text-success truncate max-w-[60px]">{flowInfo.flowNames[0] || ""}</span>
+                </span>
+              )}
+            </div>
+            <span className="text-[11px] text-tx3 flex-shrink-0">
+              {formatTime(conv.last_message_at || conv.created_at)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between mt-0.5 gap-2">
+            <div className="flex items-center gap-1 min-w-0 flex-1">
+              {isFromMe && conv.last_message_read !== null && (
+                <CheckCheck className={`w-3.5 h-3.5 flex-shrink-0 ${conv.last_message_read ? "text-accent" : "text-tx3"}`} strokeWidth={2.2} />
+              )}
+              <p className="text-[13px] text-tx3 truncate">
+                {isFromMe && <span className="text-tx2 font-medium">Você: </span>}
+                {conv.last_message || ""}
+              </p>
+            </div>
+            {tags.length > 0 && (
+              <div className="flex gap-0.5 flex-wrap flex-shrink-0">
+                {tags.slice(0, 2).map((tag) => (
+                  <span key={tag.id} className="text-[9px] px-1.5 py-0 rounded-full font-bold" style={{ backgroundColor: tag.color + "20", color: tag.color }}>{tag.name}</span>
+                ))}
+                {tags.length > 2 && <span className="text-[9px] text-tx3">+{tags.length - 2}</span>}
+              </div>
+            )}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button onClick={(e) => toggleArchive(conv.id, !!conv.archived, e)} className="opacity-0 group-hover:opacity-100 transition p-0.5 text-tx3 hover:text-tx" title={conv.archived ? "Desarquivar" : "Arquivar"}>
+                {conv.archived ? <ArchiveRestore className="w-3.5 h-3.5" strokeWidth={2} /> : <Archive className="w-3.5 h-3.5" strokeWidth={2} />}
+              </button>
+              {conv.unread_count > 0 && (
+                <span className="bg-accent text-white text-[11px] font-bold px-1.5 py-0 rounded-full flex-shrink-0 min-w-[20px] h-[20px] flex items-center justify-center">{conv.unread_count}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Cabeçalho de um bloco (etapa) — clicável pra recolher/expandir.
+  const renderSection = (key: string, label: string, dot: string, textCls: string, rows: Conversation[]) => {
+    if (rows.length === 0) return null;
+    const isCollapsed = !!collapsed[key];
+    return (
+      <div key={key}>
+        <button
+          onClick={() => toggleSection(key)}
+          className="w-full sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-surface2/95 backdrop-blur border-b border-bd hover:bg-hover transition"
+        >
+          <ChevronRight className={`w-3.5 h-3.5 text-tx3 transition-transform ${isCollapsed ? "" : "rotate-90"}`} strokeWidth={2.5} />
+          <span className={`w-2 h-2 rounded-full ${dot} flex-shrink-0`} />
+          <span className="text-[12px] font-extrabold uppercase tracking-wide text-tx2 flex-1 text-left truncate">{label}</span>
+          <span className={`text-[11px] font-bold ${textCls}`}>{rows.length}</span>
+        </button>
+        {!isCollapsed && rows.map(renderRow)}
+      </div>
+    );
+  };
 
   return (
     <div className="h-full flex flex-col bg-surface">
@@ -417,38 +531,6 @@ export default function ConversationList({
             placeholder="Pesquisar conversas..."
             className="w-full pl-9 pr-4 py-2.5 rounded-control bg-surface2 border border-bd text-[14px] text-tx placeholder:text-tx3 focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none transition"
           />
-        </div>
-        <div className="flex gap-1.5">
-          {(["all", "unread", "active", "archived"] as const).map((f) => {
-            const base = allConversations.filter((conv) => {
-              if (sellerPhoneIds !== null) {
-                const phoneId = (conv as any).metadata?.phone_number_id || "";
-                if (!phoneId) return true;
-                return sellerPhoneIds.length > 0 ? sellerPhoneIds.includes(phoneId) : false;
-              }
-              return true;
-            });
-            const counts: Record<string, number> = {
-              all: base.length,
-              unread: base.filter((c) => c.unread_count > 0 && !c.archived).length,
-              active: base.filter((c) => !c.archived).length,
-              archived: base.filter((c) => !!c.archived).length,
-            };
-            return (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`flex-1 text-[11px] font-bold py-1.5 rounded-control transition ${
-                  filter === f
-                    ? "bg-accent text-white shadow-glow"
-                    : "text-tx2 hover:bg-hover hover:text-tx"
-                }`}
-              >
-                {filterLabels[f]}
-                <span className={`ml-1 text-[10px] font-semibold ${filter === f ? "text-white/80" : "text-tx3"}`}>{permReady ? counts[f] : ""}</span>
-              </button>
-            );
-          })}
         </div>
         {permReady && visibleOps.length > 0 && (
           <div className="flex items-center gap-1.5 mt-2.5">
@@ -532,87 +614,16 @@ export default function ConversationList({
         ) : conversations.length === 0 ? (
           <div className="p-12 text-center text-tx3 text-sm flex flex-col items-center">
             <MessagesSquare className="w-12 h-12 mb-3 opacity-30" strokeWidth={1.5} />
-            <p>{filter === "archived" ? "Nenhuma conversa arquivada" : "Nenhuma conversa"}</p>
+            <p>Nenhuma conversa</p>
           </div>
+        ) : (searchResults !== null || search.trim()) ? (
+          // Em busca, mostra lista plana (agrupar por etapa não faz sentido buscando).
+          conversations.map(renderRow)
         ) : (
-          conversations.map((conv) => {
-            const customer = Array.isArray(conv.customer) ? conv.customer[0] : conv.customer;
-            const isSelected = selectedId === conv.id;
-            const phoneNumberId = (conv as any).metadata?.phone_number_id || "";
-            const operation = phoneMap[phoneNumberId];
-            const flowInfo = activeFlows[conv.id];
-            const customerPhone = customer?.phone || "";
-            const tags = leadTagsMap[customerPhone] || [];
-            const isFromMe = conv.last_message_sender === "agent" || conv.last_message_sender === "bot";
-
-            return (
-              <div
-                key={conv.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => { if (!clickLocked) onSelect(conv); }}
-                onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !clickLocked) { e.preventDefault(); onSelect(conv); } }}
-                className={`w-full flex items-start gap-3 px-3 py-3 cursor-pointer transition text-left border-l-[3px] group relative overflow-hidden border-b border-line ${
-                  isSelected
-                    ? "bg-accentsoft border-l-accent"
-                    : "border-l-transparent hover:bg-rowhover"
-                } ${conv.archived ? "opacity-60" : ""}`}
-                style={flowInfo && !isSelected ? { borderLeftColor: "var(--success)" } : operation && !isSelected ? { borderLeftColor: operation.color } : {}}
-              >
-                <div className="flex-shrink-0 mt-0.5">
-                  <Avatar name={customer?.name} url={customer?.avatar_url} size="md" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {operation && (
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} title={operation.name} />
-                      )}
-                      <p className="font-bold text-[15px] text-tx truncate">
-                        {customer?.name || customer?.phone || "Desconhecido"}
-                      </p>
-                      {flowInfo && (
-                        <span className="flex-shrink-0 flex items-center gap-1 bg-success-soft rounded-full pl-1.5 pr-2 py-0.5" title={`${flowInfo.count} fluxo(s): ${flowInfo.flowNames.join(", ")}`}>
-                          <Zap className="w-2.5 h-2.5 text-success animate-pulse" fill="currentColor" strokeWidth={0} />
-                          <span className="text-[9px] font-bold text-success truncate max-w-[60px]">{flowInfo.flowNames[0] || ""}</span>
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-tx3 flex-shrink-0">
-                      {formatTime(conv.last_message_at || conv.created_at)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between mt-0.5 gap-2">
-                    <div className="flex items-center gap-1 min-w-0 flex-1">
-                      {isFromMe && conv.last_message_read !== null && (
-                        <CheckCheck className={`w-3.5 h-3.5 flex-shrink-0 ${conv.last_message_read ? "text-accent" : "text-tx3"}`} strokeWidth={2.2} />
-                      )}
-                      <p className="text-[13px] text-tx3 truncate">
-                        {isFromMe && <span className="text-tx2 font-medium">Você: </span>}
-                        {conv.last_message || ""}
-                      </p>
-                    </div>
-                    {tags.length > 0 && (
-                      <div className="flex gap-0.5 flex-wrap flex-shrink-0">
-                        {tags.slice(0, 2).map((tag) => (
-                          <span key={tag.id} className="text-[9px] px-1.5 py-0 rounded-full font-bold" style={{ backgroundColor: tag.color + "20", color: tag.color }}>{tag.name}</span>
-                        ))}
-                        {tags.length > 2 && <span className="text-[9px] text-tx3">+{tags.length - 2}</span>}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-0.5 flex-shrink-0">
-                      <button onClick={(e) => toggleArchive(conv.id, !!conv.archived, e)} className="opacity-0 group-hover:opacity-100 transition p-0.5 text-tx3 hover:text-tx" title={conv.archived ? "Desarquivar" : "Arquivar"}>
-                        {conv.archived ? <ArchiveRestore className="w-3.5 h-3.5" strokeWidth={2} /> : <Archive className="w-3.5 h-3.5" strokeWidth={2} />}
-                      </button>
-                      {conv.unread_count > 0 && (
-                        <span className="bg-accent text-white text-[11px] font-bold px-1.5 py-0 rounded-full flex-shrink-0 min-w-[20px] h-[20px] flex items-center justify-center">{conv.unread_count}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          <>
+            {STAGE_META.map((s) => renderSection(s.key, s.label, s.dot, s.text, grouped[s.key]))}
+            {renderSection("archived", "Arquivadas", "bg-tx3", "text-tx3", grouped.archived)}
+          </>
         )}
 
         {/* Rodapé de paginação: carrega mais antigas conforme rola (e botão manual de reserva) */}
