@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag } from "lucide-react";
+import { Search, MessagesSquare, Archive, ArchiveRestore, CheckCheck, Zap, Building2, Tag, Pin, Megaphone, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import toast from "react-hot-toast";
 import Avatar from "./Avatar";
 
 export interface Customer {
@@ -16,6 +17,8 @@ export interface Conversation {
   id: string;
   status: string;
   stage?: string; // etapa de atendimento: waiting | attending | resolved
+  pinned_at?: string | null;       // fixado no topo (até 10)
+  remarketing_at?: string | null;  // marcado p/ remarketing depois (outra cor)
   last_message: string | null;
   last_message_at: string | null;
   last_message_sender?: string | null;
@@ -28,21 +31,34 @@ export interface Conversation {
 }
 
 // Colunas buscadas (reusado na sincronização "ao vivo" e no "carregar mais antigas").
-const CONV_SELECT = "id, status, stage, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)";
+const CONV_SELECT = "id, status, stage, pinned_at, remarketing_at, archived, last_message, last_message_at, last_message_sender, last_message_read, unread_count, created_at, metadata, customer:customer_id(name, phone, avatar_url)";
 const LIVE_LIMIT = 500; // janela ao vivo (as mais recentes)
 const PAGE = 200;       // cada página de "mais antigas" (carrega conforme rola)
 
-// Une listas por id (a versão nova sobrescreve a antiga) e reordena por atividade.
+// Ordena: FIXADOS no topo (por pinned_at), depois REMARKETING (por remarketing_at),
+// depois o resto por atividade. Usado no merge e no realtime pra ficarem iguais.
+function convGroup(c: Conversation): number {
+  if (c.pinned_at) return 0;
+  if (c.remarketing_at) return 1;
+  return 2;
+}
+function compareConvs(a: Conversation, b: Conversation): number {
+  const ga = convGroup(a), gb = convGroup(b);
+  if (ga !== gb) return ga - gb;
+  if (ga === 0) return Date.parse(b.pinned_at!) - Date.parse(a.pinned_at!);
+  if (ga === 1) return Date.parse(b.remarketing_at!) - Date.parse(a.remarketing_at!);
+  const ta = a.last_message_at ? Date.parse(a.last_message_at) : 0;
+  const tb = b.last_message_at ? Date.parse(b.last_message_at) : 0;
+  return tb - ta;
+}
+
+// Une listas por id (a versão nova sobrescreve a antiga) e reordena.
 // Assim o polling/realtime atualiza as recentes SEM apagar as páginas antigas já carregadas.
 function mergeConvs(prev: Conversation[], incoming: Conversation[]): Conversation[] {
   const map = new Map<string, Conversation>();
   for (const c of prev) map.set(c.id, c);
   for (const c of incoming) map.set(c.id, c);
-  return Array.from(map.values()).sort((a, b) => {
-    const ta = a.last_message_at ? Date.parse(a.last_message_at) : 0;
-    const tb = b.last_message_at ? Date.parse(b.last_message_at) : 0;
-    return tb - ta;
-  });
+  return Array.from(map.values()).sort(compareConvs);
 }
 
 export default function ConversationList({
@@ -63,6 +79,8 @@ export default function ConversationList({
   const sellerPhonesRef = useRef<string[] | null | undefined>(undefined);
   // Aba de etapa selecionada (Aguardando / Atendendo / Resolvidos / Arquivadas)
   const [stageTab, setStageTab] = useState<string>("waiting");
+  // Menu de botão direito no lead (mudar etapa / fixar / remarketing sem entrar na conversa)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: Conversation } | null>(null);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -349,8 +367,8 @@ export default function ConversationList({
           const i = prev.findIndex((c) => c.id === row.id);
           if (i === -1) return prev; // não é do nosso escopo/janela → o delta pega
           const next = [...prev];
-          next[i] = { ...next[i], last_message: row.last_message, last_message_at: row.last_message_at, last_message_sender: row.last_message_sender, last_message_read: row.last_message_read, unread_count: row.unread_count, archived: row.archived, status: row.status, stage: row.stage };
-          next.sort((a, b) => (b.last_message_at ? Date.parse(b.last_message_at) : 0) - (a.last_message_at ? Date.parse(a.last_message_at) : 0));
+          next[i] = { ...next[i], last_message: row.last_message, last_message_at: row.last_message_at, last_message_sender: row.last_message_sender, last_message_read: row.last_message_read, unread_count: row.unread_count, archived: row.archived, status: row.status, stage: row.stage, pinned_at: row.pinned_at, remarketing_at: row.remarketing_at };
+          next.sort(compareConvs);
           return next;
         });
       })
@@ -392,6 +410,36 @@ export default function ConversationList({
     setAllConversations((prev) => prev.map((c) => c.id === convId ? { ...c, archived: !current } : c));
   };
 
+  // ── Ações do menu de botão direito ──
+  const setStageQuick = async (conv: Conversation, stage: string) => {
+    setCtxMenu(null);
+    await supabase.from("conversations").update({ stage, updated_at: new Date().toISOString() }).eq("id", conv.id);
+    setAllConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, stage } : c).sort(compareConvs));
+    const labels: Record<string, string> = { waiting: "Aguardando", attending: "Atendendo", resolved: "Resolvido" };
+    toast.success(`Movido pra ${labels[stage] || stage}`);
+  };
+
+  const togglePin = async (conv: Conversation) => {
+    setCtxMenu(null);
+    const isPinned = !!conv.pinned_at;
+    if (!isPinned) {
+      const count = allConvsRef.current.filter((c) => c.pinned_at).length;
+      if (count >= 10) { toast.error("Máximo de 10 leads fixados."); return; }
+    }
+    const val = isPinned ? null : new Date().toISOString();
+    await supabase.from("conversations").update({ pinned_at: val }).eq("id", conv.id);
+    setAllConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, pinned_at: val } : c).sort(compareConvs));
+    toast.success(isPinned ? "Lead desafixado" : "Lead fixado no topo");
+  };
+
+  const toggleRemarketing = async (conv: Conversation) => {
+    setCtxMenu(null);
+    const val = conv.remarketing_at ? null : new Date().toISOString();
+    await supabase.from("conversations").update({ remarketing_at: val }).eq("id", conv.id);
+    setAllConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, remarketing_at: val } : c).sort(compareConvs));
+    toast.success(conv.remarketing_at ? "Tirado do remarketing" : "Marcado p/ remarketing");
+  };
+
   const formatTime = (dateStr: string | null) => {
     if (!dateStr) return "";
     const d = new Date(dateStr);
@@ -420,6 +468,8 @@ export default function ConversationList({
     const customerPhone = customer?.phone || "";
     const tags = leadTagsMap[customerPhone] || [];
     const isFromMe = conv.last_message_sender === "agent" || conv.last_message_sender === "bot";
+    // Borda esquerda: fixado (accent) / remarketing (roxo) têm prioridade sobre fluxo/operação.
+    const borderColor = conv.pinned_at ? "var(--accent)" : conv.remarketing_at ? "#A855F7" : flowInfo ? "var(--success)" : operation ? operation.color : null;
 
     return (
       <div
@@ -427,11 +477,12 @@ export default function ConversationList({
         role="button"
         tabIndex={0}
         onClick={() => { if (!clickLocked) onSelect(conv); }}
+        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, conv }); }}
         onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !clickLocked) { e.preventDefault(); onSelect(conv); } }}
         className={`w-full flex items-start gap-3 px-3 py-3 cursor-pointer transition text-left border-l-[3px] group relative overflow-hidden border-b border-line ${
           isSelected ? "bg-accentsoft border-l-accent" : "border-l-transparent hover:bg-rowhover"
         } ${conv.archived ? "opacity-60" : ""}`}
-        style={flowInfo && !isSelected ? { borderLeftColor: "var(--success)" } : operation && !isSelected ? { borderLeftColor: operation.color } : {}}
+        style={borderColor && !isSelected ? { borderLeftColor: borderColor } : {}}
       >
         <div className="flex-shrink-0 mt-0.5">
           <Avatar name={customer?.name} url={customer?.avatar_url} size="md" />
@@ -439,6 +490,8 @@ export default function ConversationList({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
+              {conv.pinned_at && <Pin className="w-3.5 h-3.5 text-accent flex-shrink-0" fill="currentColor" strokeWidth={2} aria-label="Fixado" />}
+              {conv.remarketing_at && <Megaphone className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#A855F7" }} strokeWidth={2.2} aria-label="Remarketing" />}
               {operation && (
                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: operation.color }} title={operation.name} />
               )}
@@ -651,6 +704,37 @@ export default function ConversationList({
           </div>
         )}
       </div>
+
+      {/* Menu de botão direito: mudar etapa / fixar / remarketing sem entrar na conversa */}
+      {ctxMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }} />
+          <div
+            className="fixed z-50 w-56 rounded-xl bg-surface border border-bd shadow-pop py-1 text-[13px]"
+            style={{ top: Math.min(ctxMenu.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 280), left: Math.min(ctxMenu.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 230) }}
+          >
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-tx3 truncate">
+              {(() => { const c = Array.isArray(ctxMenu.conv.customer) ? ctxMenu.conv.customer[0] : ctxMenu.conv.customer; return c?.name || c?.phone || "Lead"; })()}
+            </div>
+            {([{ k: "waiting", l: "Aguardando", c: "#F59E0B" }, { k: "attending", l: "Atendendo", c: "#3B82F6" }, { k: "resolved", l: "Resolvido", c: "#10B981" }] as const).map((s) => (
+              <button key={s.k} onClick={() => setStageQuick(ctxMenu.conv, s.k)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.c }} />
+                {s.l}
+                {(ctxMenu.conv.stage || "waiting") === s.k && <Check className="w-3.5 h-3.5 ml-auto text-tx2" strokeWidth={2.5} />}
+              </button>
+            ))}
+            <div className="my-1 border-t border-bd" />
+            <button onClick={() => togglePin(ctxMenu.conv)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+              <Pin className="w-4 h-4 text-accent flex-shrink-0" fill={ctxMenu.conv.pinned_at ? "currentColor" : "none"} strokeWidth={2} />
+              {ctxMenu.conv.pinned_at ? "Desafixar" : "Fixar no topo"}
+            </button>
+            <button onClick={() => toggleRemarketing(ctxMenu.conv)} className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-hover transition text-left text-tx font-semibold">
+              <Megaphone className="w-4 h-4 flex-shrink-0" style={{ color: "#A855F7" }} strokeWidth={2} />
+              {ctxMenu.conv.remarketing_at ? "Tirar do remarketing" : "Marcar p/ remarketing"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
