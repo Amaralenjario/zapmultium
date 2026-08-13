@@ -180,7 +180,7 @@ async function processWhatsAppMessages(payload: any) {
       // = EvoHub/Meta não mandou. É 1 insert barato e desnicessário travar por ele.
       if (messages.length > 0) {
         try {
-          const raw = messages.map((m: any) => ({ wa_message_id: m.id, phone_number_id: phoneNumberId, from_phone: m.from || null }));
+          const raw = messages.map((m: any) => ({ wa_message_id: m.id, phone_number_id: phoneNumberId, from_phone: m.from || null, msg_type: m.type || null }));
           await supabase.from("webhook_inbound_log").insert(raw);
         } catch (_e) { /* nunca bloqueia ingestão */ }
       }
